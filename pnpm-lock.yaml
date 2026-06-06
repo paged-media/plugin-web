@@ -15,11 +15,11 @@ importers:
   packages/web-bundle:
     dependencies:
       '@paged-media/plugin-api':
-        specifier: link:../../../sdk/packages/plugin-api
-        version: link:../../../sdk/packages/plugin-api
+        specifier: link:../../../plugin-sdk/packages/plugin-api
+        version: link:../../../plugin-sdk/packages/plugin-api
       '@paged-media/plugin-sdk':
-        specifier: link:../../../sdk/packages/plugin-sdk
-        version: link:../../../sdk/packages/plugin-sdk
+        specifier: link:../../../plugin-sdk/packages/plugin-sdk
+        version: link:../../../plugin-sdk/packages/plugin-sdk
       '@paged-media/web-model':
         specifier: workspace:*
         version: link:../web-model

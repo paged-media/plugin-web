@@ -37,13 +37,13 @@ both reserved host-side.
 
 ## Setup
 
-Sibling checkout layout (pnpm `link:` into `../sdk`; install order:
-editor → sdk → here):
+Sibling checkout layout (pnpm `link:` into `../plugin-sdk`; install order:
+editor → plugin-sdk → here):
 
 ```bash
 cd ~/paged/plugin-web && pnpm install
 pnpm -r test && pnpm -r typecheck
-node ../sdk/packages/plugin-cli/bin/paged-plugin.mjs validate packages/web-bundle/manifest.json
+node ../plugin-sdk/packages/plugin-cli/bin/paged-plugin.mjs validate packages/web-bundle/manifest.json
 ```
 
 `BREAKAGE_LOG.md` records every place the plugin surface fell short

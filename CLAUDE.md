@@ -34,11 +34,11 @@ panel).
   uppercase kickers, mono tabular code, hairline borders, no hardcoded
   chrome hexes. Content colours (the preview's paper white) stay
   literal by design.
-- **Install order:** editor → sdk → plugin-web (`link:` chain).
+- **Install order:** editor → plugin-sdk → plugin-web (`link:` chain).
 
 ## Commands
 
 ```bash
 pnpm install && pnpm -r test && pnpm -r typecheck
-node ../sdk/packages/plugin-cli/bin/paged-plugin.mjs validate packages/web-bundle/manifest.json
+node ../plugin-sdk/packages/plugin-cli/bin/paged-plugin.mjs validate packages/web-bundle/manifest.json
 ```

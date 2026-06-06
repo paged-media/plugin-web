@@ -14,8 +14,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@paged-media/plugin-api": "link:../../../sdk/packages/plugin-api",
-    "@paged-media/plugin-sdk": "link:../../../sdk/packages/plugin-sdk",
+    "@paged-media/plugin-api": "link:../../../plugin-sdk/packages/plugin-api",
+    "@paged-media/plugin-sdk": "link:../../../plugin-sdk/packages/plugin-sdk",
     "@paged-media/web-model": "workspace:*"
   },
   "peerDependencies": {
