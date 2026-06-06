@@ -1,0 +1,14 @@
+{
+  "name": "paged-media-plugin-web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "typecheck": "pnpm -r run typecheck",
+    "build": "pnpm -r run typecheck",
+    "test": "pnpm -r run test"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}
