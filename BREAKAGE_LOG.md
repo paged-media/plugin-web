@@ -10,14 +10,24 @@ Format: `W-NN · date · area · status`.
 
 ---
 
-- **W-01 · 2026-06-06 · rendering · OPEN (the big one)** — no engine
-  lane for webFrame content. Concept §4's architecture (Blitz/WASM:
-  Stylo+Taffy+Parley painting into Vello, client-side, deterministic,
-  pinned) needs the **W0 feasibility spike in core** — compile the
-  Blitz stack to wasm, paint a static fragment through the existing
-  pipeline. Until then the v0 slice renders a sandboxed PANEL preview
-  only (the O1 stopgap, panel-scoped, explicitly labeled in the UI).
-  Server rendering remains rejected (O2).
+- **W-01 · 2026-06-06 · rendering · SPIKE DONE — GO (2026-06-06)** —
+  the W0 feasibility spike landed in `core/spikes/blitz-wasm` and the
+  embedded-engine bet is **GO**: the whole Blitz stack
+  (`=0.3.0-alpha.4`, Stylo 0.17/Taffy/Parley) compiles clean to
+  wasm32-unknown-unknown AND executes there (node run paints the
+  fragment; the only native-vs-wasm delta is glyph runs — no system
+  fonts on wasm, faces must be registered, which the determinism
+  doctrine demands anyway). Numbers: brotli'd stack 2.20 MB
+  (Vello excluded — `anyrender_vello 0.11` pins vello ^0.9 + wgpu ^29,
+  EXACTLY core's versions, so the real integration paints into the
+  shared instance); persistent-doc re-layout+repaint 58 µs/frame,
+  fresh-doc with shared `FontContext` 373 µs. Full findings +
+  integration levers (font_ctx sharing, no-op net_provider, custom
+  ua_stylesheets, `@media print`, sequential styling on wasm):
+  `core/spikes/blitz-wasm/README.md`. REMAINING for the engine lane
+  (W1+): a real `anyrender_vello`-backed webFrame paint hook in the
+  canvas, font registration parity, and the W-02 metadata/baking
+  pipeline. The v0 panel preview (O1 stopgap) stays until then.
 
 - **W-02 · 2026-06-06 · document model · OPEN** — no namespaced plugin
   metadata on document objects (`x-paged-web:source/engine/options`,
