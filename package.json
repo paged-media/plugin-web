@@ -6,7 +6,8 @@
   "scripts": {
     "typecheck": "pnpm -r run typecheck",
     "build": "pnpm -r run typecheck",
-    "test": "pnpm -r run test"
+    "lint:contract": "node scripts/check-contract-imports.mjs",
+    "test": "node scripts/check-contract-imports.mjs && pnpm -r run test"
   },
   "devDependencies": {
     "typescript": "^5.6.3"
