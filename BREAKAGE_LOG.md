@@ -29,14 +29,19 @@ Format: `W-NN · date · area · status`.
   canvas, font registration parity, and the W-02 metadata/baking
   pipeline. The v0 panel preview (O1 stopgap) stays until then.
 
-- **W-02 · 2026-06-06 · document model · OPEN** — no namespaced plugin
-  metadata on document objects (`x-paged-web:source/engine/options`,
-  concept §5). v0 persists `WebFrameSource` in plugin storage keyed by
-  element id — the SHAPE is the metadata shape, but it lives outside
-  the document: **it does not round-trip IDML** and is lost on
-  collaborative/other-machine open. The engine needs metadata write
-  ops + the B2 baking pipeline (rendered scene → IDML constructs) for
-  the fidelity doctrine to hold.
+- **W-02 · 2026-06-06 · document model · CARRIER LANDED (2026-06-07)**
+  — the engine's plugin-metadata carrier shipped (core protocol v33,
+  facility design §2-3): `Properties/Label` `KeyValuePair`s round-trip
+  parse → mutate → write (F1-fixtured, InDesign-preservable), gated
+  (`x-paged:<plugin-id>` namespace, 64 KiB cap, JSON envelope
+  `{v, data, engine?}`), with SDK doors
+  `host.document.getMetadata/setMetadata` (plugin-api 0.2.5-canary.0;
+  key derived from the manifest id — own namespace only) and the
+  `ObjectTypeBaker`/`BakeContext` contract types. REMAINING here:
+  migrate `WebFrameSource` from plugin storage to
+  `host.document.setMetadata` (then sources round-trip IDML and
+  survive foreign opens), and the B2 baking pipeline + host bake loop
+  (`contribute.objectType` is still runtime-reserved).
 
 - **W-03 · 2026-06-06 · contributions · OPEN** — `contribute.objectType`
   is reserved (declared in the manifest, throws at runtime). A
