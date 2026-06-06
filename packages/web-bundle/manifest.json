@@ -1,24 +1,41 @@
 {
   "id": "media.paged.web",
   "name": "paged.web",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "apiVersion": "^0.2",
   "publisher": "paged.media",
   "capabilities": {
-    "document": { "read": "broad", "write": "scoped" },
-    "rendering": ["hitTest"],
-    "editContext": ["webFrame"],
+    "document": {
+      "read": "broad",
+      "write": "scoped"
+    },
+    "rendering": [
+      "hitTest"
+    ],
+    "editContext": [
+      "webFrame"
+    ],
     "network": false,
     "clipboard": "none"
   },
   "contributes": {
-    "panels": ["media.paged.web.panel.source"],
-    "commands": [
-      "media.paged.web.command.insertWebFrame",
-      "media.paged.web.panel.source.show",
-      "media.paged.web.panel.source.hide"
+    "panels": [
+      "media.paged.web.panel.source"
     ],
-    "editContexts": [{ "type": "webFrame", "entry": "doubleClick" }],
-    "objectTypes": [{ "type": "webFrame", "bakedFallback": "rectangle" }]
+    "commands": [
+      "media.paged.web.command.insertWebFrame"
+    ],
+    "editContexts": [
+      {
+        "type": "webFrame",
+        "entry": "doubleClick"
+      }
+    ],
+    "objectTypes": [
+      {
+        "type": "webFrame",
+        "bakedFallback": "rectangle"
+      }
+    ]
   }
 }

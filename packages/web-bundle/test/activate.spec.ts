@@ -71,7 +71,7 @@ const mapBacking = () => {
 };
 
 describe("webBundle.activate", () => {
-  it("registers the source panel (with show/hide) + the insert command", () => {
+  it("registers the source panel + the insert command (show/hide host-derived per B-15)", () => {
     const fake = makeFakeEditor();
     loadBundle(() => fake.editor, webBundle, {
       console: silent,
@@ -80,8 +80,6 @@ describe("webBundle.activate", () => {
     });
     expect(fake.panels.ids()).toEqual(["media.paged.web.panel.source"]);
     expect(fake.commands.ids()).toEqual([
-      "media.paged.web.panel.source.show",
-      "media.paged.web.panel.source.hide",
       "media.paged.web.command.insertWebFrame",
     ]);
   });
