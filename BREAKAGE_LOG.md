@@ -215,3 +215,40 @@ Format: `W-NN · date · area · status`.
   show/hide commands for startup panels only). Resolved in SDK 0.2:
   host-app-injected `host.shell.openPanel/closePanel` +
   `contributePanel` (panel + namespaced show/hide commands).
+
+- **W-10 · 2026-06-07 · testing · RESOLVED (2026-06-07, W4.15)** — a
+  headless **conformance-fixture corpus** for the web bundle now stands
+  on the B-13 foundation (`@paged-media/plugin-sdk`'s `createHeadlessHost`
+  — the published engine wasm booted in Node). `web-bundle/test/fixtures/`
+  carries a pure-TS IDML builder (`build-idml.ts` — no `zip` CLI,
+  deterministic bytes, supports multi-story documents) + a named corpus
+  (`corpus.ts`: W1 empty page, W2 a document registering IBM Plex Sans +
+  Source Serif Pro via styles/story `AppliedFont`). Spec family
+  (`test/conformance/*.spec.ts`, vitest, one wasm boot per file via the
+  host's reload support):
+  - `insert.spec.ts` — fires the bundle's OWN insert command headlessly
+    and proves the §5 batch contract end-to-end through the real engine:
+    ONE `insertFrame`+`setPluginMetadata($created)` batch, the created
+    frame carries the source envelope + is selected, and a SINGLE undo
+    removes frame AND source (leaf count 0→1→0).
+  - `source-roundtrip.spec.ts` — source metadata write→read recovers the
+    envelope verbatim, a re-write replaces it (latest wins), it survives
+    an unrelated mutate, and a foreign/unknown-version envelope reads as
+    "not a web frame" (null).
+  - `fonts-diagnostics.spec.ts` — the `fonts` collection door surfaces the
+    document's registered family NAMES (FontSummary, no bytes), font
+    parity matches/flags against that real projection, and the §6.1
+    `<script>` policy error + font diagnostics assemble into the
+    publishable set the panel sends through `host.diagnostics`.
+  FINDINGS (pinned-gap tests, present through the vendored protocol v35):
+  (a) the `fonts` door populates correctly from styles + story
+  `AppliedFont` (drives the W1 parity lane against a real document); (b)
+  source metadata persists WITHIN a session (write/read/mutate/undo) on
+  the batch-created rectangle carrier, but **cross-reload IDML
+  persistence is not yet readable headlessly** — re-loading bytes that
+  already carry an authored `Properties/Label` `KeyValuePair` parses but
+  `getMetadata` returns `null` (the read accessor surfaces in-session
+  `setPluginMetadata` writes, not pre-existing Label entries). That
+  IDML-authored-Label read path is a future engine target; the W-02
+  carrier round-trips the Label on WRITE/export but the headless read
+  door does not yet re-surface it on a fresh parse.

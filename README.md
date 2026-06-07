@@ -54,5 +54,27 @@ pnpm -r test && pnpm -r typecheck
 node ../plugin-sdk/packages/plugin-cli/bin/paged-plugin.mjs validate packages/web-bundle/manifest.json
 ```
 
+### Conformance corpus (W4.15)
+
+`web-bundle/test/` carries a headless **conformance-fixture corpus** on
+the B-13 foundation (`@paged-media/plugin-sdk`'s `createHeadlessHost` —
+the published engine wasm booted in Node):
+
+- `fixtures/build-idml.ts` — a pure-TS IDML package builder (no `zip`
+  CLI, deterministic bytes, multi-story documents); `fixtures/corpus.ts`
+  — W1 empty page, W2 a document registering known font families via
+  styles + story `AppliedFont`.
+- `conformance/*.spec.ts` — `insert.spec.ts` (the bundle's insert command
+  fired headlessly: the single-undo batch + source envelope + selection),
+  `source-roundtrip.spec.ts` (metadata write/read/re-write/survive-mutate
+  + the unknown-version null), `fonts-diagnostics.spec.ts` (the `fonts`
+  collection door drives font parity; the §6.1 `<script>` error + font
+  diagnostics assemble the publishable set). One wasm boot per spec-file
+  (the host supports reload).
+
+Findings + residuals (the `fonts` door populates from styles; source
+metadata persists WITHIN a session but cross-reload IDML-authored-Label
+read is not yet headless) are tracked under **W-10** in `BREAKAGE_LOG.md`.
+
 `BREAKAGE_LOG.md` records every place the plugin surface fell short
-(W-01…W-09) — together with plugin-draw's log, it is the API-v1 punch list.
+(W-01…W-10) — together with plugin-draw's log, it is the API-v1 punch list.
