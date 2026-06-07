@@ -134,11 +134,16 @@ Format: `W-NN · date · area · status`.
   re-calibration, and the optional `wasm.load@1` supports() probe.
   Becomes fully RESOLVED when the editor serving lane lands.
 
-- **W-08 · 2026-06-06 · transforms · OPEN** — Boa generation
-  transforms (§6.2: template + data → HTML, pure, pinned) need a host
-  API to run scripts against the embedded engine with budgets — the
-  same Boa-budget gap as plugin-draw B-09, plus a binding context
-  (document variables, datasets). Phase W3.
+- **W-08 · 2026-06-06 · transforms · RESOLVED-PARTIAL (2026-06-07)** —
+  the Boa-budget half is in (core W3.9, shared with plugin-draw
+  B-09): the embedding API now takes a per-execution `ScriptBudget`
+  (loop/recursion/stack + wall-clock ms) and a host-injected ms
+  clock, with typed `ScriptBudgetKind` exhaustion over the channel
+  (rides v35). A pinned generation transform can run against a budget
+  and terminate close to its deadline whenever it touches the host
+  bridge. Still W-08's own: the **binding context** (document
+  variables / datasets) for §6.2 template+data → HTML is a separate
+  host API, not part of the budget work.
 
 - **W-09 · 2026-06-06 · shell · RESOLVED (2026-06-06)** — bundle
   panels had no entry path (no cockpit mode slot, host builds
