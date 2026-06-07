@@ -1,8 +1,11 @@
 // The webFrame source panel — HTML + CSS editors, a sandboxed live
-// preview, frame options, and the diagnostics line (concept §8,
-// reduced to what API v0.2 carries; the `codeEditor` host widget is
-// W-04 on the breakage log, so the editors are token-styled
-// textareas — honest, not fake-interactive).
+// preview, frame options, and the diagnostics line (concept §8).
+// W-04 RESOLVED: the editors are now the HOST code-editor widget
+// (`host.widgets.CodeEditor` — line numbers, HTML/CSS highlighting, a
+// diagnostics gutter), falling back to a plain textarea where the host
+// injects no widget catalog (headless/older hosts). W-05 RESOLVED: the
+// linter publishes through `host.diagnostics`, which the editor's
+// Problems panel consumes.
 //
 // Built from host surfaces + React ONLY: the component is created by
 // a factory that closes over the BundleHost, reads/writes through
@@ -22,7 +25,11 @@ import {
   type ReactElement,
 } from "react";
 
-import type { BundleHost, ElementId } from "@paged-media/plugin-api";
+import type {
+  BundleHost,
+  CodeEditorDiagnostic,
+  ElementId,
+} from "@paged-media/plugin-api";
 import {
   asFrameTarget,
   composeSrcdoc,
@@ -48,20 +55,6 @@ const kicker: CSSProperties = {
   textTransform: "uppercase",
   color: "var(--pg-muted-fg)",
   margin: "var(--space-3, 12px) 0 var(--space-1, 4px)",
-};
-
-const codeArea: CSSProperties = {
-  width: "100%",
-  minHeight: 96,
-  resize: "vertical",
-  font: "12px/1.5 var(--font-mono, monospace)",
-  fontVariantNumeric: "tabular-nums",
-  color: "var(--pg-fg)",
-  background: "var(--pg-bg)",
-  border: "1px solid var(--pg-border)",
-  borderRadius: "var(--radius-sm, 4px)",
-  padding: "var(--space-2, 8px)",
-  boxSizing: "border-box",
 };
 
 const DOT: Record<WebDiagnostic["severity"], string> = {
@@ -170,6 +163,18 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
       () => (source ? diagnoseHtml(source.html) : []),
       [source],
     );
+    // Per-line markers for the HTML editor's gutter (the linter only
+    // diagnoses HTML today; line-less policy notes don't carry a
+    // gutter position so they're filtered out here but still show in
+    // the summary list + the Problems panel).
+    const htmlGutter = useMemo<CodeEditorDiagnostic[]>(
+      () =>
+        diagnostics
+          .filter((d): d is typeof d & { line: number } => d.line !== undefined)
+          .map((d) => ({ severity: d.severity, message: d.message, line: d.line })),
+      [diagnostics],
+    );
+    const CodeEditor = host.widgets.CodeEditor;
     const srcdoc = useMemo(
       () => (source ? composeSrcdoc(source) : ""),
       [source],
@@ -220,21 +225,26 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
     return (
       <div data-web-panel="source" style={{ padding: "var(--space-3, 12px)", display: "flex", flexDirection: "column" }}>
         <div style={{ ...kicker, marginTop: 0 }}>HTML</div>
-        <textarea
-          data-web-html
-          spellCheck={false}
-          value={source.html}
-          onChange={(e) => commit({ ...source, html: e.target.value })}
-          style={codeArea}
-        />
+        <div data-web-html>
+          <CodeEditor
+            language="html"
+            value={source.html}
+            onChange={(html) => commit({ ...source, html })}
+            diagnostics={htmlGutter}
+            minHeight={96}
+            ariaLabel="Web frame HTML"
+          />
+        </div>
         <div style={kicker}>CSS</div>
-        <textarea
-          data-web-css
-          spellCheck={false}
-          value={source.css}
-          onChange={(e) => commit({ ...source, css: e.target.value })}
-          style={{ ...codeArea, minHeight: 72 }}
-        />
+        <div data-web-css>
+          <CodeEditor
+            language="css"
+            value={source.css}
+            onChange={(css) => commit({ ...source, css })}
+            minHeight={72}
+            ariaLabel="Web frame CSS"
+          />
+        </div>
         <div style={kicker}>Options</div>
         <label style={{ display: "flex", alignItems: "center", gap: "var(--space-2, 8px)", font: "12px var(--font-sans, sans-serif)", color: "var(--pg-fg)" }}>
           Media

@@ -55,16 +55,51 @@ Format: `W-NN · date · area · status`.
   one. Needs the objectType registration API (paper §9.1.2) + the
   edit-context registry (shared with plugin-draw B-02).
 
-- **W-04 · 2026-06-06 · panel widgets · OPEN** — no `codeEditor` host
-  widget (§9.1.1): syntax highlighting, line numbers, gutter
-  diagnostics. v0 ships token-styled `<textarea>`s — honest but
-  spartan. The widget belongs in the host's catalog (shared with
-  every scripting-adjacent plugin), not in this bundle.
+- **W-04 · 2026-06-06 · panel widgets · RESOLVED (2026-06-07)** — the
+  `codeEditor` host widget shipped (§9.1.1). The contract is additive
+  + type-only: `@paged-media/plugin-api` gained `CodeEditorProps`,
+  `CodeEditorDiagnostic`, `CodeEditorLanguage`, and a `WidgetSurface`
+  (`{ CodeEditor }`) on `host.widgets`. The host OWNS the widget (one
+  editor across every scripting-adjacent plugin, no per-bundle dep):
+  the editor injects a real `CodeEditor` (line numbers, light HTML/CSS
+  highlighting via a zero-dep tokenizer — the editor tree carries no
+  CodeMirror/Prism/Shiki and the brand line forbids adding one for two
+  textareas — a diagnostics gutter with severity dots + inline
+  squiggles, value/onChange, read-only mode) from `@paged-media/ui`
+  into `loadBundle({ widgets })`. When the host injects no catalog,
+  `host.widgets.CodeEditor` is a plain-textarea FALLBACK (same props
+  contract — honest, not fake) and `supports("widgets.codeEditor@1")`
+  answers false. The source panel's HTML + CSS lanes now use the widget
+  (HTML lane gets the linter's per-line markers); the sandboxed preview
+  is unchanged. Residuals: CSS-side diagnostics await a CSS linter
+  (the engine-backed Blitz compatibility table, W-01); the highlighter
+  is a tokenizer, not a parser (deliberately — it never crashes on bad
+  input). Tests: plugin-sdk vitest (fallback default + injected-catalog
+  feature flag); editor Playwright AC-WEB-4 (line numbers + highlight
+  spans + gutter error mark + squiggle).
 
-- **W-05 · 2026-06-06 · diagnostics UI · PARTIAL** — `host.diagnostics`
-  exists (set/clear/onDidChange + console mirror) and the bundle
-  feeds it, but no host problems-panel consumes the store yet, and
-  there is no per-line gutter binding (depends on W-04).
+- **W-05 · 2026-06-06 · diagnostics UI · RESOLVED (2026-06-07)** — a
+  host PROBLEMS PANEL now consumes `host.diagnostics`. The SDK gained
+  an optional `diagnosticsSink` (`publish/clear` keyed by
+  `(bundleId, key)`, `supports("diagnostics.publish@1")`): every
+  `host.diagnostics.set/clear` fans out to it (the per-bundle store +
+  `onDidChange` + console mirror are unchanged — this is a fan-out, not
+  a replacement). The editor injects a sink backed by `problems-store`
+  and registers a `paged.problems` panel that lists every loaded
+  bundle's diagnostics — (severity, source, message, location) — so
+  paged.web's linter findings surface OUTSIDE the plugin's own inline
+  list. Click-to-focus reopens the OWNING bundle's panel (resolved from
+  the panel registry by namespace). The bundle's linter publishes
+  through the door on source change (debounced commit). Per-line gutter
+  binding landed with W-04 (the source panel's CodeEditor gutter).
+  Residual (follow-up note): document-location focus — the `Diagnostic`
+  location type carries `source`/`line`, not a document/frame ref, so
+  there is nothing to navigate the canvas to yet; jump-to-frame waits
+  on a richer diagnostic location type. Tests: plugin-sdk vitest
+  (publish/clear/list round-trip + feature flag); plugin-web vitest
+  (linter → host.diagnostics → sink wiring, incl. the §6.1 policy
+  error + its line); editor Playwright AC-WEB-5 (panel shows the
+  published diagnostic; click focuses the source panel).
 
 - **W-06 · 2026-06-06 · assets · OPEN** — no capability-gated asset
   store (§9.1.5): `@font-face` and image embedding (fetch at edit
