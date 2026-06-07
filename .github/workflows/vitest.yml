@@ -1,0 +1,57 @@
+# CI evidence for the state matrix (plugin.web stage): run the
+# web-model + web-bundle unit/conformance tests and publish normalized
+# results via the shared publish-results action (suites.yaml maps
+# (plugin-web, vitest) → plugin.web; test-map.yaml bridges junit).
+#
+# Layout note: the link: chain (web-bundle → ../../../plugin-sdk/
+# packages/*) requires plugin-web/ and sdk/ as SIBLINGS, so both
+# checkouts are nested (same shape as plugin-draw's vitest.yml). The
+# sdk checkout needs a token that can read the private repo —
+# STATE_DISPATCH_TOKEN (fall back to github.token for same-org runs).
+name: vitest
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vitest-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vitest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: plugin-web
+      - uses: actions/checkout@v4
+        with:
+          repository: paged-media/sdk
+          path: sdk
+          token: ${{ secrets.STATE_DISPATCH_TOKEN || github.token }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: install (sdk sibling satisfies the link chain)
+        run: pnpm install --frozen-lockfile --dir plugin-web
+      - name: vitest (junit per package; red results still publish)
+        run: |
+          pnpm -r --no-bail --dir plugin-web exec \
+            vitest run --reporter=junit --outputFile=junit.xml || true
+          cat plugin-web/packages/*/junit.xml > junit-all.xml
+          [ -s junit-all.xml ] # at least one package must have produced results
+      - uses: paged-media/state/actions/publish-results@main
+        with:
+          source: plugin-web
+          suite: vitest
+          format: nextest-junit
+          path: junit-all.xml
+          map: "true"
+          dispatch-token: ${{ secrets.STATE_DISPATCH_TOKEN }}
