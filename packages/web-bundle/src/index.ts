@@ -12,3 +12,10 @@ export const webBundle = defineBundle({
 });
 
 export { activate, PANEL_ID };
+// W3.2 — the webFrame object type + edit context (closes W-03),
+// exported for the conformance + activation specs.
+export {
+  webFrameObjectType,
+  makeWebFrameEditContext,
+  WEB_FRAME_TYPE,
+} from "./edit-context";

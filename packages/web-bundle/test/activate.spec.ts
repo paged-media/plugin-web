@@ -28,14 +28,33 @@ function fakeRegistry() {
   };
 }
 
+// W3.2 — edit-context / object-type registries key off `type`.
+function fakeTypeRegistry() {
+  const byType = new Map<string, { type: string }>();
+  return {
+    types: () => Array.from(byType.keys()),
+    get: (t: string) => byType.get(t),
+    register(c: { type: string }) {
+      byType.set(c.type, c);
+      return {
+        dispose() {
+          byType.delete(c.type);
+        },
+      };
+    },
+  };
+}
+
 function makeFakeEditor() {
   const panels = fakeRegistry();
   const commands = fakeRegistry();
+  const editContexts = fakeTypeRegistry();
+  const objectTypes = fakeTypeRegistry();
   let selection: unknown[] = [];
   const created = { kind: "rectangle", id: "uWEB1" };
   const mutations: unknown[] = [];
   const editor = {
-    registries: { panels, commands },
+    registries: { panels, commands, editContexts, objectTypes },
     selection: {
       elementSelection: selection,
       setElementSelection: (ids: unknown[]) => {
@@ -64,6 +83,8 @@ function makeFakeEditor() {
     editor: editor as unknown as PagedEditor,
     panels,
     commands,
+    editContexts,
+    objectTypes,
     created,
     mutations,
   };
@@ -133,6 +154,59 @@ describe("webBundle.activate", () => {
     expect(openPanel).toHaveBeenCalledWith("media.paged.web.panel.source");
   });
 
+  it("registers the W3.2 webFrame object type + source edit context (W-03 RESOLVED)", () => {
+    const fake = makeFakeEditor();
+    loadBundle(() => fake.editor, webBundle, {
+      console: silent,
+      storage: mapBacking(),
+      shell: { openPanel() {}, closePanel() {} },
+    });
+    // The object type routes a double-click to the source edit context.
+    expect(fake.objectTypes.types()).toEqual(["webFrame"]);
+    expect(fake.editContexts.types()).toEqual(["webFrame"]);
+    const ot = fake.objectTypes.get("webFrame") as unknown as {
+      matches: (c: unknown) => boolean;
+      editContextType?: string;
+      bakedFallback: string;
+      metadataKey?: string;
+    };
+    expect(ot.editContextType).toBe("webFrame");
+    expect(ot.bakedFallback).toBe("rectangle");
+    expect(ot.metadataKey).toBe("x-paged:media.paged.web");
+    // Metadata-claimed: a rectangle with a loadable source envelope IS a
+    // webFrame; a bare rectangle (no metadata) is NOT.
+    const withSource = {
+      id: { kind: "rectangle", id: "uWEB1" },
+      kind: "rectangle",
+      groupChain: [],
+      metadata: envelopeFor(DEFAULT_SOURCE),
+    };
+    const bare = { ...withSource, metadata: null };
+    expect(ot.matches(withSource)).toBe(true);
+    expect(ot.matches(bare)).toBe(false);
+    // The edit context raises the source panel on enter.
+    const ec = fake.editContexts.get("webFrame") as unknown as {
+      panelIds: string[];
+      onEnter?: (ctx: { type: string; id: unknown }) => void;
+    };
+    expect(ec.panelIds).toEqual(["media.paged.web.panel.source"]);
+  });
+
+  it("the webFrame edit context onEnter raises the source panel", () => {
+    const fake = makeFakeEditor();
+    const openPanel = vi.fn();
+    loadBundle(() => fake.editor, webBundle, {
+      console: silent,
+      storage: mapBacking(),
+      shell: { openPanel, closePanel() {} },
+    });
+    const ec = fake.editContexts.get("webFrame") as unknown as {
+      onEnter?: (ctx: { type: string; id: unknown }) => void;
+    };
+    ec.onEnter?.({ type: "webFrame", id: { kind: "rectangle", id: "uWEB1" } });
+    expect(openPanel).toHaveBeenCalledWith("media.paged.web.panel.source");
+  });
+
   it("dispose leaves the shell exactly as found (honesty smoke test)", () => {
     const fake = makeFakeEditor();
     const loaded = loadBundle(() => fake.editor, webBundle, {
@@ -143,5 +217,7 @@ describe("webBundle.activate", () => {
     loaded.dispose();
     expect(fake.panels.ids()).toHaveLength(0);
     expect(fake.commands.ids()).toHaveLength(0);
+    expect(fake.objectTypes.types()).toHaveLength(0);
+    expect(fake.editContexts.types()).toHaveLength(0);
   });
 });

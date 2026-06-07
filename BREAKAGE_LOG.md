@@ -106,12 +106,52 @@ Format: `W-NN · date · area · status`.
   B2 baking pipeline + host bake loop (`contribute.objectType`
   runtime-reserved) — that's W-03's territory.
 
-- **W-03 · 2026-06-06 · contributions · OPEN** — `contribute.objectType`
-  is reserved (declared in the manifest, throws at runtime). A
-  webFrame is currently an ordinary rectangle with attached source;
-  hit-testing, selection chrome, and double-click entry treat it as
-  one. Needs the objectType registration API (paper §9.1.2) + the
-  edit-context registry (shared with plugin-draw B-02).
+- **W-03 · 2026-06-06 · contributions · RESOLVED (2026-06-07, W3.2)** —
+  `contribute.objectType` shipped (paper §9.1.2), un-reserving the door
+  (no more `PluginApiNotImplemented`). A webFrame is no longer treated as
+  a plain rectangle on double-click. MECHANISM:
+  · **plugin-api / plugin-sdk:** `contribute.objectType` is a real door.
+    A bundle registers an `ObjectTypeContribution`
+    (`{ type, matches, editContextType?, bakedFallback }`). Capability-
+    gated on the OBJECT array `contributes.objectTypes[]` (the `type` must
+    be declared). The matcher reads `candidate.metadata` — THIS plugin's
+    own `x-paged:<id>` envelope, pre-resolved by the host from the
+    host-stamped `metadataKey` (a bundle never sees a foreign namespace).
+    The headless harness records registrations
+    (`objectTypesContributed()`).
+  · **editor shell:** the `ObjectTypeRegistry`
+    (`registries/edit-context.ts`) + the `resolveDoubleClick` router. On
+    a double-click the router checks OBJECT TYPES FIRST (W-03): if any
+    `matches` the candidate AND names an `editContextType`, the shell
+    enters THAT edit context — NOT group descent. Edit contexts by KIND
+    (plugin-draw B-02) are the fallback. The canvas double-click entry
+    (`ViewportCanvas.onDoubleClick`) consults `useEditContextEntry`, which
+    resolves the hit element's per-namespace metadata once and runs the
+    router. The metadata read reuses the element-properties wire.
+  · **adoption (this repo):** `web-bundle/src/edit-context.ts` —
+    `webFrameObjectType` (matcher: `sourceFromEnvelope(metadata)` non-null
+    — "is a webFrame" matches EXACTLY "has a loadable source", reusing
+    web-model's validator so there is no second predicate to drift;
+    `editContextType: "webFrame"`, `bakedFallback: "rectangle"`) +
+    `makeWebFrameEditContext` (raises the source panel on `onEnter`).
+    Double-clicking a webFrame now OPENS source editing instead of
+    descending into a group — the §9.1.2 model made real.
+  Proof: `web-bundle` `test/activate.spec.ts` (the object type + edit
+  context register; the matcher claims a source-bearing rectangle and
+  rejects a bare one; onEnter raises the panel; stamped key asserted) +
+  plugin-sdk `test/edit-context.spec.ts` (door, gate, recording);
+  editor Playwright `tests/e2e/edit-context.spec.ts` AC-EDITCTX-2 (insert
+  a webFrame → close the panel → double-click it → the source panel is
+  re-raised + the breadcrumb shows "Web frame", on :5180, with BOTH
+  bundles loaded).
+  RESIDUALS (split to other lanes, NOT W3.2 blockers): (1) the BAKE LOOP
+  stays reserved — `ObjectTypeBaker`/`BakeContext` ship as contract types
+  (W-02), but the host bake loop (derive the baked IDML children on
+  metadata change / before export) is the baking lane, not this. (2)
+  selection CHROME for a webFrame is still the rectangle's default chrome
+  — a custom object-type chrome is a future affordance. (3) on-canvas web
+  RENDERING remains the W-01 Blitz spike; the edit context opens the
+  SOURCE panel, which is the honest v0 slice.
 
 - **W-04 · 2026-06-06 · panel widgets · RESOLVED (2026-06-07)** — the
   `codeEditor` host widget shipped (§9.1.1). The contract is additive
