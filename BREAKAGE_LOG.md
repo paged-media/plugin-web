@@ -106,9 +106,33 @@ Format: `W-NN · date · area · status`.
   time, render offline forever) have no API. Gates the
   fonts/URL-import milestone (W3 in the concept roadmap).
 
-- **W-07 · 2026-06-06 · wasm lane · OPEN** — no packaging story for a
-  plugin-shipped WASM module (§9.1.3). Becomes concrete with the W0
-  spike; the manifest will need a `wasm` capability + budget rules.
+- **W-07 · 2026-06-06 · wasm lane · RESOLVED-PARTIAL (2026-06-07,
+  plugin-sdk W3.8)** — packaging story for a plugin-shipped WASM module
+  (§9.1.3) now has a contract surface. A bundle declares its wasm under
+  `capabilities.wasm: [{ name, path, purpose, maxBytes? }]` —
+  declared-only, `purpose` a closed vocab (layout|codec|compute),
+  bundle-relative path with traversal rejected. plugin-cli `validate`
+  enforces the schema + budgets; the host-side door
+  `loadBundleWasm(bundle, name, { assetSource, grant, … })` in
+  `@paged-media/plugin-sdk` enforces declared-only access, a host GRANT
+  (wasm is opt-in — no grant = refuse), per-artifact (8 MiB, tightened by
+  manifest maxBytes) + total (16 MiB) + load-time (3 s) + memory-growth
+  (256 MiB, non-shared; SAB/threads OFF) budgets, and instantiates with
+  NO ambient authority — the module gets only the imports the caller
+  passes, no engine/DOM/network handle; it is strictly downstream of the
+  bundle's already-gated JS. Non-goals: no native plugins, no wasm-side
+  direct engine access (v1). Design record:
+  plugin-sdk/docs/wasm-packaging.md + DESIGN.md §10. Tests: plugin-sdk
+  vitest — loader (declared-only / grant / budget / no-ambient-authority,
+  on a hand-assembled wasm fixture) + plugin-cli validate (unknown
+  purpose / traversal / over-budget / unknown key).
+  RESIDUAL: the editor-side serving wiring is open — the editor must
+  provide the `assetSource` rooted at each bundle's asset base, decide +
+  surface the grant (auto-grant first-party / prompt third-party), and
+  use `instantiateStreaming` over the bundle URL in the browser path.
+  Plus: packager artifact checksums, real-engine (W0 Blitz spike) budget
+  re-calibration, and the optional `wasm.load@1` supports() probe.
+  Becomes fully RESOLVED when the editor serving lane lands.
 
 - **W-08 · 2026-06-06 · transforms · OPEN** — Boa generation
   transforms (§6.2: template + data → HTML, pure, pinned) need a host
