@@ -34,8 +34,10 @@ import {
   asFrameTarget,
   composeSrcdoc,
   DEFAULT_SOURCE,
+  diagnoseFonts,
   diagnoseHtml,
   envelopeFor,
+  fontParity,
   sourceFromEnvelope,
   sourceKeyFor,
   type WebDiagnostic,
@@ -43,6 +45,18 @@ import {
 } from "@paged-media/web-model";
 
 const SAVE_DEBOUNCE_MS = 300;
+
+/** The `fonts` collection's row shape we read — family NAMES only.
+ *  Structural twin of the wire `FontSummary` (not re-exported from
+ *  plugin-api), supplied as the `collection<T>` type parameter so the
+ *  bundle stays decoupled from the vendored wire types. The wire
+ *  shape carries no face BYTES (and the only bytes-bearing message is
+ *  the engine's host→worker `registerFont`), so the panel can read
+ *  family parity but cannot serve `@font-face` sources — that is the
+ *  W-06 asset-store dependency. */
+interface FontSummaryLike {
+  family: string;
+}
 
 // ---------------------------------------------------------------- styles
 // Token-layer styling per the brand system: sentence case labels,
@@ -63,6 +77,41 @@ const DOT: Record<WebDiagnostic["severity"], string> = {
   info: "var(--status-info)",
 };
 
+// ----------------------------------------------------------- badge state
+
+/** Pure derivation of the preview's font-substitution badge — split
+ *  out so it's unit-testable without rendering. The iframe always
+ *  renders with browser fonts (no face bytes cross a door — W-06), so
+ *  the badge SHOWS whenever the source uses any (non-generic) family;
+ *  its severity escalates to "review" when families are also absent
+ *  from the document (those substitute on-canvas too, not just here). */
+export interface PreviewFontBadge {
+  /** Whether to render the badge at all. */
+  show: boolean;
+  /** Families used by the source but NOT registered by the document. */
+  unregistered: string[];
+  /** Families the document registers and the source uses (honest in
+   *  the document, still substituted in THIS preview). */
+  matched: string[];
+  /** "review" when any used family is missing from the document,
+   *  "info" when every used family resolves (preview-only caveat). */
+  severity: "review" | "info";
+}
+
+export function previewFontBadge(
+  css: string,
+  registered: readonly string[],
+): PreviewFontBadge {
+  const { matched, unregistered } = fontParity(css, registered);
+  const show = matched.length + unregistered.length > 0;
+  return {
+    show,
+    matched,
+    unregistered,
+    severity: unregistered.length > 0 ? "review" : "info",
+  };
+}
+
 // ----------------------------------------------------------------- panel
 
 export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
@@ -71,6 +120,11 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
       host.selection.get(),
     );
     const [source, setSource] = useState<WebFrameSource | null>(null);
+    // The document's registered font FAMILIES (the `fonts` collection,
+    // names only — no face bytes cross the door; W-06). Fed into
+    // web-model for parity checks + the substitution badge. Loaded
+    // once on mount and refreshed on document change.
+    const [fontFamilies, setFontFamilies] = useState<string[]>([]);
     const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const target =
@@ -86,6 +140,35 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
       setSelection(host.selection.get());
       const sub = host.selection.onDidChange((ids) => setSelection(ids));
       return () => sub.dispose();
+    }, []);
+    // Document font registry → the parity check + badge. The `fonts`
+    // collection crosses family NAMES (FontSummary; no bytes). Refresh
+    // on any document change: registering/removing a document font
+    // changes which families resolve. Failures read as "no registry"
+    // (empty) — never a crash; parity then emits nothing (absence of a
+    // registry is not evidence a family is missing).
+    useEffect(() => {
+      let stale = false;
+      const refresh = (): void => {
+        void host.document
+          .collection<FontSummaryLike>("fonts")
+          .then((rows) => {
+            if (stale) return;
+            const fams = rows
+              .map((r) => (typeof r.family === "string" ? r.family : ""))
+              .filter((f) => f.length > 0);
+            setFontFamilies(fams);
+          })
+          .catch(() => {
+            if (!stale) setFontFamilies([]);
+          });
+      };
+      refresh();
+      const sub = host.document.onDidChange(() => refresh());
+      return () => {
+        stale = true;
+        sub.dispose();
+      };
     }, []);
     // The source lives as DOCUMENT METADATA (protocol v33). Reads are
     // async; a stale flag guards out-of-order replies on fast
@@ -137,6 +220,23 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
       return () => sub.dispose();
     }, [key, loadFor]);
 
+    // The full diagnostic set: HTML policy/balance + CSS↔document font
+    // parity (W1). Both lanes share the same WebDiagnostic shape so the
+    // panel list, the Problems panel, and the gutter render them
+    // uniformly. Pure web-model calls — registry passed as data.
+    const diagnoseAll = useCallback(
+      (src: WebFrameSource, families: string[]): WebDiagnostic[] => [
+        ...diagnoseHtml(src.html),
+        ...diagnoseFonts(src.css, families),
+      ],
+      [],
+    );
+    // The debounced save reads the LATEST registry through a ref (the
+    // commit closure is keyed on `key`, not `fontFamilies`, so it must
+    // not capture a stale list).
+    const familiesRef = useRef<string[]>(fontFamilies);
+    familiesRef.current = fontFamilies;
+
     // Edits → debounced persist (one undoable metadata mutation per
     // pause) + diagnostics.
     const commit = useCallback(
@@ -147,10 +247,10 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
         if (saveTimer.current) clearTimeout(saveTimer.current);
         saveTimer.current = setTimeout(() => {
           void host.document.setMetadata(id, envelopeFor(next));
-          host.diagnostics.set(key, diagnoseHtml(next.html));
+          host.diagnostics.set(key, diagnoseAll(next, familiesRef.current));
         }, SAVE_DEBOUNCE_MS);
       },
-      [key],
+      [key, diagnoseAll],
     );
     useEffect(
       () => () => {
@@ -158,10 +258,27 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
       },
       [],
     );
+    // Re-publish to the host problems lane when the registry changes
+    // under a stable source (a document font added/removed flips parity
+    // without a source edit). Mirrors what `commit` publishes.
+    useEffect(() => {
+      if (!key || !source) return;
+      host.diagnostics.set(key, diagnoseAll(source, fontFamilies));
+    }, [fontFamilies, key, source, diagnoseAll]);
 
     const diagnostics = useMemo(
-      () => (source ? diagnoseHtml(source.html) : []),
-      [source],
+      () => (source ? diagnoseAll(source, fontFamilies) : []),
+      [source, fontFamilies, diagnoseAll],
+    );
+    // Substitution badge state: the preview iframe renders with BROWSER
+    // fonts (no `@font-face` bytes cross any door — W-06), so whenever
+    // the source uses ANY family the preview is showing a substitute.
+    // The badge says so honestly; `unregistered` are also missing from
+    // the engine document (worse — text substitutes on-canvas too),
+    // `matched` are honest in the document but still substituted HERE.
+    const badge = useMemo(
+      () => (source ? previewFontBadge(source.css, fontFamilies) : null),
+      [source, fontFamilies],
     );
     // Per-line markers for the HTML editor's gutter (the linter only
     // diagnoses HTML today; line-less policy notes don't carry a
@@ -274,6 +391,53 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
           </select>
         </label>
         <div style={kicker}>Preview</div>
+        {/* Honesty badge (W1): the preview iframe renders with BROWSER
+            fonts. No `@font-face` bytes cross any existing door (the
+            `fonts` collection is name-only; serving face bytes is the
+            W-06 asset store), so whenever the source uses a font the
+            preview is SUBSTITUTING it. Badge it rather than let the
+            source lane lie about typography. */}
+        {badge?.show && (
+          <div
+            data-web-font-badge
+            data-badge-severity={badge.severity}
+            role="note"
+            style={{
+              display: "flex",
+              alignItems: "baseline",
+              gap: "var(--space-2, 8px)",
+              margin: "0 0 var(--space-1, 4px)",
+              padding: "4px 8px",
+              font: "10px/1.5 var(--font-sans, sans-serif)",
+              color: "var(--pg-fg)",
+              background: "var(--pg-subtle, var(--pg-bg))",
+              border: "1px solid var(--pg-border)",
+              borderRadius: "var(--radius-sm, 4px)",
+            }}
+          >
+            <span
+              aria-hidden
+              style={{
+                width: 7,
+                height: 7,
+                flex: "none",
+                borderRadius: "var(--radius-full, 999px)",
+                background:
+                  badge.severity === "review"
+                    ? "var(--status-review)"
+                    : "var(--status-info)",
+                transform: "translateY(1px)",
+              }}
+            />
+            <span>
+              Fonts substituted in preview — browser defaults, not the
+              document faces.
+              {badge.unregistered.length > 0
+                ? ` ${badge.unregistered.length} not in document: ${badge.unregistered.join(", ")}.`
+                : ""}
+            </span>
+          </div>
+        )}
         {/* sandbox="" — no scripts, no same-origin: §6.1, page JS never
             runs. Paper-white ground: the preview shows CONTENT, and
             content colours stay literal by design. */}

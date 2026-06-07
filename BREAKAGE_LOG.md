@@ -29,6 +29,64 @@ Format: `W-NN · date · area · status`.
   canvas, font registration parity, and the W-02 metadata/baking
   pipeline. The v0 panel preview (O1 stopgap) stays until then.
 
+  - **W1 · 2026-06-07 · FONT REGISTRATION PARITY landed (the W-01
+    follow-up; on-canvas engine rendering STILL planned-with-rationale,
+    not implemented).** The source lane stopped lying about typography
+    *as far as the existing host contract allows*. Mechanism decision —
+    what crosses which door, and the bytes verdict:
+    - **Door used:** `host.document.collection("fonts")` → `FontSummary[]`
+      (`{ family, referenceCount, isMissing? }`, wire.d.ts). Document
+      font **family NAMES cross**; **face BYTES do NOT** — `FontSummary`
+      deliberately omits bytes (the parse layer carries none;
+      `Fonts/Font_*.xml` is name-only), and the only bytes-bearing
+      message, `registerFont`, is `MainToWorkerKind` (host→engine
+      ingestion), never a plugin-facing read door. There is no
+      `host.assets`/byte accessor. So v1 is the **match/report half**.
+    - **web-model (pure, zero-dep):** new `fonts.ts` — `familiesUsed`
+      scans `font-family` longhand AND the `font:` shorthand out of the
+      source CSS (fallback stacks, quoted/bare/multi-word families,
+      generics excluded, comment-stripped, source-ordered, dedup'd;
+      never throws on garbage); `fontParity` splits used families into
+      `matched`/`unregistered` against the document registry (passed in
+      as data — web-model stays host-agnostic); `diagnoseFonts` emits the
+      W1 vocabulary.
+    - **Lint/diagnostic vocabulary (both `source: "css"`):**
+      `"font … is not in the document — text will substitute"` (warning,
+      a used family absent from the registry — substitutes on-canvas
+      too) and `"document font … is not previewable here"` (info, a
+      registered family the preview can't load bytes for). Empty registry
+      → emits nothing (absence of a registry is not evidence a family is
+      missing).
+    - **web-bundle (panel wiring):** the panel fetches the `fonts`
+      collection on mount + on document change, feeds it to web-model,
+      merges font diagnostics with the HTML linter, and publishes the
+      combined set through `host.diagnostics` (W-05 problems lane, keyed
+      by the source key) — including a re-publish when the registry flips
+      under a stable source.
+    - **HONESTY — substitution badge:** because no `@font-face` bytes are
+      obtainable, the preview iframe renders with BROWSER fonts whenever
+      the source uses any family. The panel shows a visible
+      `data-web-font-badge` ("Fonts substituted in preview — browser
+      defaults, not the document faces", listing unregistered families).
+      Severity: `info` when every used family resolves in the document
+      (preview-only caveat), `review` when a used family is also missing
+      from the document. Badge logic is the pure `previewFontBadge`
+      helper (unit-tested). The iframe keeps `sandbox=""` — page JS never
+      executes (§6.1, unchanged).
+    - **RESIDUAL — the bytes-serving gap is W-06.** Injecting real
+      `@font-face` (so the preview uses the document's actual faces) needs
+      a capability-gated door that serves font face BYTES to the bundle.
+      None exists; **W-06 (asset store) is the dependency.** When W-06
+      lands, the panel composes `@font-face` from served bytes and the
+      badge flips to "matched fonts shown" for resolvable families. Until
+      then the badge is the honest seam.
+    - **Tests (green):** web-model `fonts.spec.ts` (28) — extraction
+      across longhand/shorthand/stacks/quotes/dedup/order, parity
+      matching, the vocabulary, and never-crash-on-garbage; web-bundle
+      `fonts.spec.ts` (7) — the `fonts` door crosses names-not-bytes,
+      font diagnostics fan out to the problems sink, and the badge-state
+      logic.
+
 - **W-02 · 2026-06-06 · document model · RESOLVED (2026-06-07)**
   — the engine's plugin-metadata carrier shipped (core protocol v33,
   facility design §2-3): `Properties/Label` `KeyValuePair`s round-trip
@@ -101,10 +159,17 @@ Format: `W-NN · date · area · status`.
   error + its line); editor Playwright AC-WEB-5 (panel shows the
   published diagnostic; click focuses the source panel).
 
-- **W-06 · 2026-06-06 · assets · OPEN** — no capability-gated asset
-  store (§9.1.5): `@font-face` and image embedding (fetch at edit
-  time, render offline forever) have no API. Gates the
-  fonts/URL-import milestone (W3 in the concept roadmap).
+- **W-06 · 2026-06-06 · assets · OPEN (now W1's bytes-serving blocker,
+  2026-06-07)** — no capability-gated asset store (§9.1.5):
+  `@font-face` and image embedding (fetch at edit time, render offline
+  forever) have no API. Gates the fonts/URL-import milestone (W3 in the
+  concept roadmap). **W1 confirmed the precise gap:** the `fonts`
+  collection door crosses font family NAMES but no door serves font
+  face BYTES (the wire `registerFont` is host→worker only), so W1's
+  preview substitutes-and-badges rather than injecting real
+  `@font-face`. Closing W-06 (a byte-serving door, capability-gated)
+  lets the W1 preview load the document's actual faces and flip the
+  substitution badge off for resolvable families.
 
 - **W-07 · 2026-06-06 · wasm lane · RESOLVED-PARTIAL (2026-06-07,
   plugin-sdk W3.8)** — packaging story for a plugin-shipped WASM module

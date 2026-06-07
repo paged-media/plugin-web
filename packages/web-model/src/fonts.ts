@@ -1,0 +1,253 @@
+// Font parity — the W1 slice (BREAKAGE_LOG W-01 follow-up). The
+// preview iframe renders with BROWSER DEFAULT fonts while the engine
+// document has REGISTERED document fonts; this module is the pure
+// half that lets the panel stop the source lane from lying about
+// typography. It does two host-free things:
+//
+//   1. `familiesUsed` — scan `font-family` usage out of the source
+//      CSS (longhand + the `font:` shorthand), returning the ordered
+//      family NAMES each declaration asks for (the fallback stack).
+//   2. `diagnoseFonts` — given those used families and the families
+//      the DOCUMENT registers (passed in as plain data — web-model
+//      stays host-agnostic; the panel feeds the collections-door
+//      result), emit parity diagnostics.
+//
+// The bytes question is settled by the host contract, not here: the
+// `fonts` collection door crosses family NAMES only (wire FontSummary
+// has no face bytes; the only bytes-carrying message is the engine's
+// host→worker `registerFont`). So this is the MATCH/REPORT half; the
+// preview substitutes and BADGES, and serving real `@font-face` bytes
+// is the W-06 asset-store dependency. The scanner is a scanner, not a
+// parser — it must never crash on garbage CSS.
+
+import type { WebDiagnostic } from "./diagnose";
+
+/** Generic CSS font families — never "missing from the document":
+ *  they map to the browser's own families, not document faces. */
+const GENERIC = new Set([
+  "serif", "sans-serif", "monospace", "cursive", "fantasy",
+  "system-ui", "ui-serif", "ui-sans-serif", "ui-monospace",
+  "ui-rounded", "math", "emoji", "fangsong", "inherit", "initial",
+  "unset", "revert", "revert-layer", "default",
+]);
+
+/** CSS-wide / keyword tokens a `font:` shorthand may carry that are
+ *  NOT family names — filtered so the shorthand parser doesn't read
+ *  `bold`/`italic`/`12px` as a typeface. Deliberately small: the
+ *  scanner errs toward treating an unknown bare word as a family
+ *  (the lint is a hint, and an over-report reads as "is this in the
+ *  document?", never a crash). */
+const SHORTHAND_NON_FAMILY = new Set([
+  // <font-style>
+  "normal", "italic", "oblique",
+  // <font-variant> (the common ones)
+  "small-caps",
+  // <font-weight>
+  "bold", "bolder", "lighter",
+  "100", "200", "300", "400", "500", "600", "700", "800", "900",
+  // <font-stretch>
+  "ultra-condensed", "extra-condensed", "condensed", "semi-condensed",
+  "semi-expanded", "expanded", "extra-expanded", "ultra-expanded",
+  // system font keywords
+  "caption", "icon", "menu", "message-box", "small-caption", "status-bar",
+]);
+
+/** Strip CSS comments so a `font-family` inside `/* … *\/` doesn't
+ *  read as usage. Tolerant of an unterminated comment (garbage in →
+ *  best-effort out, never a throw). */
+function stripComments(css: string): string {
+  let out = "";
+  let i = 0;
+  while (i < css.length) {
+    if (css[i] === "/" && css[i + 1] === "*") {
+      const end = css.indexOf("*/", i + 2);
+      if (end === -1) break; // unterminated — drop the rest
+      i = end + 2;
+      continue;
+    }
+    out += css[i];
+    i += 1;
+  }
+  return out;
+}
+
+/** Split a comma-separated family list into trimmed names, unquoting
+ *  `"…"`/`'…'` and dropping empties. A bare (unquoted) family may be
+ *  multi-word per CSS — we keep it verbatim (whitespace-collapsed). */
+function splitFamilies(list: string): string[] {
+  return list
+    .split(",")
+    .map((raw) => {
+      const t = raw.trim();
+      if (
+        (t.startsWith('"') && t.endsWith('"')) ||
+        (t.startsWith("'") && t.endsWith("'"))
+      ) {
+        return t.slice(1, -1).trim();
+      }
+      return t.replace(/\s+/g, " ");
+    })
+    .filter((t) => t.length > 0);
+}
+
+/** From a `font:` shorthand VALUE, recover the family list. Per the
+ *  grammar the family list is the trailing run after `<font-size>`
+ *  (optionally `/<line-height>`). We don't parse the whole grammar;
+ *  we take the substring AFTER the last `/` if present, else after
+ *  the first size-looking token, and filter out the non-family
+ *  keywords. Anything we can't confidently classify falls through as
+ *  a candidate family — an over-report is a harmless "in document?"
+ *  hint, never a crash. */
+function familiesFromShorthand(value: string): string[] {
+  // Everything after a line-height slash is the family list; if no
+  // slash, drop the size/weight/style keyword run up to the last
+  // size-looking token.
+  let tail = value;
+  const slash = value.lastIndexOf("/");
+  if (slash !== -1) {
+    // `…/1.2 "Family", serif` → after the size token following `/`.
+    const afterSlash = value.slice(slash + 1).trim();
+    const sp = afterSlash.indexOf(" ");
+    tail = sp === -1 ? "" : afterSlash.slice(sp + 1);
+  } else {
+    // No line height: split tokens, find the last <size>-looking one
+    // (contains a digit), families are everything after it.
+    const head = value.split(",")[0].trim();
+    const tokens = head.split(/\s+/);
+    let lastSizeIdx = -1;
+    for (let k = 0; k < tokens.length; k++) {
+      if (/\d/.test(tokens[k])) lastSizeIdx = k;
+    }
+    const firstFamilyTokens =
+      lastSizeIdx === -1 ? tokens : tokens.slice(lastSizeIdx + 1);
+    tail =
+      firstFamilyTokens.join(" ") +
+      (value.includes(",") ? "," + value.slice(value.indexOf(",") + 1) : "");
+  }
+  return splitFamilies(tail).filter(
+    (f) => !SHORTHAND_NON_FAMILY.has(f.toLowerCase()),
+  );
+}
+
+// One positional scanner so source order is preserved across both
+// forms. `font-family:` (longhand) carries the family list directly;
+// the `font:` shorthand (a `font:` NOT followed by `-family`) needs
+// the shorthand recovery. A leading boundary keeps `font:` from
+// matching inside `font-family:` etc.
+const FONT_DECL =
+  /(?:^|[;{}\s])font(-family)?\s*:\s*([^;{}]*)/gi;
+
+/**
+ * The ordered set of font families the source CSS requests — from
+ * both `font-family:` longhand and the `font:` shorthand. Generic
+ * families (serif, monospace, …) are excluded: they resolve to the
+ * browser's own families, not document faces. The result preserves
+ * source order and dedups case-insensitively (keeping the first-seen
+ * casing). Never throws on malformed CSS.
+ */
+export function familiesUsed(css: string): string[] {
+  if (typeof css !== "string" || css.length === 0) return [];
+  const clean = stripComments(css);
+  const seen = new Map<string, string>(); // lowercased → first casing
+  const push = (fam: string): void => {
+    const key = fam.toLowerCase();
+    if (GENERIC.has(key)) return;
+    if (!seen.has(key)) seen.set(key, fam);
+  };
+
+  let m: RegExpExecArray | null;
+  FONT_DECL.lastIndex = 0;
+  while ((m = FONT_DECL.exec(clean)) !== null) {
+    const isLonghand = m[1] !== undefined;
+    const value = m[2] ?? "";
+    const fams = isLonghand
+      ? splitFamilies(value)
+      : familiesFromShorthand(value);
+    for (const fam of fams) push(fam);
+  }
+  return Array.from(seen.values());
+}
+
+/** Case-insensitive membership, tolerant of surrounding whitespace —
+ *  the document registry and the CSS may differ only in casing. */
+function registrySet(registered: readonly string[]): Set<string> {
+  const s = new Set<string>();
+  for (const r of registered) {
+    if (typeof r === "string") s.add(r.trim().toLowerCase());
+  }
+  return s;
+}
+
+export interface FontParity {
+  /** Families the source asks for that the document does NOT register
+   *  — text WILL substitute in the engine document (and in the
+   *  preview). The preview must badge this. */
+  unregistered: string[];
+  /** Families the document registers AND the source uses — resolvable
+   *  matches. The preview still can't inject their BYTES (W-06), so
+   *  they substitute in the iframe too, but they are honest in the
+   *  engine document. */
+  matched: string[];
+}
+
+/**
+ * Compare the families the source uses against the families the
+ * DOCUMENT registers (the `fonts` collection's family names, passed
+ * in as data). Pure: no host, no DOM. The `registered` list is the
+ * door's `FontSummary[].family` projection — web-model never reaches
+ * for it, the panel feeds it.
+ */
+export function fontParity(
+  css: string,
+  registered: readonly string[],
+): FontParity {
+  const reg = registrySet(registered);
+  const unregistered: string[] = [];
+  const matched: string[] = [];
+  for (const fam of familiesUsed(css)) {
+    if (reg.has(fam.toLowerCase())) matched.push(fam);
+    else unregistered.push(fam);
+  }
+  return { unregistered, matched };
+}
+
+/**
+ * Parity diagnostics for the source panel + the host problems lane.
+ * `source: "css"` (the families come from CSS). Two vocab entries:
+ *   · "font not in document"  (warning) — a used family the document
+ *     does not register; it will substitute.
+ *   · "document font not previewable" (info) — a used family the
+ *     document DOES register, but the preview can't load its bytes
+ *     (no asset-store door — W-06), so the iframe substitutes it. The
+ *     badge says so; this info makes the reason explicit per family.
+ *
+ * When the registry is empty (door not wired / no document fonts) we
+ * emit nothing rather than flag every family — absence of a registry
+ * is not evidence a family is missing.
+ */
+export function diagnoseFonts(
+  css: string,
+  registered: readonly string[],
+): WebDiagnostic[] {
+  const used = familiesUsed(css);
+  if (used.length === 0) return [];
+  const reg = registrySet(registered);
+  if (reg.size === 0) return [];
+  const out: WebDiagnostic[] = [];
+  for (const fam of used) {
+    if (reg.has(fam.toLowerCase())) {
+      out.push({
+        severity: "info",
+        message: `document font “${fam}” is not previewable here (the preview substitutes it — see badge)`,
+        source: "css",
+      });
+    } else {
+      out.push({
+        severity: "warning",
+        message: `font “${fam}” is not in the document — text will substitute`,
+        source: "css",
+      });
+    }
+  }
+  return out;
+}

@@ -20,3 +20,10 @@ export {
 } from "./source";
 
 export { diagnoseHtml, type WebDiagnostic } from "./diagnose";
+
+export {
+  diagnoseFonts,
+  familiesUsed,
+  fontParity,
+  type FontParity,
+} from "./fonts";

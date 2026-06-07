@@ -20,6 +20,14 @@ today is the honest slice API v0.2 carries:
   §6.1), `print`/`screen` media option, and a diagnostics list (policy
   errors like `<script>`, tag-balance warnings) that also feeds
   `host.diagnostics`.
+- **Font registration parity** (W1, BREAKAGE_LOG W-01 follow-up) — the panel
+  reads the document's registered font families (the `fonts` collection door —
+  family NAMES only; no face bytes cross any door, so serving real
+  `@font-face` is the W-06 dependency), checks them against the families the
+  source CSS uses, and surfaces parity diagnostics ("font not in document" /
+  "document font not previewable"). Because the preview can't load the document
+  faces, it renders with browser defaults and **visibly badges** the
+  substitution — the source lane stays honest about typography.
 - **Persistence** via plugin storage keyed by element id — the
   `x-paged-web:*` metadata SHAPE (§5), pending engine-side document metadata
   (BREAKAGE_LOG W-02; does not round-trip IDML yet, and the UI says so).
@@ -32,7 +40,7 @@ both reserved host-side.
 
 | Package | Contents |
 |---|---|
-| `@paged-media/web-model` | pure TS, zero deps: `WebFrameSource` model, `composeSrcdoc`, the `diagnoseHtml` linter (policy + tag balance) |
+| `@paged-media/web-model` | pure TS, zero deps: `WebFrameSource` model, `composeSrcdoc`, the `diagnoseHtml` linter (policy + tag balance), and the font-parity scanner (`familiesUsed` / `fontParity` / `diagnoseFonts`) |
 | `@paged-media/web-bundle` | manifest (id `media.paged.web`) + `activate(host)`: the panel, the insert command — built from host surfaces + React only |
 
 ## Setup
