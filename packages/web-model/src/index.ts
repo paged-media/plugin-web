@@ -22,8 +22,10 @@ export {
 export { diagnoseHtml, type WebDiagnostic } from "./diagnose";
 
 export {
+  composeFontFaces,
   diagnoseFonts,
   familiesUsed,
   fontParity,
   type FontParity,
+  type ResolvedFontFace,
 } from "./fonts";

@@ -32,6 +32,7 @@ import type {
 } from "@paged-media/plugin-api";
 import {
   asFrameTarget,
+  composeFontFaces,
   composeSrcdoc,
   DEFAULT_SOURCE,
   diagnoseFonts,
@@ -40,6 +41,7 @@ import {
   fontParity,
   sourceFromEnvelope,
   sourceKeyFor,
+  type ResolvedFontFace,
   type WebDiagnostic,
   type WebFrameSource,
 } from "@paged-media/web-model";
@@ -80,34 +82,64 @@ const DOT: Record<WebDiagnostic["severity"], string> = {
 // ----------------------------------------------------------- badge state
 
 /** Pure derivation of the preview's font-substitution badge — split
- *  out so it's unit-testable without rendering. The iframe always
- *  renders with browser fonts (no face bytes cross a door — W-06), so
- *  the badge SHOWS whenever the source uses any (non-generic) family;
- *  its severity escalates to "review" when families are also absent
- *  from the document (those substitute on-canvas too, not just here). */
+ *  out so it's unit-testable without rendering.
+ *
+ *  W-06 flip: when the host asset store serves a used family's BYTES,
+ *  the panel composes a real `@font-face` and the badge flips for that
+ *  family. `shown` carries the matched families whose bytes were
+ *  resolved and injected; those are removed from the substitution
+ *  story. The badge then has three states:
+ *    · hidden       — no (non-generic) family is used;
+ *    · "shown"      — every used+registered family was served (no
+ *                     substitution among document fonts; the badge
+ *                     CONFIRMS the document faces are shown — `state`
+ *                     `"shown"`, severity `info`);
+ *    · substituting — some used family is still substituted (a matched
+ *                     family the host had no bytes for, or an
+ *                     unregistered family that has no bytes by
+ *                     definition). */
 export interface PreviewFontBadge {
   /** Whether to render the badge at all. */
   show: boolean;
+  /** `"shown"` when every used+registered family was resolved to real
+   *  bytes (the W3.12 flip — "document fonts shown"); `"substituting"`
+   *  when at least one used family is still a browser substitute. */
+  state: "shown" | "substituting";
   /** Families used by the source but NOT registered by the document. */
   unregistered: string[];
-  /** Families the document registers and the source uses (honest in
-   *  the document, still substituted in THIS preview). */
+  /** Families the document registers and the source uses. */
   matched: string[];
+  /** The subset of `matched` whose BYTES the host asset store served
+   *  and the panel composed into a real `@font-face` (now SHOWN). */
+  shown: string[];
   /** "review" when any used family is missing from the document,
-   *  "info" when every used family resolves (preview-only caveat). */
+   *  "info" otherwise (a preview-only caveat, or the all-shown flip). */
   severity: "review" | "info";
 }
 
 export function previewFontBadge(
   css: string,
   registered: readonly string[],
+  shown: readonly string[] = [],
 ): PreviewFontBadge {
   const { matched, unregistered } = fontParity(css, registered);
-  const show = matched.length + unregistered.length > 0;
+  const usedCount = matched.length + unregistered.length;
+  const show = usedCount > 0;
+  // A matched family is "shown" only if its bytes were served.
+  const shownLower = new Set(shown.map((f) => f.trim().toLowerCase()));
+  const shownMatched = matched.filter((f) =>
+    shownLower.has(f.trim().toLowerCase()),
+  );
+  // Still substituting if any unregistered family is used, OR any
+  // matched family was NOT served bytes.
+  const stillSubstituting =
+    unregistered.length > 0 || shownMatched.length < matched.length;
   return {
     show,
+    state: stillSubstituting ? "substituting" : "shown",
     matched,
     unregistered,
+    shown: shownMatched,
     severity: unregistered.length > 0 ? "review" : "info",
   };
 }
@@ -125,6 +157,13 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
     // web-model for parity checks + the substitution badge. Loaded
     // once on mount and refreshed on document change.
     const [fontFamilies, setFontFamilies] = useState<string[]>([]);
+    // W-06 — document faces the host asset store served BYTES for and we
+    // composed into real `@font-face` rules (object URLs). The preview
+    // shows these as the DOCUMENT's actual faces; the badge flips for
+    // them. `shownFamilies` are the matched families now shown. Object
+    // URLs are revoked on change/unmount (see the resolution effect).
+    const [resolvedFaces, setResolvedFaces] = useState<ResolvedFontFace[]>([]);
+    const [shownFamilies, setShownFamilies] = useState<string[]>([]);
     const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const target =
@@ -170,6 +209,71 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
         sub.dispose();
       };
     }, []);
+    // W-06 — resolve the BYTES of the document faces the source uses,
+    // through the capability-gated asset store, and compose real
+    // `@font-face` (object URLs) so the sandboxed preview shows the
+    // DOCUMENT's actual faces. Only families that are BOTH used by the
+    // source AND registered by the document are worth asking for (an
+    // unregistered family has no document bytes by definition). When the
+    // host injects no asset source, every read is `null` and the badge
+    // stays in its honest substitution state (W1). The `@font-face` CSS
+    // lands in the srcdoc <style> — NO script, so `sandbox=""` is
+    // unchanged. Re-runs when the CSS's used families or the registry
+    // change; revokes prior object URLs on every change + unmount.
+    const cssForFonts = source?.css ?? "";
+    useEffect(() => {
+      let stale = false;
+      const created: string[] = [];
+      // Nothing to resolve without a real byte source — keep the honest
+      // substitution path (and avoid creating object URLs we'd revoke).
+      if (!host.supports("assets.fonts@1")) {
+        setResolvedFaces([]);
+        setShownFamilies([]);
+        return;
+      }
+      const { matched } = fontParity(cssForFonts, fontFamilies);
+      if (matched.length === 0) {
+        setResolvedFaces([]);
+        setShownFamilies([]);
+        return;
+      }
+      void (async () => {
+        const faces: ResolvedFontFace[] = [];
+        const shown: string[] = [];
+        for (const family of matched) {
+          try {
+            const asset = await host.assets.getFontFace(family);
+            if (!asset || asset.bytes.byteLength === 0) continue;
+            // Copy into a fresh non-shared ArrayBuffer so the Blob part
+            // is a plain `ArrayBuffer` (the served bytes may be backed by
+            // a SharedArrayBuffer; `Blob` rejects SAB-backed views).
+            const copy = new Uint8Array(asset.bytes.byteLength);
+            copy.set(asset.bytes);
+            const blob = new Blob([copy.buffer], {
+              type: "application/octet-stream",
+            });
+            const url = URL.createObjectURL(blob);
+            created.push(url);
+            faces.push({ family, src: url, format: asset.format });
+            shown.push(family);
+          } catch {
+            // A failing read is just "no bytes" — substitute + badge.
+          }
+        }
+        if (stale) {
+          // Effect re-ran/unmounted before we committed — drop the URLs.
+          for (const u of created) URL.revokeObjectURL(u);
+          return;
+        }
+        setResolvedFaces(faces);
+        setShownFamilies(shown);
+      })();
+      return () => {
+        stale = true;
+        for (const u of created) URL.revokeObjectURL(u);
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [cssForFonts, fontFamilies.join(" ")]);
     // The source lives as DOCUMENT METADATA (protocol v33). Reads are
     // async; a stale flag guards out-of-order replies on fast
     // selection changes. Pre-v33 documents migrate one-time from
@@ -223,19 +327,27 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
     // The full diagnostic set: HTML policy/balance + CSS↔document font
     // parity (W1). Both lanes share the same WebDiagnostic shape so the
     // panel list, the Problems panel, and the gutter render them
-    // uniformly. Pure web-model calls — registry passed as data.
+    // uniformly. Pure web-model calls — registry + shown faces passed as
+    // data. W-06: a family whose bytes were SHOWN drops its "not
+    // previewable" info (it IS previewable now).
     const diagnoseAll = useCallback(
-      (src: WebFrameSource, families: string[]): WebDiagnostic[] => [
+      (
+        src: WebFrameSource,
+        families: string[],
+        shown: string[],
+      ): WebDiagnostic[] => [
         ...diagnoseHtml(src.html),
-        ...diagnoseFonts(src.css, families),
+        ...diagnoseFonts(src.css, families, shown),
       ],
       [],
     );
-    // The debounced save reads the LATEST registry through a ref (the
-    // commit closure is keyed on `key`, not `fontFamilies`, so it must
-    // not capture a stale list).
+    // The debounced save reads the LATEST registry + shown faces through
+    // refs (the commit closure is keyed on `key`, not these lists, so it
+    // must not capture stale ones).
     const familiesRef = useRef<string[]>(fontFamilies);
     familiesRef.current = fontFamilies;
+    const shownRef = useRef<string[]>(shownFamilies);
+    shownRef.current = shownFamilies;
 
     // Edits → debounced persist (one undoable metadata mutation per
     // pause) + diagnostics.
@@ -247,7 +359,10 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
         if (saveTimer.current) clearTimeout(saveTimer.current);
         saveTimer.current = setTimeout(() => {
           void host.document.setMetadata(id, envelopeFor(next));
-          host.diagnostics.set(key, diagnoseAll(next, familiesRef.current));
+          host.diagnostics.set(
+            key,
+            diagnoseAll(next, familiesRef.current, shownRef.current),
+          );
         }, SAVE_DEBOUNCE_MS);
       },
       [key, diagnoseAll],
@@ -258,27 +373,34 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
       },
       [],
     );
-    // Re-publish to the host problems lane when the registry changes
-    // under a stable source (a document font added/removed flips parity
-    // without a source edit). Mirrors what `commit` publishes.
+    // Re-publish to the host problems lane when the registry or the
+    // resolved (shown) faces change under a stable source (a document
+    // font added/removed, or bytes newly served, flips parity without a
+    // source edit). Mirrors what `commit` publishes.
     useEffect(() => {
       if (!key || !source) return;
-      host.diagnostics.set(key, diagnoseAll(source, fontFamilies));
-    }, [fontFamilies, key, source, diagnoseAll]);
+      host.diagnostics.set(key, diagnoseAll(source, fontFamilies, shownFamilies));
+    }, [fontFamilies, shownFamilies, key, source, diagnoseAll]);
 
     const diagnostics = useMemo(
-      () => (source ? diagnoseAll(source, fontFamilies) : []),
-      [source, fontFamilies, diagnoseAll],
+      () =>
+        source ? diagnoseAll(source, fontFamilies, shownFamilies) : [],
+      [source, fontFamilies, shownFamilies, diagnoseAll],
     );
-    // Substitution badge state: the preview iframe renders with BROWSER
-    // fonts (no `@font-face` bytes cross any door — W-06), so whenever
-    // the source uses ANY family the preview is showing a substitute.
-    // The badge says so honestly; `unregistered` are also missing from
-    // the engine document (worse — text substitutes on-canvas too),
-    // `matched` are honest in the document but still substituted HERE.
+    // Font badge state (W-06 flip): for families whose BYTES the host
+    // asset store served, the preview now shows the DOCUMENT's actual
+    // faces (composed `@font-face`), so the badge flips to "document
+    // fonts shown" once EVERY used+registered family is shown. Until
+    // then it stays the honest substitution badge (W1): `unregistered`
+    // families are missing from the engine document (substitute
+    // on-canvas too), and a matched family the host had no bytes for is
+    // still a browser substitute HERE.
     const badge = useMemo(
-      () => (source ? previewFontBadge(source.css, fontFamilies) : null),
-      [source, fontFamilies],
+      () =>
+        source
+          ? previewFontBadge(source.css, fontFamilies, shownFamilies)
+          : null,
+      [source, fontFamilies, shownFamilies],
     );
     // Per-line markers for the HTML editor's gutter (the linter only
     // diagnoses HTML today; line-less policy notes don't carry a
@@ -292,9 +414,17 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
       [diagnostics],
     );
     const CodeEditor = host.widgets.CodeEditor;
+    // W-06: the served document faces become a real `@font-face` prelude
+    // inside the srcdoc <style> (plain CSS + object-URL src, NO script —
+    // sandbox="" unchanged). The preview then uses the document's actual
+    // faces for every resolved family.
+    const fontFaceCss = useMemo(
+      () => composeFontFaces(resolvedFaces),
+      [resolvedFaces],
+    );
     const srcdoc = useMemo(
-      () => (source ? composeSrcdoc(source) : ""),
-      [source],
+      () => (source ? composeSrcdoc(source, fontFaceCss) : ""),
+      [source, fontFaceCss],
     );
 
     // ---------------------------------------------------- empty states
@@ -391,16 +521,18 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
           </select>
         </label>
         <div style={kicker}>Preview</div>
-        {/* Honesty badge (W1): the preview iframe renders with BROWSER
-            fonts. No `@font-face` bytes cross any existing door (the
-            `fonts` collection is name-only; serving face bytes is the
-            W-06 asset store), so whenever the source uses a font the
-            preview is SUBSTITUTING it. Badge it rather than let the
-            source lane lie about typography. */}
+        {/* Font badge: W1 honesty + the W-06 flip. When the asset store
+            serves a used family's BYTES, the panel composes a real
+            `@font-face` (object URL) into the srcdoc and the badge flips
+            to "document fonts shown" for those families. While any used
+            family is still a browser substitute (no bytes served, or a
+            family missing from the document) the honest substitution
+            badge stays. `data-badge-state` exposes which for tests. */}
         {badge?.show && (
           <div
             data-web-font-badge
             data-badge-severity={badge.severity}
+            data-badge-state={badge.state}
             role="note"
             style={{
               display: "flex",
@@ -425,17 +557,30 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
                 background:
                   badge.severity === "review"
                     ? "var(--status-review)"
-                    : "var(--status-info)",
+                    : badge.state === "shown"
+                      ? "var(--status-ok, var(--status-info))"
+                      : "var(--status-info)",
                 transform: "translateY(1px)",
               }}
             />
-            <span>
-              Fonts substituted in preview — browser defaults, not the
-              document faces.
-              {badge.unregistered.length > 0
-                ? ` ${badge.unregistered.length} not in document: ${badge.unregistered.join(", ")}.`
-                : ""}
-            </span>
+            {badge.state === "shown" ? (
+              <span>
+                Document fonts shown — the preview uses the document’s
+                actual faces
+                {badge.shown.length > 0 ? `: ${badge.shown.join(", ")}.` : "."}
+              </span>
+            ) : (
+              <span>
+                Fonts substituted in preview — browser defaults, not the
+                document faces.
+                {badge.shown.length > 0
+                  ? ` Shown from document: ${badge.shown.join(", ")}.`
+                  : ""}
+                {badge.unregistered.length > 0
+                  ? ` ${badge.unregistered.length} not in document: ${badge.unregistered.join(", ")}.`
+                  : ""}
+              </span>
+            )}
           </div>
         )}
         {/* sandbox="" — no scripts, no same-origin: §6.1, page JS never

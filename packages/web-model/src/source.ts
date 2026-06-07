@@ -88,11 +88,20 @@ export function sourceFromEnvelope(
  * cannot run — §6.1: page JavaScript never executes); the composed
  * document carries the source CSS in a single <style> and the
  * declared media as a class hook for future print/screen styling.
+ *
+ * W-06: an optional `fontFaceCss` prelude (composed by
+ * `composeFontFaces` from the asset store's served bytes) lands FIRST
+ * in the <style>, so the preview uses the DOCUMENT's actual faces
+ * before the source CSS references them. It is plain `@font-face` CSS
+ * with object-URL `src` — NO script, so `sandbox=""` is unchanged.
  */
-export function composeSrcdoc(source: WebFrameSource): string {
+export function composeSrcdoc(
+  source: WebFrameSource,
+  fontFaceCss = "",
+): string {
   return (
     "<!doctype html><html><head><meta charset=\"utf-8\">" +
-    `<style>${source.css}</style>` +
+    `<style>${fontFaceCss}${source.css}</style>` +
     `</head><body class="media-${source.options.media}">` +
     source.html +
     "</body></html>"

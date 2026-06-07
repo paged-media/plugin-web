@@ -211,6 +211,80 @@ export function fontParity(
   return { unregistered, matched };
 }
 
+/** One document font face the host's asset store resolved to BYTES
+ *  (W-06). The bundle wraps the bytes in an object URL and composes an
+ *  `@font-face` rule, then drops the badge for that family. Host-free:
+ *  the panel hands web-model the already-resolved `{ family, src }`
+ *  (the object URL it created from the asset bytes), web-model only
+ *  composes the CSS — it never touches `URL`/`Blob`/bytes (the linter
+ *  stays a pure, DOM-free scanner). */
+export interface ResolvedFontFace {
+  /** The family name to declare (the document-canonical family). */
+  family: string;
+  /** A URL the iframe can load the face from — an object URL the panel
+   *  created from the served bytes (`URL.createObjectURL(blob)`). */
+  src: string;
+  /** The `@font-face` `format()` hint, when known. */
+  format?: "truetype" | "opentype" | "woff" | "woff2";
+}
+
+/** Map an asset `format` to the CSS `format()` keyword. */
+function cssFormat(
+  format: ResolvedFontFace["format"],
+): string | null {
+  switch (format) {
+    case "truetype":
+      return "truetype";
+    case "opentype":
+      return "opentype";
+    case "woff":
+      return "woff";
+    case "woff2":
+      return "woff2";
+    default:
+      return null;
+  }
+}
+
+/** Escape a family name for a CSS string literal (quotes/backslashes).
+ *  The family comes from the document registry; escaping keeps a stray
+ *  quote from breaking out of the `@font-face` block (defence in depth —
+ *  the iframe is already sandboxed with no script). */
+function cssStringLiteral(value: string): string {
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+/**
+ * Compose `@font-face` CSS for the faces the host resolved to bytes
+ * (W-06). Pure string assembly — the panel created the object URLs from
+ * the asset store's bytes; web-model only emits the rules so the
+ * sandboxed preview loads the DOCUMENT's actual faces. Empty input → "".
+ * Faces with no usable `src` are skipped (defensive; never throws).
+ */
+export function composeFontFaces(faces: readonly ResolvedFontFace[]): string {
+  const rules: string[] = [];
+  for (const face of faces) {
+    if (
+      !face ||
+      typeof face.family !== "string" ||
+      face.family.length === 0 ||
+      typeof face.src !== "string" ||
+      face.src.length === 0
+    ) {
+      continue;
+    }
+    const fmt = cssFormat(face.format);
+    const srcExpr = fmt
+      ? `url(${face.src}) format("${fmt}")`
+      : `url(${face.src})`;
+    rules.push(
+      `@font-face{font-family:${cssStringLiteral(face.family)};` +
+        `src:${srcExpr};font-display:block;}`,
+    );
+  }
+  return rules.join("");
+}
+
 /**
  * Parity diagnostics for the source panel + the host problems lane.
  * `source: "css"` (the families come from CSS). Two vocab entries:
@@ -224,18 +298,29 @@ export function fontParity(
  * When the registry is empty (door not wired / no document fonts) we
  * emit nothing rather than flag every family — absence of a registry
  * is not evidence a family is missing.
+ *
+ * W-06 flip: `shown` lists the registered families whose BYTES the host
+ * asset store served and the panel composed into a real `@font-face` —
+ * those are now SHOWN in the preview, so they emit NO "not previewable"
+ * info. A registered-but-not-shown family still gets the info (e.g. the
+ * host has no bytes for it). The substitution WARNING for an
+ * unregistered family is unchanged (no bytes can exist for it).
  */
 export function diagnoseFonts(
   css: string,
   registered: readonly string[],
+  shown: readonly string[] = [],
 ): WebDiagnostic[] {
   const used = familiesUsed(css);
   if (used.length === 0) return [];
   const reg = registrySet(registered);
   if (reg.size === 0) return [];
+  const shownSet = registrySet(shown);
   const out: WebDiagnostic[] = [];
   for (const fam of used) {
     if (reg.has(fam.toLowerCase())) {
+      // Resolved to real bytes and shown → no caveat to emit.
+      if (shownSet.has(fam.toLowerCase())) continue;
       out.push({
         severity: "info",
         message: `document font “${fam}” is not previewable here (the preview substitutes it — see badge)`,

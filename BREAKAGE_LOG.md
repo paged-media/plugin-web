@@ -73,13 +73,22 @@ Format: `W-NN · date · area · status`.
       from the document. Badge logic is the pure `previewFontBadge`
       helper (unit-tested). The iframe keeps `sandbox=""` — page JS never
       executes (§6.1, unchanged).
-    - **RESIDUAL — the bytes-serving gap is W-06.** Injecting real
-      `@font-face` (so the preview uses the document's actual faces) needs
-      a capability-gated door that serves font face BYTES to the bundle.
-      None exists; **W-06 (asset store) is the dependency.** When W-06
-      lands, the panel composes `@font-face` from served bytes and the
-      badge flips to "matched fonts shown" for resolvable families. Until
-      then the badge is the honest seam.
+    - **RESIDUAL — the bytes-serving gap is W-06. CLOSED (door) /
+      PARTIAL (editor bytes), 2026-06-07 (W3.7).** The capability-gated
+      asset door now EXISTS: `host.assets.getFontFace(family, style?)`
+      ships (plugin-sdk `host-impl`, gated on `capabilities.assets:
+      ["fonts"]`, per-face budget). The panel ADOPTED it — when the host
+      serves a used family's bytes it composes a real `@font-face`
+      (object URL) into the sandboxed srcdoc and the badge FLIPS to
+      "document fonts shown" (`data-badge-state="shown"`); the "not
+      previewable" info drops for resolved families. The W3.12-designed
+      flip is live and proven (web-bundle `fonts.spec.ts`,
+      web-model `fonts.spec.ts`). What stays open is the EDITOR's BYTES:
+      its v1 adapter serves `null` because document face bytes are not
+      reachable on the main thread (see W-06). So the flip fires for any
+      host that serves bytes (the headless fake does), but the editor's
+      preview still substitutes-and-badges honestly until the engine
+      exposes a font-bytes read-back.
     - **Tests (green):** web-model `fonts.spec.ts` (28) — extraction
       across longhand/shorthand/stacks/quotes/dedup/order, parity
       matching, the vocabulary, and never-crash-on-garbage; web-bundle
@@ -199,17 +208,82 @@ Format: `W-NN · date · area · status`.
   error + its line); editor Playwright AC-WEB-5 (panel shows the
   published diagnostic; click focuses the source panel).
 
-- **W-06 · 2026-06-06 · assets · OPEN (now W1's bytes-serving blocker,
-  2026-06-07)** — no capability-gated asset store (§9.1.5):
-  `@font-face` and image embedding (fetch at edit time, render offline
-  forever) have no API. Gates the fonts/URL-import milestone (W3 in the
-  concept roadmap). **W1 confirmed the precise gap:** the `fonts`
-  collection door crosses font family NAMES but no door serves font
-  face BYTES (the wire `registerFont` is host→worker only), so W1's
-  preview substitutes-and-badges rather than injecting real
-  `@font-face`. Closing W-06 (a byte-serving door, capability-gated)
-  lets the W1 preview load the document's actual faces and flip the
-  substitution badge off for resolvable families.
+- **W-06 · 2026-06-06 · assets · RESOLVED-PARTIAL (2026-06-07, W3.7)** —
+  the capability-gated ASSET STORE (§9.1.5) now has a door, a gate, a
+  budget, and a bundle adoption. The DOOR is DONE; the editor's font
+  BYTES are the one named residual (the engine has no font-bytes
+  read-back yet).
+  MECHANISM (DESIGN.md §13):
+  · **plugin-api / plugin-sdk:** `host.assets` is a new `BundleHost`
+    member — a READ-ONLY `AssetSurface`. v1 = exactly one read,
+    `getFontFace(family, style?) → FontFaceAsset | null`, serving
+    DOCUMENT-registered face BYTES only (not arbitrary fs/network). It is
+    backed by a host-injected `assetSource` (the same injection shape as
+    `widgets`/`diagnosticsSink`): no source → every read is `null` (the
+    honest no-bytes door) and `supports("assets.fonts@1")` is false. A
+    per-face budget (`ASSET_BUDGETS.maxFontFaceBytes` = 8 MiB, the wasm
+    lane's per-artifact style) refuses an over-budget face. Trust line:
+    READ-ONLY (no `setFontFace`; bundles never write assets), and the
+    host NEVER fetches from the network on a bundle's behalf
+    (offline-forever — the bytes come from what the document already
+    embeds/loads, or `null`).
+  · **Capability gate:** a new additive manifest field
+    `capabilities.assets: ["fonts"]`. `getFontFace` is a READ door —
+    THROWS `PluginCapabilityError` in `'enforce'` / warns+proceeds in
+    `'warn'` when undeclared (same split as every read door). plugin-cli
+    `validate` + the schema enforce the vocabulary. **`"images"` is
+    DECLARED-but-RESERVED for v2** — it appears in the `AssetKind` type
+    + schema but validation REJECTS it today (the door has no `getImage`;
+    accepting it would let a manifest claim a capability the host can't
+    honor — an honesty bug). Images ride the same door shape once the
+    engine exposes placed-image bytes by link.
+  · **headless fake:** `createRecordableAssetSource` — a deterministic,
+    in-memory `BundleAssetProvider` seeded with known faces that records
+    every request (case-insensitive family + style match). The
+    conformance harness threads it through `HarnessOptions.assetSource`.
+  · **adoption (paged.web):** the source panel resolves each used+
+    registered family through `host.assets.getFontFace`, wraps the bytes
+    in an object URL, composes a real `@font-face` (web-model
+    `composeFontFaces`) into the sandboxed srcdoc <style> (NO script —
+    `sandbox=""` unchanged), and the substitution badge FLIPS to
+    "document fonts shown" for resolved families (the W3.12 flip);
+    `diagnoseFonts(css, registered, shown)` drops the "not previewable"
+    info for shown families.
+  · **editor adapter (the BYTES residual):** `apps/canvas`'s
+    `createEditorAssetSource()` is wired into `loadBundle({ assetSource })`
+    — so the door + gate + budget are LIVE and `supports("assets.fonts@1")`
+    is true — but it serves `null` for every family. **Document face
+    bytes are NOT reachable on the editor main thread:** IDML references
+    fonts by NAME (no bytes); the only main-thread font bytes is the
+    single default-shaping font (`/fonts/Inter.ttf`, the engine FALLBACK,
+    not a named registration); the corpus family→file map
+    (`fonts.sh` → `registerFont`) lives only in the Playwright fidelity
+    driver; once `registerFont` ingests bytes they live worker/wasm-side
+    in the engine `BytesResolver` with no read-back door
+    (`fontRegistered` replies `{family}` only). Serving Inter-as-Helvetica
+    would be a LIE, so the adapter returns `null` (DESIGN.md §13.4) — the
+    door is honest, gated, budgeted, just empty.
+  · **THE CORE/CLIENT FOLLOW-UP that serves real bytes:** a worker→main
+    read on the engine font registry —
+    `client.fontFaceBytes(family, style?) → Uint8Array | null`, backed by
+    a new `requestFontFaceBytes` wire pair the worker answers from the
+    `BytesResolver` (the same store `registerFont` fills). A CORE change
+    (a new MainToWorker/WorkerToMain message + a `BytesResolver`
+    accessor). When it lands, the editor adapter's `getFontFace` calls it
+    instead of returning `null` — nothing in the door/gate/budget/manifest
+    changes, and the editor preview starts showing the document's actual
+    faces.
+  PROOF: plugin-sdk `asset-store.spec.ts` (13 — door/gate/budget/supports
+  + the recordable fake) + `capability-manifest-cli.spec.ts` (the
+  `assets`/reserved-`images` CLI cases); plugin-web web-model
+  `fonts.spec.ts` (`composeFontFaces` + the `diagnoseFonts` shown-flip)
+  + web-bundle `fonts.spec.ts` (badge flip + resolution→@font-face
+  against the fake source); editor Playwright AC-WEB-6 (the honest
+  null-path: the door is wired, the badge stays `substituting`, the
+  srcdoc carries no `@font-face`/`blob:`, `sandbox=""` intact, on :5180).
+  RESIDUALS: (1) the editor BYTES path above (the core read); (2) the
+  images-v2 lane (declared-but-reserved); (3) style-specific face
+  selection (the door takes `style?` but v1 callers ask family-only).
 
 - **W-07 · 2026-06-06 · wasm lane · RESOLVED-PARTIAL (2026-06-07,
   plugin-sdk W3.8)** — packaging story for a plugin-shipped WASM module

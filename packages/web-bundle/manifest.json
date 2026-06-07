@@ -15,6 +15,9 @@
     "editContext": [
       "webFrame"
     ],
+    "assets": [
+      "fonts"
+    ],
     "network": false,
     "clipboard": "none"
   },

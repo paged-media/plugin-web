@@ -16,12 +16,22 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { Diagnostic, PagedEditor } from "@paged-media/plugin-api";
-import { createBundleHost } from "@paged-media/plugin-sdk";
+import type {
+  Diagnostic,
+  FontFaceAsset,
+  PagedEditor,
+} from "@paged-media/plugin-api";
 import {
+  createBundleHost,
+  createRecordableAssetSource,
+} from "@paged-media/plugin-sdk";
+import {
+  composeFontFaces,
   diagnoseFonts,
   diagnoseHtml,
+  fontParity,
   sourceKeyFor,
+  type ResolvedFontFace,
 } from "@paged-media/web-model";
 
 import { webBundle } from "../src";
@@ -134,6 +144,9 @@ describe("previewFontBadge — badge state logic (W1)", () => {
     expect(b.severity).toBe("info");
     expect(b.matched).toEqual(["Inter"]);
     expect(b.unregistered).toEqual([]);
+    // No bytes shown (W1 default) → still SUBSTITUTING, not flipped.
+    expect(b.state).toBe("substituting");
+    expect(b.shown).toEqual([]);
   });
 
   it("escalates to REVIEW severity when a used family is missing from the document", () => {
@@ -152,5 +165,144 @@ describe("previewFontBadge — badge state logic (W1)", () => {
     expect(b.show).toBe(true);
     expect(b.severity).toBe("review");
     expect(b.unregistered).toEqual(["Anything"]);
+  });
+});
+
+describe("previewFontBadge — the W-06 flip (document fonts shown)", () => {
+  it("FLIPS to 'shown' when every used+registered family was served bytes", () => {
+    const b = previewFontBadge(
+      'p { font-family: Inter; }',
+      ["Inter"],
+      ["Inter"],
+    );
+    expect(b.show).toBe(true);
+    expect(b.state).toBe("shown");
+    expect(b.severity).toBe("info");
+    expect(b.shown).toEqual(["Inter"]);
+  });
+
+  it("stays 'substituting' when a matched family had NO bytes served", () => {
+    const b = previewFontBadge(
+      'p { font-family: Inter, Lora; }',
+      ["Inter", "Lora"],
+      ["Inter"], // Lora not served
+    );
+    expect(b.state).toBe("substituting");
+    expect(b.shown).toEqual(["Inter"]);
+  });
+
+  it("stays 'substituting' (review) when an unregistered family is used, even if matched ones are shown", () => {
+    const b = previewFontBadge(
+      'p { font-family: "Ghost", Inter; }',
+      ["Inter"],
+      ["Inter"],
+    );
+    expect(b.state).toBe("substituting");
+    expect(b.severity).toBe("review");
+    expect(b.shown).toEqual(["Inter"]);
+    expect(b.unregistered).toEqual(["Ghost"]);
+  });
+
+  it("matches shown families case-insensitively against the used set", () => {
+    const b = previewFontBadge(
+      'p { font-family: "IBM Plex Sans"; }',
+      ["IBM Plex Sans"],
+      ["ibm plex sans"],
+    );
+    expect(b.state).toBe("shown");
+    expect(b.shown).toEqual(["IBM Plex Sans"]);
+  });
+});
+
+// The panel's resolution PATH, exercised end-to-end against the real
+// SDK door + a recordable fake source: for each matched family the panel
+// calls `host.assets.getFontFace`, composes `@font-face`, and the badge
+// flips. Proves the bundle's manifest declares `assets: ["fonts"]` (the
+// gate passes), the bytes flow, and the composed CSS + badge are right.
+describe("asset resolution → @font-face composition + badge flip (W-06)", () => {
+  const inter: FontFaceAsset = {
+    bytes: new Uint8Array([0, 1, 2, 3]),
+    format: "truetype",
+    family: "Inter",
+    postscriptName: "Inter-Regular",
+  };
+
+  /** Mirror the panel's resolution loop (no DOM): resolve matched
+   *  families through the door, build ResolvedFontFace[] (src is a
+   *  stand-in for the panel's object URL), return the shown names. */
+  async function resolve(
+    host: ReturnType<typeof createBundleHost>["host"],
+    css: string,
+    registered: string[],
+  ): Promise<{ faces: ResolvedFontFace[]; shown: string[] }> {
+    const { matched } = fontParity(css, registered);
+    const faces: ResolvedFontFace[] = [];
+    const shown: string[] = [];
+    for (const family of matched) {
+      const asset = await host.assets.getFontFace(family);
+      if (!asset) continue;
+      faces.push({ family, src: `blob:${family}`, format: asset.format });
+      shown.push(family);
+    }
+    return { faces, shown };
+  }
+
+  it("serves bytes for a used+registered family, composes a rule, flips the badge", async () => {
+    const source = createRecordableAssetSource([inter]);
+    const { host } = createBundleHost(
+      () => fakeEditorWithFonts([{ family: "Inter" }]),
+      manifest,
+      { console: silent, storage: mapBacking(), assetSource: source },
+    );
+    expect(host.supports("assets.fonts@1")).toBe(true);
+
+    const css = 'p { font-family: Inter, sans-serif; }';
+    const { faces, shown } = await resolve(host, css, ["Inter"]);
+
+    // The door was asked for exactly the used+registered family.
+    expect(source.requests).toEqual([{ family: "Inter" }]);
+    // A real @font-face composed from the served bytes.
+    const fontFaceCss = composeFontFaces(faces);
+    expect(fontFaceCss).toContain('@font-face{font-family:"Inter";');
+    expect(fontFaceCss).toContain('format("truetype")');
+    // The badge flips to "document fonts shown".
+    const badge = previewFontBadge(css, ["Inter"], shown);
+    expect(badge.state).toBe("shown");
+    expect(badge.shown).toEqual(["Inter"]);
+    // And the diagnostics drop the "not previewable" caveat for it.
+    expect(diagnoseFonts(css, ["Inter"], shown)).toEqual([]);
+  });
+
+  it("does NOT ask for an UNREGISTERED family (no bytes can exist) and stays substituting", async () => {
+    const source = createRecordableAssetSource([inter]);
+    const { host } = createBundleHost(
+      () => fakeEditorWithFonts([{ family: "Inter" }]),
+      manifest,
+      { console: silent, storage: mapBacking(), assetSource: source },
+    );
+    const css = 'p { font-family: "Ghost Sans", Inter; }';
+    const { shown } = await resolve(host, css, ["Inter"]);
+    // Only the registered family was requested.
+    expect(source.requests).toEqual([{ family: "Inter" }]);
+    const badge = previewFontBadge(css, ["Inter"], shown);
+    expect(badge.state).toBe("substituting");
+    expect(badge.severity).toBe("review");
+    expect(badge.unregistered).toEqual(["Ghost Sans"]);
+  });
+
+  it("with NO source injected (the editor's v1 null-path), nothing flips — honest substitution stays", async () => {
+    const { host } = createBundleHost(
+      () => fakeEditorWithFonts([{ family: "Inter" }]),
+      manifest,
+      { console: silent, storage: mapBacking() }, // no assetSource
+    );
+    expect(host.supports("assets.fonts@1")).toBe(false);
+    const css = 'p { font-family: Inter; }';
+    // The door still exists + the gate passes (manifest declares it),
+    // but every read is null → nothing shown.
+    expect(await host.assets.getFontFace("Inter")).toBeNull();
+    const badge = previewFontBadge(css, ["Inter"], []);
+    expect(badge.state).toBe("substituting");
+    expect(badge.shown).toEqual([]);
   });
 });
