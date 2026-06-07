@@ -1,19 +1,25 @@
-// "Insert web frame" — one undoable insertFrame on the active page,
-// the default source stored under the created element's key, the new
-// frame selected, and the source panel opened. The frame itself is
-// an ordinary rectangle (the manifest's declared baked fallback);
-// what makes it a webFrame is the source attached to it — exactly
-// the §5 model, pending engine-side metadata (BREAKAGE_LOG W-02).
+// "Insert web frame" — ONE undoable batch: insertFrame + the default
+// source written as DOCUMENT METADATA on the batch-created element
+// (the protocol v34 `$created` sentinel; metadata round-trips IDML
+// since v33). The new frame is selected and the source panel opened.
+// The frame itself is an ordinary rectangle (the manifest's declared
+// baked fallback); what makes it a webFrame is the metadata attached
+// to it — the §5 model. A single undo removes frame AND source.
 
 import type { BundleHost, PageId } from "@paged-media/plugin-api";
 import {
   asFrameTarget,
   DEFAULT_SOURCE,
-  sourceKeyFor,
+  envelopeFor,
 } from "@paged-media/web-model";
 
 /** Default frame bounds, page-local pt: [top, left, bottom, right]. */
 const DEFAULT_BOUNDS: [number, number, number, number] = [60, 60, 240, 300];
+
+/** This plugin's metadata namespace — MUST equal the host's derived
+ *  key (`x-paged:<manifest.id>`); the host gate rejects anything
+ *  else, so a drift here fails loudly, not silently. */
+const METADATA_KEY = "x-paged:media.paged.web";
 
 interface PageSummaryLike {
   selfId: string;
@@ -36,19 +42,32 @@ export async function insertWebFrame(
     return;
   }
   const outcome = await host.document.mutate({
-    op: "insertFrame",
-    args: { pageId, bounds: DEFAULT_BOUNDS },
+    op: "batch",
+    args: {
+      ops: [
+        { op: "insertFrame", args: { pageId, bounds: DEFAULT_BOUNDS } },
+        {
+          op: "setPluginMetadata",
+          args: {
+            // The v34 batch-created sentinel — resolves to the frame
+            // minted by the insert above. The host gate verifies the
+            // key is this plugin's own namespace.
+            elementId: { kind: "rectangle", id: "$created" },
+            key: METADATA_KEY,
+            value: JSON.stringify(envelopeFor(DEFAULT_SOURCE)),
+          },
+        },
+      ],
+    },
   });
   if (!outcome.applied || !outcome.createdId) {
     host.log.warn("insertWebFrame rejected by engine", outcome);
     return;
   }
-  const target = asFrameTarget(outcome.createdId);
-  if (!target) {
+  if (!asFrameTarget(outcome.createdId)) {
     host.log.warn("insertWebFrame: created element is not a frame target");
     return;
   }
-  host.storage.set(sourceKeyFor(target), DEFAULT_SOURCE);
   await host.selection.set([outcome.createdId]);
   host.shell.openPanel(panelId);
 }

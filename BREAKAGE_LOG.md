@@ -29,7 +29,7 @@ Format: `W-NN · date · area · status`.
   canvas, font registration parity, and the W-02 metadata/baking
   pipeline. The v0 panel preview (O1 stopgap) stays until then.
 
-- **W-02 · 2026-06-06 · document model · CARRIER LANDED (2026-06-07)**
+- **W-02 · 2026-06-06 · document model · RESOLVED (2026-06-07)**
   — the engine's plugin-metadata carrier shipped (core protocol v33,
   facility design §2-3): `Properties/Label` `KeyValuePair`s round-trip
   parse → mutate → write (F1-fixtured, InDesign-preservable), gated
@@ -37,11 +37,16 @@ Format: `W-NN · date · area · status`.
   `{v, data, engine?}`), with SDK doors
   `host.document.getMetadata/setMetadata` (plugin-api 0.2.5-canary.0;
   key derived from the manifest id — own namespace only) and the
-  `ObjectTypeBaker`/`BakeContext` contract types. REMAINING here:
-  migrate `WebFrameSource` from plugin storage to
-  `host.document.setMetadata` (then sources round-trip IDML and
-  survive foreign opens), and the B2 baking pipeline + host bake loop
-  (`contribute.objectType` is still runtime-reserved).
+  `ObjectTypeBaker`/`BakeContext` contract types. The bundle is
+  MIGRATED: sources persist as document metadata (envelope helpers in
+  web-model; panel reads async with a one-time legacy-storage
+  migration; edits are debounced undoable mutations; undo/redo
+  re-reads), and "insert web frame" is ONE undo step via the protocol
+  v34 batch-created `$created` sentinel (insertFrame +
+  setPluginMetadata atomically). Sources now round-trip IDML and
+  survive foreign opens. Still open (split to the baking lane): the
+  B2 baking pipeline + host bake loop (`contribute.objectType`
+  runtime-reserved) — that's W-03's territory.
 
 - **W-03 · 2026-06-06 · contributions · OPEN** — `contribute.objectType`
   is reserved (declared in the manifest, throws at runtime). A

@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { PagedEditor } from "@paged-media/plugin-api";
 import { loadBundle } from "@paged-media/plugin-sdk";
-import { DEFAULT_SOURCE, sourceKeyFor } from "@paged-media/web-model";
+import { DEFAULT_SOURCE, envelopeFor } from "@paged-media/web-model";
 
 import { webBundle } from "../src";
 
@@ -33,6 +33,7 @@ function makeFakeEditor() {
   const commands = fakeRegistry();
   let selection: unknown[] = [];
   const created = { kind: "rectangle", id: "uWEB1" };
+  const mutations: unknown[] = [];
   const editor = {
     registries: { panels, commands },
     selection: {
@@ -45,10 +46,13 @@ function makeFakeEditor() {
     },
     camera: { camera: { scale: 1, tx: 0, ty: 0 } },
     client: {
-      mutate: async () => ({
-        kind: "mutationApplied",
-        payload: { createdId: created, pageIds: ["pg1"] },
-      }),
+      mutate: async (m: unknown) => {
+        mutations.push(m);
+        return {
+          kind: "mutationApplied",
+          payload: { createdId: created, pageIds: ["pg1"] },
+        };
+      },
       documentMeta: async () => ({ pageCount: 1, activePage: "pg1" }),
       collection: async () => [],
       setElementSelection: async (ids: unknown[]) => ids,
@@ -56,7 +60,13 @@ function makeFakeEditor() {
       subscribe: () => () => {},
     },
   };
-  return { editor: editor as unknown as PagedEditor, panels, commands, created };
+  return {
+    editor: editor as unknown as PagedEditor,
+    panels,
+    commands,
+    created,
+    mutations,
+  };
 }
 
 const silent = { debug() {}, info() {}, warn() {}, error() {} };
@@ -84,21 +94,41 @@ describe("webBundle.activate", () => {
     ]);
   });
 
-  it("insert command: one mutation, source stored, selected, panel opened", async () => {
+  it("insert command: ONE sentinel batch (frame + metadata), selected, panel opened", async () => {
     const fake = makeFakeEditor();
     const openPanel = vi.fn();
-    const backing = mapBacking();
     loadBundle(() => fake.editor, webBundle, {
       console: silent,
-      storage: backing,
+      storage: mapBacking(),
       shell: { openPanel, closePanel() {} },
     });
     const cmd = fake.commands.get(
       "media.paged.web.command.insertWebFrame",
     ) as unknown as { handler: () => Promise<void> };
     await cmd.handler();
-    const key = `paged.plugin.media.paged.web.${sourceKeyFor(fake.created)}`;
-    expect(JSON.parse(backing.getItem(key)!)).toEqual(DEFAULT_SOURCE);
+    // ONE batch through the one door: frame + source metadata via the
+    // v34 batch-created sentinel — a single undo step.
+    expect(fake.mutations).toEqual([
+      {
+        op: "batch",
+        args: {
+          ops: [
+            {
+              op: "insertFrame",
+              args: { pageId: "pg1", bounds: [60, 60, 240, 300] },
+            },
+            {
+              op: "setPluginMetadata",
+              args: {
+                elementId: { kind: "rectangle", id: "$created" },
+                key: "x-paged:media.paged.web",
+                value: JSON.stringify(envelopeFor(DEFAULT_SOURCE)),
+              },
+            },
+          ],
+        },
+      },
+    ]);
     expect(fake.editor.selection.elementSelection).toEqual([fake.created]);
     expect(openPanel).toHaveBeenCalledWith("media.paged.web.panel.source");
   });

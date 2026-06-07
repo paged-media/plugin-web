@@ -6,7 +6,7 @@
 //
 // Built from host surfaces + React ONLY: the component is created by
 // a factory that closes over the BundleHost, reads/writes through
-// host.selection / host.storage / host.diagnostics, and styles
+// host.selection / host.document metadata / host.diagnostics, and styles
 // itself with the design-system token layer (--pg-*, --status-*,
 // --font-mono, --space-*, --radius-*) so it reads as native in both
 // themes. No @paged-media/shell imports — selection reactivity comes
@@ -28,6 +28,8 @@ import {
   composeSrcdoc,
   DEFAULT_SOURCE,
   diagnoseHtml,
+  envelopeFor,
+  sourceFromEnvelope,
   sourceKeyFor,
   type WebDiagnostic,
   type WebFrameSource,
@@ -82,8 +84,8 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
       selection.length === 1 ? asFrameTarget(selection[0]) : null;
     const key = target ? sourceKeyFor(target) : null;
 
-    // Selection → reload the stored source for the new target. The
-    // mount effect RE-READS the snapshot: the panel may mount after a
+    // Selection → reload the source for the new target. The mount
+    // effect RE-READS the snapshot: the panel may mount after a
     // selection event already passed (insert → select → open-panel),
     // and the lazy useState initial races the same React commit that
     // delivered the new selection through the host's live handle.
@@ -92,18 +94,66 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
       const sub = host.selection.onDidChange((ids) => setSelection(ids));
       return () => sub.dispose();
     }, []);
+    // The source lives as DOCUMENT METADATA (protocol v33). Reads are
+    // async; a stale flag guards out-of-order replies on fast
+    // selection changes. Pre-v33 documents migrate one-time from
+    // plugin storage (write-through, then the storage entry drops).
+    const loadFor = useCallback(
+      async (id: ElementId, storageKey: string) => {
+        let src = sourceFromEnvelope(await host.document.getMetadata(id));
+        if (!src) {
+          const legacy = host.storage.get<WebFrameSource>(storageKey);
+          if (legacy) {
+            src = legacy;
+            const out = await host.document.setMetadata(
+              id,
+              envelopeFor(legacy),
+            );
+            if (out.applied) host.storage.delete(storageKey);
+          }
+        }
+        return src;
+      },
+      [],
+    );
     useEffect(() => {
-      setSource(key ? (host.storage.get<WebFrameSource>(key) ?? null) : null);
+      let stale = false;
+      if (!target || !key) {
+        setSource(null);
+        return;
+      }
+      const id = selection[0];
+      void loadFor(id, key).then((src) => {
+        if (!stale) setSource(src);
+      });
+      return () => {
+        stale = true;
+      };
     }, [key]);
+    // Undo/redo can revert the metadata under the panel — re-read on
+    // those (NOT on mutationApplied: our own debounced saves would
+    // loop the textarea through a redundant async set).
+    useEffect(() => {
+      if (!target || !key) return;
+      const id = selection[0];
+      const sub = host.document.onDidChange((e) => {
+        if (e.kind === "undoApplied" || e.kind === "redoApplied") {
+          void loadFor(id, key).then(setSource);
+        }
+      });
+      return () => sub.dispose();
+    }, [key, loadFor]);
 
-    // Edits → debounced persist + diagnostics.
+    // Edits → debounced persist (one undoable metadata mutation per
+    // pause) + diagnostics.
     const commit = useCallback(
       (next: WebFrameSource) => {
         setSource(next);
         if (!key) return;
+        const id = selection[0];
         if (saveTimer.current) clearTimeout(saveTimer.current);
         saveTimer.current = setTimeout(() => {
-          host.storage.set(key, next);
+          void host.document.setMetadata(id, envelopeFor(next));
           host.diagnostics.set(key, diagnoseHtml(next.html));
         }, SAVE_DEBOUNCE_MS);
       },
@@ -144,7 +194,10 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
             type="button"
             data-web-make
             onClick={() => {
-              host.storage.set(key!, DEFAULT_SOURCE);
+              void host.document.setMetadata(
+                selection[0],
+                envelopeFor(DEFAULT_SOURCE),
+              );
               setSource(DEFAULT_SOURCE);
             }}
             style={{

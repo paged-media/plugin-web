@@ -7,12 +7,16 @@
 
 export {
   DEFAULT_SOURCE,
+  SOURCE_METADATA_VERSION,
   asFrameTarget,
   composeSrcdoc,
+  envelopeFor,
+  sourceFromEnvelope,
   sourceKeyFor,
   type FrameTarget,
   type WebFrameOptions,
   type WebFrameSource,
+  type WebSourceEnvelope,
 } from "./source";
 
 export { diagnoseHtml, type WebDiagnostic } from "./diagnose";
