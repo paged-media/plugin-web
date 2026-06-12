@@ -107,7 +107,7 @@ describe("webBundle.activate", () => {
     loadBundle(() => fake.editor, webBundle, {
       console: silent,
       storage: mapBacking(),
-      shell: { openPanel() {}, closePanel() {} },
+      shell: { openPanel() {}, closePanel() {}, async pickFile() { return []; } },
     });
     expect(fake.panels.ids()).toEqual(["media.paged.web.panel.source"]);
     expect(fake.commands.ids()).toEqual([
@@ -121,7 +121,7 @@ describe("webBundle.activate", () => {
     loadBundle(() => fake.editor, webBundle, {
       console: silent,
       storage: mapBacking(),
-      shell: { openPanel, closePanel() {} },
+      shell: { openPanel, closePanel() {}, async pickFile() { return []; } },
     });
     const cmd = fake.commands.get(
       "media.paged.web.command.insertWebFrame",
@@ -159,7 +159,7 @@ describe("webBundle.activate", () => {
     loadBundle(() => fake.editor, webBundle, {
       console: silent,
       storage: mapBacking(),
-      shell: { openPanel() {}, closePanel() {} },
+      shell: { openPanel() {}, closePanel() {}, async pickFile() { return []; } },
     });
     // The object type routes a double-click to the source edit context.
     expect(fake.objectTypes.types()).toEqual(["webFrame"]);
@@ -198,7 +198,7 @@ describe("webBundle.activate", () => {
     loadBundle(() => fake.editor, webBundle, {
       console: silent,
       storage: mapBacking(),
-      shell: { openPanel, closePanel() {} },
+      shell: { openPanel, closePanel() {}, async pickFile() { return []; } },
     });
     const ec = fake.editContexts.get("webFrame") as unknown as {
       onEnter?: (ctx: { type: string; id: unknown }) => void;
@@ -212,7 +212,7 @@ describe("webBundle.activate", () => {
     const loaded = loadBundle(() => fake.editor, webBundle, {
       console: silent,
       storage: mapBacking(),
-      shell: { openPanel() {}, closePanel() {} },
+      shell: { openPanel() {}, closePanel() {}, async pickFile() { return []; } },
     });
     loaded.dispose();
     expect(fake.panels.ids()).toHaveLength(0);
