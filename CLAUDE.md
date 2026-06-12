@@ -28,7 +28,7 @@ panel).
 - **Honest seams.** On-canvas rendering, IDML round-trip, the
   `codeEditor` widget, and the objectType/edit-context registrations
   are NOT implemented — the UI and the manifest say so explicitly, and
-  `BREAKAGE_LOG.md` (W-01…) tracks each gap. Never fake them.
+  the RFI (`thoughts/docs/paged/plugin-platform/rfi-core-sdk-gaps.md`, W-01 in §6) tracks each gap. Never fake them.
 - **Styling = the token layer** (`--pg-*`, `--status-*`, `--font-mono`,
   `--space-*`, `--radius-*`, `--tracking-wide`): sentence case labels,
   uppercase kickers, mono tabular code, hairline borders, no hardcoded
