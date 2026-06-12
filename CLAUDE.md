@@ -25,10 +25,20 @@ panel).
 - **Page JavaScript never executes** (§6.1 — product stance): the
   preview iframe keeps `sandbox=""`; `<script>` stays a policy ERROR in
   the linter. Don't soften either.
-- **Honest seams.** On-canvas rendering, IDML round-trip, the
-  `codeEditor` widget, and the objectType/edit-context registrations
-  are NOT implemented — the UI and the manifest say so explicitly, and
-  the RFI (`thoughts/docs/paged/plugin-platform/rfi-core-sdk-gaps.md`, W-01 in §6) tracks each gap. Never fake them.
+- **Honest seams.** On-canvas rendering (the Blitz/WASM W0 spike) and
+  the cross-reload IDML-authored-Label read are NOT implemented — the
+  UI says so explicitly (the overflow control is a fixed, disabled
+  "clip"), and the RFI
+  (`thoughts/docs/paged/plugin-platform/rfi-core-sdk-gaps.md`, W-01 in
+  §6) tracks each gap. Never fake them. Landed since: the `codeEditor`
+  widget IS consumed (probe `widgets.codeEditor@1`, bundle-owned
+  textarea fallback), objectType/edit-context registered (W-03),
+  metadata round-trips in-session (W-02), font bytes via the
+  capability-gated asset store (W-06).
+- **Preview ≠ persistence.** Keystrokes refresh the sandboxed preview +
+  diagnostics behind the ~300 ms debounce; the document is written ONLY
+  by the explicit "Save to document" action (`persistDraft` — one
+  undoable metadata mutation per save). Don't re-conflate them.
 - **Styling = the token layer** (`--pg-*`, `--status-*`, `--font-mono`,
   `--space-*`, `--radius-*`, `--tracking-wide`): sentence case labels,
   uppercase kickers, mono tabular code, hairline borders, no hardcoded

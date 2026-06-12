@@ -12,6 +12,28 @@ export interface WebFrameOptions {
   /** Overflow policy — v0 clips (the only honest option before the
    *  engine renders web frames on canvas). */
   overflow: "clip";
+  /** Layout viewport width in CSS px. Absent = natural width (the
+   *  frame/panel decides). In the source panel this is honestly real:
+   *  the preview IFRAME takes this width, and an iframe's element size
+   *  IS the CSS viewport its content lays out (and media-queries)
+   *  against. Declarative for the engine rendering lane too (W0). */
+  viewportWidth?: number;
+}
+
+/** Upper bound a viewport width is clamped to — guards malformed
+ *  envelopes (and runaway typing) without being opinionated about
+ *  real device/print widths. */
+export const MAX_VIEWPORT_WIDTH = 10000;
+
+/** Sanitize a viewport width from UNTRUSTED input (an envelope, a
+ *  number field): any positive finite number rounds to an int and
+ *  clamps to `MAX_VIEWPORT_WIDTH`; everything else (strings, NaN,
+ *  Infinity, zero/negative) reads as "no override" (undefined). */
+export function normalizeViewportWidth(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  const w = Math.round(value);
+  if (w < 1) return undefined;
+  return Math.min(w, MAX_VIEWPORT_WIDTH);
 }
 
 export interface WebFrameSource {
@@ -79,7 +101,13 @@ export function sourceFromEnvelope(
   const d = envelope.data as Partial<WebFrameSource>;
   if (typeof d.html !== "string" || typeof d.css !== "string") return null;
   const media = d.options?.media === "screen" ? "screen" : "print";
-  return { html: d.html, css: d.css, options: { media, overflow: "clip" } };
+  const options: WebFrameOptions = { media, overflow: "clip" };
+  // `viewportWidth` is ADDITIVE-OPTIONAL within envelope v1: legacy
+  // envelopes simply have none, and an invalid value reads as "no
+  // override" rather than poisoning the whole source.
+  const viewportWidth = normalizeViewportWidth(d.options?.viewportWidth);
+  if (viewportWidth !== undefined) options.viewportWidth = viewportWidth;
+  return { html: d.html, css: d.css, options };
 }
 
 /**

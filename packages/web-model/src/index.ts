@@ -7,10 +7,12 @@
 
 export {
   DEFAULT_SOURCE,
+  MAX_VIEWPORT_WIDTH,
   SOURCE_METADATA_VERSION,
   asFrameTarget,
   composeSrcdoc,
   envelopeFor,
+  normalizeViewportWidth,
   sourceFromEnvelope,
   sourceKeyFor,
   type FrameTarget,

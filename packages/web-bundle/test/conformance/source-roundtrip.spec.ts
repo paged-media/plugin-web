@@ -78,7 +78,9 @@ describe("web conformance — source metadata round-trip", () => {
     const edited: WebFrameSource = {
       html: "<h1>Edited</h1>",
       css: "h1 { color: rebeccapurple; }",
-      options: { media: "screen", overflow: "clip" },
+      // The full options shape — incl. the Phase 2c viewportWidth —
+      // rides the same envelope through the real engine carrier.
+      options: { media: "screen", overflow: "clip", viewportWidth: 480 },
     };
     await h.host.document.setMetadata(carrier as never, envelopeFor(edited));
     const env = await h.host.document.getMetadata(carrier as never);

@@ -15,11 +15,21 @@ today is the honest slice API v0.2 carries:
 - **Insert web frame** (command) — one undoable `insertFrame` on the active
   page; the default `WebFrameSource` is attached under the created element's
   key; the frame is selected and the source panel opens.
-- **Web frame panel** — HTML + CSS editors (token-styled, mono), a
-  **sandboxed** live preview (`sandbox=""` — page JavaScript never executes,
-  §6.1), `print`/`screen` media option, and a diagnostics list (policy
-  errors like `<script>`, tag-balance warnings) that also feeds
-  `host.diagnostics`.
+- **Web frame panel** — HTML + CSS editors: the HOST code editor
+  (`host.widgets.CodeEditor`, W-04 — line numbers, highlighting, a
+  diagnostics gutter) where `supports("widgets.codeEditor@1")` answers
+  true, the bundle's own plain textarea otherwise (headless/conformance
+  hosts; `data-web-editor-lane` says which). A **sandboxed** live
+  preview (`sandbox=""` — page JavaScript never executes, §6.1)
+  refreshes on keystroke behind a ~300 ms debounce; the **document is
+  written only by the explicit "Save to document" action** (one
+  undoable metadata mutation per save — preview refresh ≠ document
+  write). Frame options: `print`/`screen` media, a viewport width
+  (applied as the preview iframe's element width — the real CSS
+  viewport), and the overflow policy (fixed `clip`, a visible seam
+  until the engine rendering lane). Diagnostics (policy errors like
+  `<script>`, tag-balance warnings, font parity) render in the panel
+  and feed `host.diagnostics` live.
 - **Font registration parity** (W1, BREAKAGE_LOG W-01 follow-up) — the panel
   reads the document's registered font families (the `fonts` collection door —
   family NAMES only; no face bytes cross any door, so serving real
@@ -28,9 +38,12 @@ today is the honest slice API v0.2 carries:
   "document font not previewable"). Because the preview can't load the document
   faces, it renders with browser defaults and **visibly badges** the
   substitution — the source lane stays honest about typography.
-- **Persistence** via plugin storage keyed by element id — the
-  `x-paged-web:*` metadata SHAPE (§5), pending engine-side document metadata
-  (BREAKAGE_LOG W-02; does not round-trip IDML yet, and the UI says so).
+- **Persistence** as DOCUMENT METADATA (§5; W-02 landed): the
+  `x-paged:media.paged.web` envelope written through
+  `host.document.setMetadata`, undoable and IDML-carried in-session
+  (the cross-reload IDML-authored-Label read remains an engine gap —
+  see the conformance suite's pinned-gap test). Pre-metadata documents
+  migrate one-time from plugin storage.
 
 The manifest already declares the forward contract: the `webFrame` object
 type with `bakedFallback: "rectangle"` and the `webFrame` edit context —
