@@ -39,12 +39,14 @@ export function activate(host: BundleHost): BundleHandle {
     category: "Web",
     handler: () => insertWebFrame(host, PANEL_ID),
   });
-  // W-01 — "Render to frame": the bake-path affordance. Calls the render
-  // contract for the selected web frame and lowers a real SceneLayer to
-  // the C-1 rail (ADR-011 Option B). TODAY the engine is not loaded, so
-  // it surfaces the honest "engine not loaded" diagnostic and the
-  // sandboxed source-lane preview stays the only preview — never a fake
-  // render. The door is wired; the Blitz engine drops in behind it.
+  // W-01 — "Render to frame": the bake-path affordance. Loads the
+  // Blitz/WASM engine (manifest capabilities.wasm ∋ blitz), renders the
+  // selected web frame's source, and submits the real C-1 SceneLayer to
+  // the rail (ADR-011 Option B) so core composes it inside the frame.
+  // When the engine can't load (no artifact built / a realm that can't
+  // fetch the sibling asset), it falls back to the honest "engine not
+  // loaded" diagnostic + the sandboxed source-lane preview — never a fake
+  // render.
   host.contribute.command({
     id: "media.paged.web.command.renderWebFrame",
     title: "Render web frame to canvas",

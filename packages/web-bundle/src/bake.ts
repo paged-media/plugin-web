@@ -20,18 +20,30 @@
 import type { BundleHost, ElementId } from "@paged-media/plugin-api";
 import {
   asFrameTarget,
+  composeSrcdoc,
   isRendered,
   renderWebFrame,
+  renderWebFrameSource,
   sourceFromEnvelope,
+  ENGINE_NOT_LOADED_MESSAGE,
   type SceneLayer,
   type WebDiagnostic,
+  type WebFrameSource,
   type WebRenderResult,
 } from "@paged-media/web-model";
+
+import type { WebEngine } from "./engine-loader";
 
 /** Points per inch — frame bounds are in points already; `dpi` only
  *  drives a raster escape hatch, defaulted at the page's print
  *  resolution. */
 const DEFAULT_DPI = 300;
+
+/** CSS px per point. 1 pt = 1/72 in, 1 px = 1/96 in → px = pt × 96/72.
+ *  The frame's content box is in points; the engine lays out in CSS px and
+ *  the capture converts px→pt internally, so feeding the px-equivalent
+ *  size brings the lowered geometry back into frame-content points. */
+const PX_PER_PT = 96 / 72;
 
 /** The outcome of a bake attempt — surfaced to the caller (the command
  *  handler / panel) so it can show the honest diagnostic or report a
@@ -60,6 +72,7 @@ export interface BakeOutcome {
 export async function bakeWebFrame(
   host: BundleHost,
   id: ElementId,
+  engine?: WebEngine | null,
 ): Promise<BakeOutcome> {
   const notRendered = (diagnostics: WebDiagnostic[]): BakeOutcome => ({
     rendered: false,
@@ -100,19 +113,26 @@ export async function bakeWebFrame(
   const frameWidthPt = bounds ? Math.max(0, bounds[3] - bounds[1]) : 0;
   const frameHeightPt = bounds ? Math.max(0, bounds[2] - bounds[0]) : 0;
 
-  const result: WebRenderResult = renderWebFrame({
-    html: source.html,
-    css: source.css,
-    vars: source.vars,
-    frameWidthPt,
-    frameHeightPt,
-    dpi: DEFAULT_DPI,
-  });
+  // With the engine LOADED: compose the document the engine lays out
+  // (html + css → a single document, with the §6.2 template vars applied
+  // first, exactly as the preview composes), feed it the frame's content
+  // size in CSS px, and take the REAL C-1 layer the engine painted. With
+  // the engine NOT loaded (or it threw): the honest not-loaded path.
+  const result: WebRenderResult = engine
+    ? renderWithEngine(engine, source, frameWidthPt, frameHeightPt)
+    : renderWebFrame({
+        html: source.html,
+        css: source.css,
+        vars: source.vars,
+        frameWidthPt,
+        frameHeightPt,
+        dpi: DEFAULT_DPI,
+      });
 
-  // The not-loaded path (today): no engine wasm, so no scene layer.
-  // Surface the honest diagnostic; the source-lane preview stays the
-  // only preview. The B2 IDML bake (scene → vector+text) is downstream
-  // of a real layer, so it too is engine-gated and not reached here.
+  // The not-loaded path: no engine wasm (or it failed), so no scene layer.
+  // Surface the honest diagnostic; the source-lane preview stays the only
+  // preview. The B2 IDML bake (scene → vector+text) is downstream of a
+  // real layer, so it too is engine-gated and not reached here.
   if (!isRendered(result) || result.sceneLayer === null) {
     return {
       rendered: false,
@@ -144,5 +164,45 @@ export async function bakeWebFrame(
     submitted,
     diagnostics: result.diagnostics,
     sceneLayer: result.sceneLayer,
+  };
+}
+
+/** Run the loaded engine over a frame's source → a {@link WebRenderResult}.
+ *  Composes the document the engine lays out (template vars applied first,
+ *  then html+css → one document, exactly the preview's `composeSrcdoc`),
+ *  feeds the content size in CSS px, and returns the REAL C-1 layer. On a
+ *  wasm-side failure (`engine.render` → null) it falls back to the honest
+ *  not-loaded result so the command never crashes. */
+function renderWithEngine(
+  engine: WebEngine,
+  source: WebFrameSource,
+  frameWidthPt: number,
+  frameHeightPt: number,
+): WebRenderResult {
+  // Apply the §6.2 deterministic template pass, then compose the document.
+  const rendered = renderWebFrameSource(source);
+  const composed: WebFrameSource = {
+    ...source,
+    html: rendered.html,
+    css: rendered.css,
+  };
+  const html = composeSrcdoc(composed);
+  const widthPx = Math.round(frameWidthPt * PX_PER_PT);
+  const heightPx = Math.round(frameHeightPt * PX_PER_PT);
+
+  const layer = engine.render(html, widthPx, heightPx);
+  if (layer === null) {
+    // The engine loaded but the render threw — honest not-loaded result
+    // (no fake layer). The loader already logged the wasm error.
+    return {
+      sceneLayer: null,
+      diagnostics: [
+        { severity: "info", message: ENGINE_NOT_LOADED_MESSAGE, source: "render" },
+      ],
+    };
+  }
+  return {
+    sceneLayer: layer,
+    diagnostics: [...rendered.diagnostics],
   };
 }

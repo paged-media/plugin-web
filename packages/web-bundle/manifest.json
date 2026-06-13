@@ -22,7 +22,7 @@
     "wasm": [
       {
         "name": "blitz",
-        "path": "bin/blitz_web.wasm",
+        "path": "bin/blitz_web_bg.wasm",
         "purpose": "engine",
         "maxBytes": 67108864
       }

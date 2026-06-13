@@ -1,17 +1,17 @@
 // The "Render to frame" command handler — the bake-path affordance.
-// Runs `bakeWebFrame` over the single selected element and surfaces the
-// outcome HONESTLY: today the engine is not loaded, so the render
-// contract returns no scene layer and this publishes the "engine not
-// loaded — source-lane preview only" note through `host.diagnostics`
-// (the editor's Problems panel) + the log. When the Blitz engine lands
-// behind the render contract, the SAME handler submits a real SceneLayer
-// to the C-1 rail (inside `bakeWebFrame`) and reports the submission —
-// no handler change needed (the door is wired; the engine drops in).
+// Loads the Blitz/WASM engine, runs `bakeWebFrame` over the single
+// selected element, and surfaces the outcome HONESTLY: a loaded engine
+// submits a real C-1 SceneLayer to the rail (inside `bakeWebFrame`) and
+// this reports the submission; an engine that can't load falls back to
+// the "engine not loaded — source-lane preview only" note published
+// through `host.diagnostics` (the editor's Problems panel) + the log.
+// Never a fake render — an empty layer is real, a missing engine is said.
 
 import type { BundleHost } from "@paged-media/plugin-api";
 import { sourceKeyFor, asFrameTarget } from "@paged-media/web-model";
 
 import { bakeWebFrame } from "./bake";
+import { loadWebEngine } from "./engine-loader";
 
 /** Diagnostics key for the render lane — distinct from the source
  *  panel's lint key so a render note doesn't clobber lint output. */
@@ -24,7 +24,12 @@ export async function renderSelectedWebFrame(host: BundleHost): Promise<void> {
     return;
   }
   const id = selection[0];
-  const outcome = await bakeWebFrame(host, id);
+  // Load the Blitz/WASM engine (memoized; null when it can't be loaded —
+  // the bake path then stays on the honest not-loaded diagnostic). This is
+  // the EXPERIMENTAL render affordance turning real: a loaded engine
+  // produces a real C-1 sceneLayer that core composes inside the frame.
+  const engine = await loadWebEngine(host);
+  const outcome = await bakeWebFrame(host, id, engine);
 
   // Publish the render diagnostics where the Problems panel sees them,
   // keyed off the target so they clear when the source key changes.
