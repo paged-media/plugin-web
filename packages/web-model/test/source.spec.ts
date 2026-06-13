@@ -75,6 +75,52 @@ describe("metadata envelope (W-02 carrier)", () => {
   });
 });
 
+describe("metadata envelope — the §6.2 vars map (additive within v1)", () => {
+  it("round-trips a source WITH template vars", () => {
+    const source: WebFrameSource = {
+      html: "<h1>{{title}}</h1>",
+      css: "",
+      options: { media: "print", overflow: "clip" },
+      vars: { title: "Hello", "product.price": "1234.5" },
+    };
+    expect(sourceFromEnvelope(envelopeFor(source))).toEqual(source);
+  });
+
+  it("a legacy envelope (no vars) reads as NO vars (pass disabled)", () => {
+    const env = { v: 1, data: { html: "<p>x</p>", css: "" } };
+    expect(sourceFromEnvelope(env)?.vars).toBeUndefined();
+  });
+
+  it("an EMPTY vars map round-trips as enabled-but-empty", () => {
+    const source: WebFrameSource = {
+      html: "<p>x</p>",
+      css: "",
+      options: { media: "print", overflow: "clip" },
+      vars: {},
+    };
+    expect(sourceFromEnvelope(envelopeFor(source))?.vars).toEqual({});
+  });
+
+  it("sanitizes malformed vars instead of poisoning the source", () => {
+    const read = (vars: unknown) =>
+      sourceFromEnvelope({
+        v: 1,
+        data: { html: "<p>x</p>", css: "", vars },
+      });
+    // Non-map shapes read as "no vars" (pass disabled).
+    expect(read("nope")?.vars).toBeUndefined();
+    expect(read(["a"])?.vars).toBeUndefined();
+    expect(read(null)?.vars).toBeUndefined();
+    // A map keeps string entries, stringifies numbers, drops the rest.
+    expect(read({ a: "x", n: 2, bad: {} })?.vars).toEqual({
+      a: "x",
+      n: "2",
+    });
+    // The source itself always survives.
+    expect(read("nope")?.html).toBe("<p>x</p>");
+  });
+});
+
 describe("normalizeViewportWidth", () => {
   it("accepts positive finite numbers (rounded, clamped)", () => {
     expect(normalizeViewportWidth(480)).toBe(480);

@@ -76,11 +76,14 @@ describe("web conformance — source metadata round-trip", () => {
     const carrier = await insertCarrier(h);
     await h.host.document.setMetadata(carrier as never, envelopeFor(DEFAULT_SOURCE));
     const edited: WebFrameSource = {
-      html: "<h1>Edited</h1>",
+      html: "<h1>{{title}}</h1>",
       css: "h1 { color: rebeccapurple; }",
       // The full options shape — incl. the Phase 2c viewportWidth —
       // rides the same envelope through the real engine carrier.
       options: { media: "screen", overflow: "clip", viewportWidth: 480 },
+      // …and the §6.2 template vars map (additive within envelope v1)
+      // rides it too: the TEMPLATE persists, never a rendered output.
+      vars: { title: "Edited" },
     };
     await h.host.document.setMetadata(carrier as never, envelopeFor(edited));
     const env = await h.host.document.getMetadata(carrier as never);

@@ -9,10 +9,13 @@
 //      diagnostics publish exactly like the §6.1 policy errors do;
 //   3. `previewFontBadge` derives the honest substitution-badge state.
 //
-// Bytes are out of scope by contract: there is no door that serves
-// font face bytes (the wire `registerFont` is host→worker only), so
-// the preview substitutes and the badge says so — serving real
-// `@font-face` is the W-06 asset-store dependency.
+// Bytes WERE out of scope when this spec was born (no serving door);
+// since W-06 landed end-to-end (editor adapter serves REAL engine
+// font bytes through `host.assets.getFontFace`, v43) the second half
+// of this spec covers the real-bytes path: a mock host serving
+// `FontFaceAsset` → `resolvePreviewFontFaces` (the SAME unit the
+// panel effect runs) → a data-url `@font-face` inside the srcdoc +
+// the substitution badge clearing. `null` answers keep the badge.
 
 import { describe, expect, it } from "vitest";
 
@@ -27,14 +30,15 @@ import {
 } from "@paged-media/plugin-sdk";
 import {
   composeFontFaces,
+  composeSrcdoc,
   diagnoseFonts,
   diagnoseHtml,
-  fontParity,
   sourceKeyFor,
-  type ResolvedFontFace,
+  type WebFrameSource,
 } from "@paged-media/web-model";
 
 import { webBundle } from "../src";
+import { resolvePreviewFontFaces } from "../src/panels/font-resolution";
 import { previewFontBadge } from "../src/panels/web-source-panel";
 
 const manifest = webBundle.manifest;
@@ -214,40 +218,30 @@ describe("previewFontBadge — the W-06 flip (document fonts shown)", () => {
   });
 });
 
-// The panel's resolution PATH, exercised end-to-end against the real
-// SDK door + a recordable fake source: for each matched family the panel
-// calls `host.assets.getFontFace`, composes `@font-face`, and the badge
-// flips. Proves the bundle's manifest declares `assets: ["fonts"]` (the
-// gate passes), the bytes flow, and the composed CSS + badge are right.
-describe("asset resolution → @font-face composition + badge flip (W-06)", () => {
+// The panel's resolution PATH — `resolvePreviewFontFaces`, the SAME
+// unit the panel effect runs (not a test-side mirror) — exercised
+// end-to-end against the real SDK door + a recordable fake source
+// serving REAL bytes (the editor does this for engine-registered
+// families since W-06 landed v43): for each used+registered family the
+// door serves a `FontFaceAsset`, the bytes inline as a data-url
+// `@font-face` in the srcdoc, and the substitution badge clears.
+// `null` answers (no bytes / no source) keep the badge.
+describe("asset resolution → data-url @font-face in the srcdoc + badge flip (W-06)", () => {
+  const interBytes = [0x4d, 0x61, 0x6e]; // "Man" → base64 "TWFu"
   const inter: FontFaceAsset = {
-    bytes: new Uint8Array([0, 1, 2, 3]),
+    bytes: new Uint8Array(interBytes),
     format: "truetype",
     family: "Inter",
     postscriptName: "Inter-Regular",
   };
 
-  /** Mirror the panel's resolution loop (no DOM): resolve matched
-   *  families through the door, build ResolvedFontFace[] (src is a
-   *  stand-in for the panel's object URL), return the shown names. */
-  async function resolve(
-    host: ReturnType<typeof createBundleHost>["host"],
-    css: string,
-    registered: string[],
-  ): Promise<{ faces: ResolvedFontFace[]; shown: string[] }> {
-    const { matched } = fontParity(css, registered);
-    const faces: ResolvedFontFace[] = [];
-    const shown: string[] = [];
-    for (const family of matched) {
-      const asset = await host.assets.getFontFace(family);
-      if (!asset) continue;
-      faces.push({ family, src: `blob:${family}`, format: asset.format });
-      shown.push(family);
-    }
-    return { faces, shown };
-  }
+  const sourceWith = (css: string): WebFrameSource => ({
+    html: "<p>hi</p>",
+    css,
+    options: { media: "print", overflow: "clip" },
+  });
 
-  it("serves bytes for a used+registered family, composes a rule, flips the badge", async () => {
+  it("serves bytes for a used+registered family → the srcdoc carries the data-url @font-face and the badge flips", async () => {
     const source = createRecordableAssetSource([inter]);
     const { host } = createBundleHost(
       () => fakeEditorWithFonts([{ family: "Inter" }]),
@@ -257,20 +251,66 @@ describe("asset resolution → @font-face composition + badge flip (W-06)", () =
     expect(host.supports("assets.fonts@1")).toBe(true);
 
     const css = 'p { font-family: Inter, sans-serif; }';
-    const { faces, shown } = await resolve(host, css, ["Inter"]);
+    const { faces, shown } = await resolvePreviewFontFaces(host, css, [
+      "Inter",
+    ]);
 
     // The door was asked for exactly the used+registered family.
     expect(source.requests).toEqual([{ family: "Inter" }]);
-    // A real @font-face composed from the served bytes.
+    // The face src is the served BYTES inlined as a data url (data:,
+    // not blob: — the sandbox="" iframe's opaque origin can't fetch
+    // origin-bound object URLs).
+    expect(faces).toHaveLength(1);
+    expect(faces[0].src).toBe("data:font/ttf;base64,TWFu");
+    // …and the srcdoc the preview renders CARRIES it, ahead of the
+    // source CSS, inside the single <style>.
     const fontFaceCss = composeFontFaces(faces);
-    expect(fontFaceCss).toContain('@font-face{font-family:"Inter";');
-    expect(fontFaceCss).toContain('format("truetype")');
-    // The badge flips to "document fonts shown".
+    const srcdoc = composeSrcdoc(sourceWith(css), fontFaceCss);
+    expect(srcdoc).toContain(
+      '@font-face{font-family:"Inter";' +
+        'src:url(data:font/ttf;base64,TWFu) format("truetype");',
+    );
+    expect(srcdoc.indexOf("@font-face")).toBeLessThan(
+      srcdoc.indexOf("font-family: Inter"),
+    );
+    // The badge flips to "document fonts shown" — the substitution
+    // story CLEARS for the served family.
     const badge = previewFontBadge(css, ["Inter"], shown);
     expect(badge.state).toBe("shown");
     expect(badge.shown).toEqual(["Inter"]);
     // And the diagnostics drop the "not previewable" caveat for it.
     expect(diagnoseFonts(css, ["Inter"], shown)).toEqual([]);
+  });
+
+  it("a family the host has NO bytes for (null answer) keeps the badge", async () => {
+    // Lora is registered but the source only seeds Inter — the Lora
+    // read answers null (the honest, frequent answer).
+    const source = createRecordableAssetSource([inter]);
+    const { host } = createBundleHost(
+      () => fakeEditorWithFonts([{ family: "Inter" }, { family: "Lora" }]),
+      manifest,
+      { console: silent, storage: mapBacking(), assetSource: source },
+    );
+    const css = "p { font-family: Inter, Lora; }";
+    const { faces, shown } = await resolvePreviewFontFaces(host, css, [
+      "Inter",
+      "Lora",
+    ]);
+    // Both registered families were asked; only Inter resolved.
+    expect(source.requests).toEqual([{ family: "Inter" }, { family: "Lora" }]);
+    expect(shown).toEqual(["Inter"]);
+    // The srcdoc carries Inter's face only.
+    const srcdoc = composeSrcdoc(sourceWith(css), composeFontFaces(faces));
+    expect(srcdoc).toContain('font-family:"Inter"');
+    expect(srcdoc).not.toContain('font-family:"Lora"');
+    // Badge: still substituting (Lora has no bytes), info severity.
+    const badge = previewFontBadge(css, ["Inter", "Lora"], shown);
+    expect(badge.state).toBe("substituting");
+    expect(badge.shown).toEqual(["Inter"]);
+    // Diagnostics: Lora keeps its "not previewable" info; Inter drops it.
+    const diags = diagnoseFonts(css, ["Inter", "Lora"], shown);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].message).toContain("Lora");
   });
 
   it("does NOT ask for an UNREGISTERED family (no bytes can exist) and stays substituting", async () => {
@@ -281,7 +321,7 @@ describe("asset resolution → @font-face composition + badge flip (W-06)", () =
       { console: silent, storage: mapBacking(), assetSource: source },
     );
     const css = 'p { font-family: "Ghost Sans", Inter; }';
-    const { shown } = await resolve(host, css, ["Inter"]);
+    const { shown } = await resolvePreviewFontFaces(host, css, ["Inter"]);
     // Only the registered family was requested.
     expect(source.requests).toEqual([{ family: "Inter" }]);
     const badge = previewFontBadge(css, ["Inter"], shown);
@@ -290,7 +330,25 @@ describe("asset resolution → @font-face composition + badge flip (W-06)", () =
     expect(badge.unregistered).toEqual(["Ghost Sans"]);
   });
 
-  it("with NO source injected (the editor's v1 null-path), nothing flips — honest substitution stays", async () => {
+  it("EMPTY served bytes are an honest miss, not a zero-byte @font-face", async () => {
+    const source = createRecordableAssetSource([
+      { ...inter, bytes: new Uint8Array(0) },
+    ]);
+    const { host } = createBundleHost(
+      () => fakeEditorWithFonts([{ family: "Inter" }]),
+      manifest,
+      { console: silent, storage: mapBacking(), assetSource: source },
+    );
+    const { faces, shown } = await resolvePreviewFontFaces(
+      host,
+      "p { font-family: Inter; }",
+      ["Inter"],
+    );
+    expect(faces).toEqual([]);
+    expect(shown).toEqual([]);
+  });
+
+  it("with NO source injected (older hosts / headless), nothing flips — honest substitution stays", async () => {
     const { host } = createBundleHost(
       () => fakeEditorWithFonts([{ family: "Inter" }]),
       manifest,
@@ -301,7 +359,14 @@ describe("asset resolution → @font-face composition + badge flip (W-06)", () =
     // The door still exists + the gate passes (manifest declares it),
     // but every read is null → nothing shown.
     expect(await host.assets.getFontFace("Inter")).toBeNull();
-    const badge = previewFontBadge(css, ["Inter"], []);
+    const { faces, shown } = await resolvePreviewFontFaces(host, css, [
+      "Inter",
+    ]);
+    expect(faces).toEqual([]);
+    // No @font-face reaches the srcdoc; the badge stays.
+    const srcdoc = composeSrcdoc(sourceWith(css), composeFontFaces(faces));
+    expect(srcdoc).not.toContain("@font-face");
+    const badge = previewFontBadge(css, ["Inter"], shown);
     expect(badge.state).toBe("substituting");
     expect(badge.shown).toEqual([]);
   });

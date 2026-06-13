@@ -30,14 +30,28 @@ today is the honest slice API v0.2 carries:
   until the engine rendering lane). Diagnostics (policy errors like
   `<script>`, tag-balance warnings, font parity) render in the panel
   and feed `host.diagnostics` live.
-- **Font registration parity** (W1, BREAKAGE_LOG W-01 follow-up) — the panel
+- **Font registration parity + real document faces** (W1 + W-06) — the panel
   reads the document's registered font families (the `fonts` collection door —
-  family NAMES only; no face bytes cross any door, so serving real
-  `@font-face` is the W-06 dependency), checks them against the families the
-  source CSS uses, and surfaces parity diagnostics ("font not in document" /
-  "document font not previewable"). Because the preview can't load the document
-  faces, it renders with browser defaults and **visibly badges** the
-  substitution — the source lane stays honest about typography.
+  family NAMES), checks them against the families the source CSS uses, and
+  surfaces parity diagnostics ("font not in document" / "document font not
+  previewable"). Since W-06 landed end-to-end (the editor serves REAL engine
+  font bytes through `host.assets.getFontFace`, v43), the panel resolves each
+  used+registered family's bytes and inlines them as a **data-url
+  `@font-face`** in the preview srcdoc (`data:`, not `blob:` — the
+  `sandbox=""` iframe's opaque origin can't fetch origin-bound object URLs);
+  the substitution badge **flips to "document fonts shown"** for served
+  families. A `null` answer (no bytes / older host) keeps the honest
+  substitution badge.
+- **Pre-render template pass** (§6.2 — the deterministic, NON-Turing slice):
+  `{{name}}` substitution plus a closed whitelist of pure filters (`upper`,
+  `lower`, `trim`, `number-format`), applied between the source and the
+  preview/lint/font-parity lanes when the source carries a panel-edited
+  **variables map** (persisted additively in the same envelope; legacy
+  envelopes are untouched). Unresolved placeholders stay verbatim and
+  diagnose — nothing is guessed. **This is NOT the Boa lane**: §6.2's
+  scripted transforms (core's Boa engine, ADR-001, with real ScriptBudget
+  enforcement) are the W2 follow-on tracked as RFI W-08; the panel and the
+  code say so explicitly rather than faking arbitrary JS.
 - **Persistence** as DOCUMENT METADATA (§5; W-02 landed): the
   `x-paged:media.paged.web` envelope written through
   `host.document.setMetadata`, undoable and IDML-carried in-session
@@ -53,7 +67,7 @@ both reserved host-side.
 
 | Package | Contents |
 |---|---|
-| `@paged-media/web-model` | pure TS, zero deps: `WebFrameSource` model, `composeSrcdoc`, the `diagnoseHtml` linter (policy + tag balance), and the font-parity scanner (`familiesUsed` / `fontParity` / `diagnoseFonts`) |
+| `@paged-media/web-model` | pure TS, zero deps: `WebFrameSource` model, `composeSrcdoc`, the `diagnoseHtml` linter (policy + tag balance), the font-parity scanner (`familiesUsed` / `fontParity` / `diagnoseFonts` / `fontFaceDataUrl`), and the deterministic template pass (`applyTemplate` / `renderWebFrameSource`) |
 | `@paged-media/web-bundle` | manifest (id `media.paged.web`) + `activate(host)`: the panel, the insert command — built from host surfaces + React only |
 
 ## Setup

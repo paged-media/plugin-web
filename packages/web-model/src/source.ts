@@ -36,10 +36,41 @@ export function normalizeViewportWidth(value: unknown): number | undefined {
   return Math.min(w, MAX_VIEWPORT_WIDTH);
 }
 
+/** Template variables for the deterministic pre-render pass (§6.2's
+ *  honest W1 slice — see `transform.ts`). Plain string→string: values
+ *  are substituted into `{{name}}` placeholders. ABSENT = the pass is
+ *  disabled (existing documents are untouched); PRESENT (even empty)
+ *  = the pass runs and unknown placeholders get diagnostics. */
+export type TemplateVars = Record<string, string>;
+
+/** Sanitize a template-vars map from UNTRUSTED input (an envelope):
+ *  a plain object whose string entries are kept and finite-number
+ *  entries are stringified; everything else (arrays, null, non-object,
+ *  nested values) reads as "no vars" / a dropped entry. Never throws. */
+export function normalizeTemplateVars(
+  value: unknown,
+): TemplateVars | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const out: TemplateVars = {};
+  for (const [k, v] of Object.entries(value)) {
+    if (typeof v === "string") out[k] = v;
+    else if (typeof v === "number" && Number.isFinite(v)) out[k] = String(v);
+    // anything else: drop the entry, keep the map.
+  }
+  return out;
+}
+
 export interface WebFrameSource {
   html: string;
   css: string;
   options: WebFrameOptions;
+  /** §6.2 deterministic slice — template variables for the pre-render
+   *  pass. ADDITIVE-OPTIONAL within envelope v1 (legacy envelopes have
+   *  none; the pass only runs when the map is present). The full
+   *  Boa-scripted transform lane is the W2 follow-on (RFI W-08). */
+  vars?: TemplateVars;
 }
 
 export const DEFAULT_SOURCE: WebFrameSource = {
@@ -107,7 +138,15 @@ export function sourceFromEnvelope(
   // override" rather than poisoning the whole source.
   const viewportWidth = normalizeViewportWidth(d.options?.viewportWidth);
   if (viewportWidth !== undefined) options.viewportWidth = viewportWidth;
-  return { html: d.html, css: d.css, options };
+  const source: WebFrameSource = { html: d.html, css: d.css, options };
+  // `vars` is ADDITIVE-OPTIONAL within envelope v1 too (the §6.2
+  // template slice): legacy envelopes have none; a malformed map reads
+  // as "no vars" (pass disabled) rather than poisoning the source.
+  if ("vars" in d) {
+    const vars = normalizeTemplateVars(d.vars);
+    if (vars !== undefined) source.vars = vars;
+  }
+  return source;
 }
 
 /**

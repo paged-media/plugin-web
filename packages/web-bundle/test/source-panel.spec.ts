@@ -157,6 +157,9 @@ describe("persistDraft (the explicit save — the panel's only document write)",
     ...DEFAULT_SOURCE,
     css: "h1 { color: rebeccapurple; }",
     options: { media: "screen", overflow: "clip", viewportWidth: 480 },
+    // §6.2 slice — the panel-edited template vars ride the SAME
+    // envelope (additive within v1).
+    vars: { title: "Hello", price: "1234.5" },
   };
 
   it("writes exactly one envelope through host.document.setMetadata", async () => {

@@ -12,10 +12,12 @@ export {
   asFrameTarget,
   composeSrcdoc,
   envelopeFor,
+  normalizeTemplateVars,
   normalizeViewportWidth,
   sourceFromEnvelope,
   sourceKeyFor,
   type FrameTarget,
+  type TemplateVars,
   type WebFrameOptions,
   type WebFrameSource,
   type WebSourceEnvelope,
@@ -27,7 +29,20 @@ export {
   composeFontFaces,
   diagnoseFonts,
   familiesUsed,
+  fontFaceDataUrl,
   fontParity,
   type FontParity,
   type ResolvedFontFace,
 } from "./fonts";
+
+// The §6.2 DETERMINISTIC slice — a pure template-variable pass between
+// source and preview/persist. The scripted (Boa) transform lane is the
+// W2 follow-on (RFI W-08); see transform.ts's seam comment.
+export {
+  applyTemplate,
+  renderWebFrameSource,
+  TEMPLATE_FILTERS,
+  type RenderedWebFrame,
+  type TemplateFilter,
+  type TemplateResult,
+} from "./transform";

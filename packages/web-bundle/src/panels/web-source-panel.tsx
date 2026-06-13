@@ -52,8 +52,10 @@ import {
   fontParity,
   MAX_VIEWPORT_WIDTH,
   normalizeViewportWidth,
+  renderWebFrameSource,
   sourceFromEnvelope,
   sourceKeyFor,
+  TEMPLATE_FILTERS,
   type ResolvedFontFace,
   type WebDiagnostic,
   type WebFrameSource,
@@ -61,6 +63,7 @@ import {
 
 import { createDebouncer } from "./debounce";
 import { resolveEditorLane, type EditorLane } from "./editor-lane";
+import { resolvePreviewFontFaces } from "./font-resolution";
 
 /** Trailing-edge debounce between a keystroke and the preview/lint
  *  refresh. Document writes do NOT ride this timer — see `persistDraft`. */
@@ -428,93 +431,64 @@ function SourceEditor({
   const [draft, setDraft] = useState<WebFrameSource>(initial);
   const [persisted, setPersisted] = useState<WebFrameSource>(initial);
   const preview = useDebouncedValue(draft, PREVIEW_DEBOUNCE_MS);
+  // §6.2 deterministic slice — the template pass sits between the
+  // (debounced) source and EVERYTHING downstream: the srcdoc, the html
+  // lint, and the font parity all consume the RENDERED html/css. The
+  // pass only runs when the draft carries a `vars` map (additive
+  // opt-in); the scripted Boa transform lane is the W2 follow-on
+  // (W-08) — see web-model/src/transform.ts's seam comment. NOTE: when
+  // a substituted value contains newlines, gutter line numbers can
+  // drift against the editor's template text — the rendered output is
+  // the honest lint target (a variable could inject `<script>`; the
+  // policy error must fire on what actually previews).
+  const rendered = useMemo(() => renderWebFrameSource(preview), [preview]);
   // W-06 — document faces the host asset store served BYTES for and we
-  // composed into real `@font-face` rules (object URLs). The preview
-  // shows these as the DOCUMENT's actual faces; the badge flips for
-  // them. `shownFamilies` are the matched families now shown. Object
-  // URLs are revoked on change/unmount (see the resolution effect).
+  // composed into real `@font-face` rules (data URLs — see
+  // font-resolution.ts for why data:, not blob:, in a sandboxed
+  // iframe). The preview shows these as the DOCUMENT's actual faces;
+  // the badge flips for them. `shownFamilies` are the matched families
+  // now shown.
   const [resolvedFaces, setResolvedFaces] = useState<ResolvedFontFace[]>([]);
   const [shownFamilies, setShownFamilies] = useState<string[]>([]);
 
-  // W-06 — resolve the BYTES of the document faces the source uses,
-  // through the capability-gated asset store, and compose real
-  // `@font-face` (object URLs) so the sandboxed preview shows the
-  // DOCUMENT's actual faces. Only families that are BOTH used by the
-  // source AND registered by the document are worth asking for (an
-  // unregistered family has no document bytes by definition). When the
-  // host injects no asset source, every read is `null` and the badge
-  // stays in its honest substitution state (W1). The `@font-face` CSS
-  // lands in the srcdoc <style> — NO script, so `sandbox=""` is
-  // unchanged. Keyed on the DEBOUNCED css (no byte reads per keystroke);
-  // revokes prior object URLs on every change + unmount.
-  const cssForFonts = preview.css;
+  // W-06 — resolve the BYTES of the document faces the RENDERED source
+  // uses through the capability-gated asset store
+  // (`resolvePreviewFontFaces` — the unit the spec exercises). When the
+  // host serves no bytes (null answers / no source injected), nothing
+  // resolves and the badge stays in its honest substitution state. The
+  // `@font-face` CSS lands in the srcdoc <style> — plain CSS with
+  // inline data-url src, NO script, so `sandbox=""` is unchanged.
+  // Keyed on the DEBOUNCED rendered css (no byte reads per keystroke).
+  const cssForFonts = rendered.css;
   useEffect(() => {
     let stale = false;
-    const created: string[] = [];
-    // Nothing to resolve without a real byte source — keep the honest
-    // substitution path (and avoid creating object URLs we'd revoke).
-    if (!host.supports("assets.fonts@1")) {
-      setResolvedFaces([]);
-      setShownFamilies([]);
-      return;
-    }
-    const { matched } = fontParity(cssForFonts, fontFamilies);
-    if (matched.length === 0) {
-      setResolvedFaces([]);
-      setShownFamilies([]);
-      return;
-    }
-    void (async () => {
-      const faces: ResolvedFontFace[] = [];
-      const shown: string[] = [];
-      for (const family of matched) {
-        try {
-          const asset = await host.assets.getFontFace(family);
-          if (!asset || asset.bytes.byteLength === 0) continue;
-          // Copy into a fresh non-shared ArrayBuffer so the Blob part
-          // is a plain `ArrayBuffer` (the served bytes may be backed by
-          // a SharedArrayBuffer; `Blob` rejects SAB-backed views).
-          const copy = new Uint8Array(asset.bytes.byteLength);
-          copy.set(asset.bytes);
-          const blob = new Blob([copy.buffer], {
-            type: "application/octet-stream",
-          });
-          const url = URL.createObjectURL(blob);
-          created.push(url);
-          faces.push({ family, src: url, format: asset.format });
-          shown.push(family);
-        } catch {
-          // A failing read is just "no bytes" — substitute + badge.
-        }
-      }
-      if (stale) {
-        // Effect re-ran/unmounted before we committed — drop the URLs.
-        for (const u of created) URL.revokeObjectURL(u);
-        return;
-      }
-      setResolvedFaces(faces);
-      setShownFamilies(shown);
-    })();
+    void resolvePreviewFontFaces(host, cssForFonts, fontFamilies).then(
+      ({ faces, shown }) => {
+        if (stale) return;
+        setResolvedFaces(faces);
+        setShownFamilies(shown);
+      },
+    );
     return () => {
       stale = true;
-      for (const u of created) URL.revokeObjectURL(u);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cssForFonts, fontFamilies.join(" ")]);
 
-  // The full diagnostic set: HTML policy/balance + CSS↔document font
-  // parity (W1). Both lanes share the same WebDiagnostic shape so the
-  // panel list, the Problems panel, and the gutter render them
-  // uniformly. Pure web-model calls over the DEBOUNCED draft — the
-  // lint lane rides the same ~300 ms cadence as the preview. W-06: a
-  // family whose bytes were SHOWN drops its "not previewable" info
-  // (it IS previewable now).
+  // The full diagnostic set: template-pass warnings (§6.2 slice) +
+  // HTML policy/balance + CSS↔document font parity (W1). All lanes
+  // share the same WebDiagnostic shape so the panel list, the Problems
+  // panel, and the gutter render them uniformly. Pure web-model calls
+  // over the DEBOUNCED, RENDERED draft — the lint lane rides the same
+  // ~300 ms cadence as the preview. W-06: a family whose bytes were
+  // SHOWN drops its "not previewable" info (it IS previewable now).
   const diagnostics = useMemo<WebDiagnostic[]>(
     () => [
-      ...diagnoseHtml(preview.html),
-      ...diagnoseFonts(preview.css, fontFamilies, shownFamilies),
+      ...rendered.diagnostics,
+      ...diagnoseHtml(rendered.html),
+      ...diagnoseFonts(rendered.css, fontFamilies, shownFamilies),
     ],
-    [preview, fontFamilies, shownFamilies],
+    [rendered, fontFamilies, shownFamilies],
   );
   // Publish to the host problems lane on the same debounced cadence —
   // linting is analysis, not a document write, so it stays LIVE while
@@ -532,8 +506,8 @@ function SourceEditor({
   // on-canvas too), and a matched family the host had no bytes for is
   // still a browser substitute HERE.
   const badge = useMemo(
-    () => previewFontBadge(preview.css, fontFamilies, shownFamilies),
-    [preview, fontFamilies, shownFamilies],
+    () => previewFontBadge(rendered.css, fontFamilies, shownFamilies),
+    [rendered, fontFamilies, shownFamilies],
   );
   // Per-line markers for the HTML editor's gutter (the linter only
   // diagnoses HTML today; line-less policy notes don't carry a
@@ -548,16 +522,21 @@ function SourceEditor({
     [diagnostics],
   );
   // W-06: the served document faces become a real `@font-face` prelude
-  // inside the srcdoc <style> (plain CSS + object-URL src, NO script —
-  // sandbox="" unchanged). The preview then uses the document's actual
-  // faces for every resolved family.
+  // inside the srcdoc <style> (plain CSS + inline data-url src, NO
+  // script — sandbox="" unchanged). The preview then uses the
+  // document's actual faces for every resolved family. The srcdoc body
+  // is the RENDERED source (template pass applied).
   const fontFaceCss = useMemo(
     () => composeFontFaces(resolvedFaces),
     [resolvedFaces],
   );
   const srcdoc = useMemo(
-    () => composeSrcdoc(preview, fontFaceCss),
-    [preview, fontFaceCss],
+    () =>
+      composeSrcdoc(
+        { html: rendered.html, css: rendered.css, options: preview.options },
+        fontFaceCss,
+      ),
+    [rendered, preview.options, fontFaceCss],
   );
 
   const dirty = useMemo(
@@ -572,6 +551,25 @@ function SourceEditor({
       onPersisted(next);
     });
   }, [draft, id, onPersisted]);
+
+  // §6.2 slice — the panel-edited variables map. Rows render in entry
+  // order; a key rename rebuilds the object (a rename ONTO an existing
+  // key keeps the later entry — Object.fromEntries semantics, fine for
+  // a hand-edited map). Removing the last row drops `vars` entirely,
+  // which DISABLES the pass (placeholders then stay verbatim and stop
+  // warning — the documented opt-in seam).
+  const varEntries = Object.entries(draft.vars ?? {});
+  const setVarEntries = useCallback(
+    (entries: Array<[string, string]>) => {
+      setDraft((d) => {
+        const next = { ...d };
+        if (entries.length === 0) delete next.vars;
+        else next.vars = Object.fromEntries(entries);
+        return next;
+      });
+    },
+    [],
+  );
 
   const CodeEditor = lane.CodeEditor;
   // The honest viewport: the preview IFRAME takes the declared width,
@@ -665,6 +663,89 @@ function SourceEditor({
           other policies ship with the engine rendering lane
         </span>
       </label>
+      <div style={kicker}>Variables</div>
+      {/* §6.2 — the DETERMINISTIC template slice: {{name}} substitution
+          plus a closed whitelist of pure filters, applied between the
+          source and the preview (and, via the persisted vars map, any
+          future render lane). NOT a scripting surface: the Boa-powered
+          transform lane (ADR-001 engine, W-08) is the W2 follow-on, and
+          this panel never pretends otherwise. */}
+      {varEntries.map(([name, value], i) => (
+        <div key={i} data-web-var-row style={optionRow}>
+          <input
+            data-web-var-name
+            value={name}
+            aria-label={`Variable ${i + 1} name`}
+            onChange={(e) => {
+              const entries = varEntries.slice() as Array<[string, string]>;
+              entries[i] = [e.target.value, value];
+              setVarEntries(entries);
+            }}
+            style={{ ...field, width: 96, fontFamily: "var(--font-mono, monospace)" }}
+          />
+          <input
+            data-web-var-value
+            value={value}
+            aria-label={`Variable ${i + 1} value`}
+            onChange={(e) => {
+              const entries = varEntries.slice() as Array<[string, string]>;
+              entries[i] = [name, e.target.value];
+              setVarEntries(entries);
+            }}
+            style={{ ...field, flex: 1 }}
+          />
+          <button
+            type="button"
+            data-web-var-remove
+            aria-label={`Remove variable ${name}`}
+            onClick={() =>
+              setVarEntries(
+                varEntries.filter((_, j) => j !== i) as Array<[string, string]>,
+              )
+            }
+            style={{
+              font: "500 11px var(--font-sans, sans-serif)",
+              color: "var(--pg-fg)",
+              background: "var(--pg-bg)",
+              border: "1px solid var(--pg-border)",
+              borderRadius: "var(--radius-sm, 4px)",
+              padding: "2px 6px",
+              cursor: "pointer",
+            }}
+          >
+            ×
+          </button>
+        </div>
+      ))}
+      <div style={optionRow}>
+        <button
+          type="button"
+          data-web-var-add
+          onClick={() => {
+            const used = new Set(varEntries.map(([k]) => k));
+            let n = varEntries.length + 1;
+            while (used.has(`var${n}`)) n += 1;
+            setVarEntries([...varEntries, [`var${n}`, ""]] as Array<
+              [string, string]
+            >);
+          }}
+          style={{
+            font: "500 11px var(--font-sans, sans-serif)",
+            color: "var(--pg-fg)",
+            background: "var(--pg-bg)",
+            border: "1px solid var(--pg-border)",
+            borderRadius: "var(--radius-sm, 4px)",
+            padding: "2px 8px",
+            cursor: "pointer",
+          }}
+        >
+          Add variable
+        </button>
+        <span style={mutedNote}>
+          {"{{name}}"} substitution + {TEMPLATE_FILTERS.join(" · ")} —
+          deterministic; scripted (Boa) transforms ship with the W2 lane
+        </span>
+      </div>
       {/* Persistence is EXPLICIT: one undoable metadata mutation per
           save, never a side effect of typing (the preview above the
           fold refreshes live; the document does not). */}

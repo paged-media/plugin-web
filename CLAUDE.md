@@ -34,7 +34,13 @@ panel).
   widget IS consumed (probe `widgets.codeEditor@1`, bundle-owned
   textarea fallback), objectType/edit-context registered (W-03),
   metadata round-trips in-session (W-02), font bytes via the
-  capability-gated asset store (W-06).
+  capability-gated asset store (W-06 — REAL editor bytes since v43,
+  inlined as data-url `@font-face`; `blob:` can't cross into the
+  opaque-origin sandbox), and the §6.2 DETERMINISTIC template pass
+  (`{{name}}` + a closed pure-filter whitelist, vars persisted in the
+  envelope). The scripted Boa transform lane (W-08) is the W2
+  follow-on — never grow the template pass into an expression
+  language.
 - **Preview ≠ persistence.** Keystrokes refresh the sandboxed preview +
   diagnostics behind the ~300 ms debounce; the document is written ONLY
   by the explicit "Save to document" action (`persistDraft` — one

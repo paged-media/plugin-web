@@ -228,6 +228,60 @@ export interface ResolvedFontFace {
   format?: "truetype" | "opentype" | "woff" | "woff2";
 }
 
+// Base64 without `btoa`/`Buffer` — web-model is pure TS with no DOM
+// and no node built-ins, and the input may be a SharedArrayBuffer-
+// backed view (the worker's served bytes): plain indexed reads work on
+// those where `Blob`/`btoa` paths reject or require copies.
+const B64 =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+function toBase64(bytes: Uint8Array): string {
+  let out = "";
+  for (let i = 0; i < bytes.length; i += 3) {
+    const a = bytes[i];
+    const b = i + 1 < bytes.length ? bytes[i + 1] : 0;
+    const c = i + 2 < bytes.length ? bytes[i + 2] : 0;
+    out += B64[a >> 2];
+    out += B64[((a & 3) << 4) | (b >> 4)];
+    out += i + 1 < bytes.length ? B64[((b & 15) << 2) | (c >> 6)] : "=";
+    out += i + 2 < bytes.length ? B64[c & 63] : "=";
+  }
+  return out;
+}
+
+/** The data-url MIME for a face container format. */
+function fontMime(format: ResolvedFontFace["format"]): string {
+  switch (format) {
+    case "truetype":
+      return "font/ttf";
+    case "opentype":
+      return "font/otf";
+    case "woff":
+      return "font/woff";
+    case "woff2":
+      return "font/woff2";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+/**
+ * Inline served face BYTES as a `data:` URL for the `@font-face` `src`
+ * (the W-06 real-bytes path). A `data:` URL — not an object URL — is
+ * the only kind the preview can actually load: the iframe is sandboxed
+ * with `sandbox=""` (OPAQUE origin, §6.1), and `blob:` URLs are bound
+ * to the origin that minted them, so the opaque-origin document cannot
+ * fetch the panel's blobs. Inlining also kills the revoke lifecycle.
+ * Pure string assembly; empty/invalid bytes → `""` (caller skips).
+ */
+export function fontFaceDataUrl(
+  bytes: Uint8Array,
+  format?: ResolvedFontFace["format"],
+): string {
+  if (!(bytes instanceof Uint8Array) || bytes.length === 0) return "";
+  return `data:${fontMime(format)};base64,${toBase64(bytes)}`;
+}
+
 /** Map an asset `format` to the CSS `format()` keyword. */
 function cssFormat(
   format: ResolvedFontFace["format"],
