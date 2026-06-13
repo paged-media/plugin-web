@@ -69,12 +69,42 @@ fi
 echo "build-wasm: wrote artifact(s) to $OUT"
 ls -la "$OUT"
 
+# Size report + budget gate. The manifest's `capabilities.wasm[blitz]`
+# declares the D-07b ceiling (64 MiB); the engine artifact must fit. The
+# W0 spike measured ~2.2 MB brotli for the marginal Blitz stack — report
+# the same so a regression in the artifact size is visible at build time.
+BG="$OUT/blitz_web_bg.wasm"
+BUDGET_BYTES=$((64 * 1024 * 1024))
+if [[ -f "$BG" ]]; then
+  RAW_BYTES=$(wc -c < "$BG" | tr -d ' ')
+  printf 'build-wasm: artifact %s = %d bytes (%.2f MiB), budget %d MiB\n' \
+    "$(basename "$BG")" "$RAW_BYTES" "$(echo "$RAW_BYTES" | awk '{print $1/1048576}')" \
+    $((BUDGET_BYTES / 1024 / 1024))
+  if command -v brotli >/dev/null 2>&1; then
+    BR_BYTES=$(brotli -q 11 -c "$BG" 2>/dev/null | wc -c | tr -d ' ')
+    printf 'build-wasm: brotli transfer size = %d bytes (%.2f MiB)\n' \
+      "$BR_BYTES" "$(echo "$BR_BYTES" | awk '{print $1/1048576}')"
+  fi
+  if (( RAW_BYTES > BUDGET_BYTES )); then
+    echo "build-wasm: ERROR — artifact exceeds the 64 MiB D-07b budget" >&2
+    exit 1
+  fi
+fi
+
 if [[ "$MODE" == "lowering" ]]; then
   cat <<'NOTE'
 
 build-wasm: NOTE — this is the LOWERING artifact (no engine). The bundle's
 render contract stays on its honest not-loaded path until the engine
-artifact ships:  bash scripts/build-wasm.sh --engine  (the named next
-slice; also needs pinned-face registration + DOM run-text capture).
+artifact ships:  bash scripts/build-wasm.sh --engine  (the full Blitz
+stack + pinned-face registration + DOM run-text capture).
+NOTE
+else
+  cat <<'NOTE'
+
+build-wasm: NOTE — this is the ENGINE artifact (full Blitz: Stylo/Taffy/
+Parley + the capture sink, with a pinned fallback face registered so text
+shapes on wasm). It exposes render_web_frame(html, w, h) -> C-1 SceneLayer
+JSON, which the bundle loads + submits via host.contribute.sceneLayer().
 NOTE
 fi
