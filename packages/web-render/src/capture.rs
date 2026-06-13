@@ -32,7 +32,7 @@ use kurbo::{Affine, BezPath, PathEl, Point, Rect, Shape, Stroke, Vec2};
 use parley::{Layout, PositionedLayoutItem};
 use peniko::{BlendMode, Color, Fill, FontData, StyleRef};
 
-use crate::display_list::{UnsupportedKind, WebDisplayList, WebDrawCmd, WebGlyphRun};
+use crate::display_list::{UnsupportedKind, WebDisplayList, WebDrawCmd, WebGlyphRun, WebImage};
 use crate::fonts::{build_font_ctx, BUNDLED_FAMILY};
 use crate::wire::{RectPt, ScenePaint, ScenePathSeg};
 
@@ -66,6 +66,35 @@ impl CapturingScene {
     fn px_pt(v: f64) -> f32 {
         (v * PX_TO_PT) as f32
     }
+
+    /// Try to capture a raster image fill as a [`WebImage`]: extract straight
+    /// RGBA8 pixels + dims, and the axis-aligned destination box (in content
+    /// points) the `transform` maps the source rect onto. Returns `None`
+    /// when the dest is rotated/sheared (no C-1 image transform yet — the
+    /// caller records an honest `ImageFill` drop) or the pixels are
+    /// malformed.
+    fn capture_image(
+        &self,
+        image_brush: &peniko::ImageBrushRef<'_>,
+        transform: Affine,
+        shape: &impl Shape,
+    ) -> Option<WebImage> {
+        // The dest box: the source rect (`shape`) under the paint transform.
+        // Only an axis-aligned dest lowers to a C-1 image (Stage A carries no
+        // per-image transform); a rotated/sheared dest is the honest drop.
+        let dest = as_axis_aligned_rect(shape, transform)?;
+        if !dest.is_positive() {
+            return None;
+        }
+        let image = image_brush.image;
+        let rgba = image_to_straight_rgba8(image, image_brush.sampler.alpha)?;
+        Some(WebImage {
+            rgba,
+            width: image.width,
+            height: image.height,
+            dest,
+        })
+    }
 }
 
 /// Extract a solid sRGB paint from a brush, or `None` if it is a
@@ -80,6 +109,45 @@ fn solid_paint<'a>(brush: impl Into<PaintRef<'a>>) -> Option<ScenePaint> {
         }
         _ => None,
     }
+}
+
+/// Convert a peniko [`ImageData`] to straight (un-premultiplied) RGBA8 —
+/// the C-1 `image` wire contract. Handles the two formats peniko exposes
+/// (RGBA8 / BGRA8) and un-premultiplies premultiplied alpha. `extra_alpha`
+/// (the brush sampler's alpha multiplier, 0..=1) folds into each pixel's
+/// alpha. Returns `None` if the byte buffer doesn't describe `w*h` pixels
+/// (a malformed image is dropped, never shipped truncated).
+fn image_to_straight_rgba8(image: &peniko::ImageData, extra_alpha: f32) -> Option<Vec<u8>> {
+    let (w, h) = (image.width as usize, image.height as usize);
+    let px = w.checked_mul(h)?;
+    let need = px.checked_mul(4)?;
+    let src = image.data.data();
+    if src.len() < need {
+        return None;
+    }
+    let extra = extra_alpha.clamp(0.0, 1.0);
+    let premultiplied = matches!(image.alpha_type, peniko::ImageAlphaType::AlphaPremultiplied);
+    let bgra = matches!(image.format, peniko::ImageFormat::Bgra8);
+    let mut out = Vec::with_capacity(need);
+    for chunk in src[..need].chunks_exact(4) {
+        // Read channels in source order, then swizzle BGRA → RGBA.
+        let (mut r, mut g, mut b, a) = if bgra {
+            (chunk[2], chunk[1], chunk[0], chunk[3])
+        } else {
+            (chunk[0], chunk[1], chunk[2], chunk[3])
+        };
+        if premultiplied && a != 0 {
+            // Un-premultiply: straight = premul * 255 / a (rounded).
+            let unmul =
+                |c: u8| -> u8 { ((c as u32 * 255 + a as u32 / 2) / a as u32).min(255) as u8 };
+            r = unmul(r);
+            g = unmul(g);
+            b = unmul(b);
+        }
+        let a = (a as f32 * extra).round().clamp(0.0, 255.0) as u8;
+        out.extend_from_slice(&[r, g, b, a]);
+    }
+    Some(out)
 }
 
 /// Map a transformed kurbo `Point` to a content-point `(x, y)`.
@@ -218,15 +286,29 @@ impl PaintScene for CapturingScene {
         _brush_transform: Option<Affine>,
         shape: &impl Shape,
     ) {
-        // Determine the unsupported KIND before consuming `brush`.
         let pr: PaintRef<'a> = brush.into();
+        // A raster image fill: the anyrender `draw_image` path lands here as
+        // `Paint::Image` with `shape` = the natural-size source rect and
+        // `transform` mapping it onto the page (object-fit + scale folded
+        // in). If the transform keeps the box axis-aligned we capture a real
+        // `DrawImage` → C-1 `image`; a rotated/sheared image dest has no
+        // C-1 image transform yet, so it stays an honest `ImageFill` drop.
+        if let anyrender::Paint::Image(image_brush) = &pr {
+            match self.capture_image(image_brush, transform, shape) {
+                Some(img) => self.dl.push(WebDrawCmd::DrawImage(img)),
+                None => self.dl.push(WebDrawCmd::NonSolidPaint {
+                    what: UnsupportedKind::ImageFill,
+                }),
+            }
+            return;
+        }
+        // Determine the unsupported KIND before consuming `brush`.
         let kind = match &pr {
-            anyrender::Paint::Image(_) | anyrender::Paint::Resource(_) => {
+            anyrender::Paint::Resource(_) | anyrender::Paint::Custom(_) => {
                 Some(UnsupportedKind::ImageFill)
             }
             anyrender::Paint::Gradient(_) => Some(UnsupportedKind::GradientFill),
-            anyrender::Paint::Custom(_) => Some(UnsupportedKind::ImageFill),
-            anyrender::Paint::Solid(_) => None,
+            anyrender::Paint::Image(_) | anyrender::Paint::Solid(_) => None,
         };
         match solid_paint(pr) {
             Some(paint) => {
@@ -521,6 +603,159 @@ mod tests {
         let r = kurbo::Rect::new(0.0, 0.0, 10.0, 10.0);
         let xf = Affine::rotate(0.5);
         assert!(as_axis_aligned_rect(&r, xf).is_none());
+    }
+
+    fn image_data(
+        rgba: Vec<u8>,
+        w: u32,
+        h: u32,
+        format: peniko::ImageFormat,
+        alpha_type: peniko::ImageAlphaType,
+    ) -> peniko::ImageData {
+        peniko::ImageData {
+            data: peniko::Blob::from(rgba),
+            format,
+            alpha_type,
+            width: w,
+            height: h,
+        }
+    }
+
+    #[test]
+    fn rgba8_image_passes_through_straight() {
+        // A 1×2 RGBA8 image (already straight) survives byte-for-byte.
+        let src = vec![10, 20, 30, 255, 40, 50, 60, 128];
+        let img = image_data(
+            src.clone(),
+            1,
+            2,
+            peniko::ImageFormat::Rgba8,
+            peniko::ImageAlphaType::Alpha,
+        );
+        let out = image_to_straight_rgba8(&img, 1.0).expect("rgba8");
+        assert_eq!(out, src);
+    }
+
+    #[test]
+    fn bgra8_image_is_swizzled_to_rgba() {
+        // One pixel in BGRA order (B=10, G=20, R=30, A=255) → RGBA (30,20,10,255).
+        let img = image_data(
+            vec![10, 20, 30, 255],
+            1,
+            1,
+            peniko::ImageFormat::Bgra8,
+            peniko::ImageAlphaType::Alpha,
+        );
+        let out = image_to_straight_rgba8(&img, 1.0).expect("bgra8");
+        assert_eq!(out, vec![30, 20, 10, 255]);
+    }
+
+    #[test]
+    fn premultiplied_image_is_unpremultiplied() {
+        // Premultiplied (128,128,128) at a=128 → straight ~ (255,255,255,128).
+        let img = image_data(
+            vec![128, 128, 128, 128],
+            1,
+            1,
+            peniko::ImageFormat::Rgba8,
+            peniko::ImageAlphaType::AlphaPremultiplied,
+        );
+        let out = image_to_straight_rgba8(&img, 1.0).expect("premul");
+        assert_eq!(out[3], 128);
+        // 128 * 255 / 128 = 255 (rounded).
+        assert_eq!(&out[0..3], &[255, 255, 255]);
+    }
+
+    #[test]
+    fn sampler_alpha_folds_into_pixel_alpha() {
+        let img = image_data(
+            vec![10, 20, 30, 200],
+            1,
+            1,
+            peniko::ImageFormat::Rgba8,
+            peniko::ImageAlphaType::Alpha,
+        );
+        let out = image_to_straight_rgba8(&img, 0.5).expect("alpha");
+        // a = round(200 * 0.5) = 100; colour channels untouched.
+        assert_eq!(out, vec![10, 20, 30, 100]);
+    }
+
+    #[test]
+    fn malformed_image_buffer_is_rejected() {
+        // 2×2 claims 16 bytes but carries 4 → None (never shipped truncated).
+        let img = image_data(
+            vec![1, 2, 3, 4],
+            2,
+            2,
+            peniko::ImageFormat::Rgba8,
+            peniko::ImageAlphaType::Alpha,
+        );
+        assert!(image_to_straight_rgba8(&img, 1.0).is_none());
+    }
+
+    #[test]
+    fn capture_image_maps_source_rect_to_an_axis_aligned_dest() {
+        // The anyrender `draw_image` shape is the natural-size source rect
+        // (0,0,w,h); the transform maps it onto the page. Capture computes
+        // the dest in content points (px→pt).
+        let scene = CapturingScene::new();
+        let img = image_data(
+            vec![0; 16],
+            2,
+            2,
+            peniko::ImageFormat::Rgba8,
+            peniko::ImageAlphaType::Alpha,
+        );
+        let brush = peniko::ImageBrush::new(img);
+        let brush_ref = brush.as_ref();
+        // Natural-size source rect.
+        let src_rect = kurbo::Rect::new(0.0, 0.0, 2.0, 2.0);
+        // Map onto a 96×96 px box at (96, 0) px → 72×72 pt at (72, 0) pt.
+        let xf = Affine::translate((96.0, 0.0)) * Affine::scale_non_uniform(48.0, 48.0);
+        let captured = scene
+            .capture_image(&brush_ref, xf, &src_rect)
+            .expect("axis-aligned image dest");
+        assert_eq!((captured.width, captured.height), (2, 2));
+        assert_eq!(captured.rgba.len(), 16);
+        assert!(
+            (captured.dest.x - 72.0).abs() < 1e-3,
+            "x={}",
+            captured.dest.x
+        );
+        assert!(
+            (captured.dest.y - 0.0).abs() < 1e-3,
+            "y={}",
+            captured.dest.y
+        );
+        assert!(
+            (captured.dest.w - 72.0).abs() < 1e-3,
+            "w={}",
+            captured.dest.w
+        );
+        assert!(
+            (captured.dest.h - 72.0).abs() < 1e-3,
+            "h={}",
+            captured.dest.h
+        );
+    }
+
+    #[test]
+    fn capture_image_rejects_a_rotated_dest() {
+        // A rotated image dest has no C-1 image transform → None (the caller
+        // records an honest ImageFill drop instead).
+        let scene = CapturingScene::new();
+        let img = image_data(
+            vec![0; 4],
+            1,
+            1,
+            peniko::ImageFormat::Rgba8,
+            peniko::ImageAlphaType::Alpha,
+        );
+        let brush = peniko::ImageBrush::new(img);
+        let brush_ref = brush.as_ref();
+        let src_rect = kurbo::Rect::new(0.0, 0.0, 1.0, 1.0);
+        let xf = Affine::rotate(0.4) * Affine::scale(40.0);
+        assert!(scene.capture_image(&brush_ref, xf, &src_rect).is_none());
     }
 
     #[test]

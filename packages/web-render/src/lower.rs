@@ -6,23 +6,27 @@
 //! lists (no live Blitz), so the mapping is proven independently of the
 //! engine that produces the input.
 //!
-//! Coverage today ("B2 vector + text"):
+//! Coverage today ("B2 vector + text + raster"):
 //!   · `FillRect`   → `SceneItem::FillPath` (closed 4-corner box)
 //!   · `FillPath`   → `SceneItem::FillPath` (1:1)
 //!   · `StrokePath` → `SceneItem::StrokePath` (1:1)
-//!   · `GlyphRun`   → `SceneItem::Text` (single-line run at the baseline)
+//!   · `GlyphRun`   → `SceneItem::Text` (one item PER parley run — a
+//!     multi-run paragraph emits several text items in painter order)
+//!   · `DrawImage`  → `SceneItem::Image` (Stage A; straight RGBA8 +
+//!     axis-aligned dest box, the paint transform folded into the dest)
 //!
 //! Deliberately DROPPED (counted + reported, never faked — the honest
 //! ceiling of C-1's current stages / Tier-B):
-//!   · non-solid paints (gradients, image/pattern fills) — C-1 carries
-//!     solid paint only; the GPU-texture / per-run escape hatch is C-1's
-//!     roadmap, not this slice.
+//!   · gradient paints — C-1 carries solid paint + the Stage-A image
+//!     escape hatch only; gradient paint awaits a separate C-1 wire growth.
+//!   · rotated/sheared image dests — the Stage-A image item carries an
+//!     axis-aligned box only (no per-image transform yet), so a transformed
+//!     image dest is counted as an unsupported paint, not faked.
 //!   · box shadows / blur — no C-1 representation.
-//! Multi-run/bidi text shaping, raster images, blend modes, and CSS
-//! fragmentation across linked frames are out of this slice (Tier-B); see
-//! the base-idea lowering-lane status.
+//! Blend modes and CSS fragmentation across linked frames are out of this
+//! slice (Tier-B); see the base-idea lowering-lane status.
 
-use crate::display_list::{WebDisplayList, WebDrawCmd, WebGlyphRun};
+use crate::display_list::{WebDisplayList, WebDrawCmd, WebGlyphRun, WebImage};
 use crate::wire::{SceneItem, SceneLayer, SceneTextItem};
 
 /// What the lowering covered vs. dropped — surfaced to the bundle so the
@@ -36,10 +40,15 @@ pub struct LowerReport {
     pub fills: usize,
     /// Strokes emitted.
     pub strokes: usize,
-    /// Text runs emitted.
+    /// Text runs emitted (one per parley run — multi-run paragraphs emit
+    /// one `text` item per run, preserving painter order).
     pub text_runs: usize,
-    /// Primitives dropped because their paint is non-solid (gradient/
-    /// image) — the C-1 ceiling.
+    /// Raster images emitted as C-1 `image` items (Stage A).
+    pub images: usize,
+    /// Primitives dropped because their paint is a non-solid the C-1 wire
+    /// can't carry today — gradients (paint) and rotated/sheared image
+    /// dests (no image transform on the wire yet). Axis-aligned raster
+    /// images are NOT dropped — they lower to `image` items.
     pub dropped_non_solid: usize,
     /// Box shadows / blurs dropped (no C-1 representation).
     pub dropped_shadows: usize,
@@ -64,7 +73,7 @@ impl LowerReport {
         let mut parts = Vec::new();
         if self.dropped_non_solid > 0 {
             parts.push(format!(
-                "{} gradient/image paint(s)",
+                "{} gradient/transformed-image paint(s)",
                 self.dropped_non_solid
             ));
         }
@@ -72,7 +81,7 @@ impl LowerReport {
             parts.push(format!("{} shadow(s)/blur(s)", self.dropped_shadows));
         }
         Some(format!(
-            "{} primitive(s) not yet renderable on the scene-layer wire: {} (vector + solid fill + single-line text are supported today)",
+            "{} primitive(s) not yet renderable on the scene-layer wire: {} (vector + solid fill + multi-run text + axis-aligned raster images are supported today)",
             self.dropped(),
             parts.join(", "),
         ))
@@ -137,6 +146,13 @@ pub fn lower(dl: &WebDisplayList) -> Lowered {
                 }
                 None => report.skipped_empty += 1,
             },
+            WebDrawCmd::DrawImage(img) => match lower_image(img) {
+                Some(item) => {
+                    layer.items.push(item);
+                    report.images += 1;
+                }
+                None => report.skipped_empty += 1,
+            },
             WebDrawCmd::NonSolidPaint { what } => {
                 // Counted, never faked — the C-1 wire has no gradient/image
                 // brush. The label is carried for the diagnostic.
@@ -169,6 +185,36 @@ fn lower_text(run: &WebGlyphRun) -> Option<SceneItem> {
         family: run.family.clone(),
         style: None,
     }))
+}
+
+/// Lower a captured raster image to the EXISTING C-1 `SceneItem::Image`
+/// (Stage A, canvas-wasm v0.41+) — no core change. Returns `None` for a
+/// degenerate image (zero pixels, zero-area dest, or a byte buffer whose
+/// length doesn't match `width*height*4` — the honest skip, never a faked
+/// or truncated upload). The `rgba` bytes pass through 1:1 (straight RGBA8,
+/// the wire contract).
+fn lower_image(img: &WebImage) -> Option<SceneItem> {
+    if img.width == 0 || img.height == 0 || !img.dest.is_positive() {
+        return None;
+    }
+    let expected = (img.width as usize)
+        .checked_mul(img.height as usize)
+        .and_then(|px| px.checked_mul(4))?;
+    if img.rgba.len() != expected {
+        // A buffer that doesn't describe `w*h` RGBA8 pixels is not a fidelity
+        // loss we hide — skip it (counted as an empty/degenerate skip by the
+        // caller) rather than ship a malformed image upload.
+        return None;
+    }
+    Some(SceneItem::Image {
+        rgba: img.rgba.clone(),
+        width: img.width,
+        height: img.height,
+        x: img.dest.x,
+        y: img.dest.y,
+        w: img.dest.w,
+        h: img.dest.h,
+    })
 }
 
 #[cfg(test)]
@@ -343,8 +389,115 @@ mod tests {
     }
 
     #[test]
+    fn raster_image_lowers_to_a_c1_image_item_with_the_right_dest() {
+        use crate::display_list::WebImage;
+        // A 2×2 RGBA8 image (16 bytes) painted into a 50×30 pt box at (10,20).
+        let rgba: Vec<u8> = (0..16).collect();
+        let mut dl = WebDisplayList::new();
+        dl.push(WebDrawCmd::DrawImage(WebImage {
+            rgba: rgba.clone(),
+            width: 2,
+            height: 2,
+            dest: RectPt::new(10.0, 20.0, 50.0, 30.0),
+        }));
+        let out = lower(&dl);
+        assert_eq!(out.report.images, 1);
+        assert_eq!(out.report.emitted, 1);
+        // Images are NOT counted as unsupported anymore.
+        assert_eq!(out.report.dropped_non_solid, 0);
+        assert!(out.report.unsupported_note().is_none());
+        let SceneItem::Image {
+            rgba: got,
+            width,
+            height,
+            x,
+            y,
+            w,
+            h,
+        } = &out.layer.items[0]
+        else {
+            panic!("expected an image item, got {:?}", out.layer.items[0]);
+        };
+        assert_eq!(got, &rgba);
+        assert_eq!(*width, 2);
+        assert_eq!(*height, 2);
+        assert_eq!((*x, *y, *w, *h), (10.0, 20.0, 50.0, 30.0));
+    }
+
+    #[test]
+    fn image_with_mismatched_byte_length_is_skipped_not_shipped() {
+        use crate::display_list::WebImage;
+        // 2×2 claims 16 bytes but carries 4 — a malformed buffer is skipped,
+        // never uploaded truncated.
+        let mut dl = WebDisplayList::new();
+        dl.push(WebDrawCmd::DrawImage(WebImage {
+            rgba: vec![1, 2, 3, 4],
+            width: 2,
+            height: 2,
+            dest: RectPt::new(0.0, 0.0, 10.0, 10.0),
+        }));
+        let out = lower(&dl);
+        assert!(out.layer.items.is_empty());
+        assert_eq!(out.report.images, 0);
+        assert_eq!(out.report.skipped_empty, 1);
+    }
+
+    #[test]
+    fn zero_area_image_dest_is_skipped() {
+        use crate::display_list::WebImage;
+        let mut dl = WebDisplayList::new();
+        dl.push(WebDrawCmd::DrawImage(WebImage {
+            rgba: vec![0; 4],
+            width: 1,
+            height: 1,
+            dest: RectPt::new(0.0, 0.0, 0.0, 20.0),
+        }));
+        let out = lower(&dl);
+        assert!(out.layer.items.is_empty());
+        assert_eq!(out.report.skipped_empty, 1);
+        assert_eq!(out.report.images, 0);
+    }
+
+    #[test]
+    fn image_preserves_painters_order_among_fills_and_text() {
+        use crate::display_list::WebImage;
+        // background fill, then an image, then a caption text run.
+        let mut dl = WebDisplayList::new();
+        dl.push(WebDrawCmd::FillRect {
+            rect: RectPt::new(0.0, 0.0, 100.0, 100.0),
+            paint: ScenePaint::rgba(1.0, 1.0, 1.0, 1.0),
+        });
+        dl.push(WebDrawCmd::DrawImage(WebImage {
+            rgba: vec![0; 4],
+            width: 1,
+            height: 1,
+            dest: RectPt::new(8.0, 8.0, 40.0, 40.0),
+        }));
+        dl.push(WebDrawCmd::GlyphRun(WebGlyphRun {
+            baseline_x: 8.0,
+            baseline_y: 60.0,
+            size: 11.0,
+            text: "caption".to_string(),
+            paint: ScenePaint::BLACK,
+            family: None,
+        }));
+        let out = lower(&dl);
+        assert_eq!(out.report.emitted, 3);
+        assert_eq!(out.report.fills, 1);
+        assert_eq!(out.report.images, 1);
+        assert_eq!(out.report.text_runs, 1);
+        assert!(matches!(out.layer.items[0], SceneItem::FillPath { .. }));
+        assert!(matches!(out.layer.items[1], SceneItem::Image { .. }));
+        assert!(matches!(out.layer.items[2], SceneItem::Text(_)));
+        assert!(out.report.unsupported_note().is_none());
+    }
+
+    #[test]
     fn non_solid_paint_is_dropped_and_reported_not_faked() {
         let mut dl = WebDisplayList::new();
+        // A gradient fill (no solid colour) and a transformed/sheared image
+        // dest (recorded as an `ImageFill` drop by the capture) — both stay
+        // counted, never faked.
         dl.push(WebDrawCmd::NonSolidPaint {
             what: UnsupportedKind::GradientFill,
         });
@@ -362,7 +515,7 @@ mod tests {
             .report
             .unsupported_note()
             .expect("a note for dropped paint");
-        assert!(note.contains("gradient/image"), "note: {note}");
+        assert!(note.contains("gradient/transformed-image"), "note: {note}");
     }
 
     #[test]
@@ -474,6 +627,29 @@ mod wire_json_tests {
         assert_eq!(item["size"], 12.0);
         // `family: None` is skipped (skip_serializing_if), matching core.
         assert!(item.get("family").is_none());
+    }
+
+    #[test]
+    fn image_serializes_to_the_c1_image_wire_shape() {
+        use crate::display_list::WebImage;
+        let mut dl = WebDisplayList::new();
+        dl.push(WebDrawCmd::DrawImage(WebImage {
+            rgba: vec![0, 1, 2, 3],
+            width: 1,
+            height: 1,
+            dest: RectPt::new(4.0, 5.0, 6.0, 7.0),
+        }));
+        let out = lower(&dl);
+        let json = serde_json::to_value(&out.layer).unwrap();
+        let item = &json["items"][0];
+        assert_eq!(item["kind"], "image");
+        assert_eq!(item["width"], 1);
+        assert_eq!(item["height"], 1);
+        assert_eq!(item["x"], 4.0);
+        assert_eq!(item["y"], 5.0);
+        assert_eq!(item["w"], 6.0);
+        assert_eq!(item["h"], 7.0);
+        assert_eq!(item["rgba"], serde_json::json!([0, 1, 2, 3]));
     }
 
     #[test]

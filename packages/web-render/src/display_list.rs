@@ -56,6 +56,16 @@ pub enum WebDrawCmd {
     /// glyph ids — C-1.1 reshapes in the document default font.)
     GlyphRun(WebGlyphRun),
 
+    /// A pre-decoded raster image painted into an axis-aligned destination
+    /// box (content points). `rgba` is straight (un-premultiplied) RGBA8,
+    /// `width`×`height` its pixel dims; `dest` the on-page box (origin +
+    /// size in points, with the paint transform + object-fit already
+    /// folded in). Lowers to the EXISTING C-1 `SceneItem::Image` (Stage A,
+    /// canvas-wasm v0.41+) — no core change. A rotated/sheared image dest
+    /// is NOT this variant (the capture records it as an `ImageFill` drop,
+    /// honestly counted, until C-1 carries an image transform).
+    DrawImage(WebImage),
+
     /// A fill/stroke/glyph whose brush was NOT a solid colour (gradient,
     /// image, pattern) — the C-1 wire carries only solid paint today, so
     /// the lowering DROPS it and counts it as an unsupported-paint skip.
@@ -101,6 +111,22 @@ pub struct WebGlyphRun {
     /// The resolved family name, if the capture knows it (a face HINT for
     /// the renderer; C-1.1 still reshapes in the doc default font).
     pub family: Option<String>,
+}
+
+/// A captured raster image — the input to the C-1 `image` lowering. `rgba`
+/// is straight RGBA8 (`width * height * 4` bytes), `dest` the axis-aligned
+/// on-page box in content points (the paint transform + object-fit folded
+/// in). Plain data so the lowering is testable without Blitz.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WebImage {
+    /// Straight (un-premultiplied) RGBA8 pixels, row-major, `w*h*4` bytes.
+    pub rgba: Vec<u8>,
+    /// Source pixel width.
+    pub width: u32,
+    /// Source pixel height.
+    pub height: u32,
+    /// The on-page destination box (content points).
+    pub dest: RectPt,
 }
 
 /// The recorded paint of one web frame, in z-order (painter's order —
