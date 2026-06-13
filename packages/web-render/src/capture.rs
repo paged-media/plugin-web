@@ -23,14 +23,17 @@
 //! `lib.rs`, so this whole module only compiles with the engine stack.)
 
 use anyrender::{Glyph, NormalizedCoord, PaintRef, PaintScene, RenderContext};
-use blitz_dom::DocumentConfig;
+use blitz_dom::node::TextBrush;
+use blitz_dom::{BaseDocument, DocumentConfig};
 use blitz_html::HtmlDocument;
 use blitz_paint::paint_scene;
 use blitz_traits::shell::{ColorScheme, Viewport};
 use kurbo::{Affine, BezPath, PathEl, Point, Rect, Shape, Stroke, Vec2};
+use parley::{Layout, PositionedLayoutItem};
 use peniko::{BlendMode, Color, Fill, FontData, StyleRef};
 
 use crate::display_list::{UnsupportedKind, WebDisplayList, WebDrawCmd, WebGlyphRun};
+use crate::fonts::{build_font_ctx, BUNDLED_FAMILY};
 use crate::wire::{RectPt, ScenePaint, ScenePathSeg};
 
 /// CSS px → PostScript points (1 px = 1/96 in, 1 pt = 1/72 in → 72/96).
@@ -255,14 +258,15 @@ impl PaintScene for CapturingScene {
         _glyph_transform: Option<Affine>,
         glyphs: impl Iterator<Item = Glyph> + Clone,
     ) {
-        // The run's baseline is the first glyph's pen position, carried
-        // through the transform. Text RECOVERY (glyph ids → chars) needs a
-        // cmap reverse map the capture doesn't own yet; C-1.1 reshapes in
-        // the document default font, so the lowering needs the run's plain
-        // text from the DOM, not the glyph ids. This native sink records
-        // the geometry + paint; the wasm integration attaches the DOM run
-        // text (the named next slice). Empty text here → the lowering skips
-        // it (no fake glyph-id text), keeping the seam honest.
+        // The run's baseline is the first POSITIONED glyph's pen position,
+        // carried through the transform — the same point the recovery walk
+        // ([`recover_run_texts`]) computes via `Node::absolute_position`, so
+        // the two correlate EXACTLY (no fuzzy matching). The `PaintScene`
+        // sink never sees the run's source text (blitz-paint hands it only
+        // glyph ids + positions), so this records empty `text`; the recovery
+        // pass in [`render_html`] fills it from the DOM by baseline key.
+        // C-1.1 reshapes the recovered string in the document default font,
+        // so the lowering needs the plain text, never the glyph ids.
         let paint = match solid_paint(brush) {
             Some(mut p) => {
                 p.a *= brush_alpha.clamp(0.0, 1.0);
@@ -283,9 +287,10 @@ impl PaintScene for CapturingScene {
             baseline_x: CapturingScene::px_pt(baseline.x),
             baseline_y: CapturingScene::px_pt(baseline.y),
             size: CapturingScene::px_pt(font_size as f64),
-            // The capture cannot recover characters from glyph ids without
-            // a reverse cmap; the wasm integration supplies the DOM run
-            // text. Empty here keeps the seam honest (skipped, never faked).
+            // Empty here; [`render_html`]'s recovery pass keys this run's
+            // baseline against a DOM inline-layout walk and fills the plain
+            // text. An unmatched run STAYS empty (the lowering skips it),
+            // never a faked glyph-id string — the seam stays honest.
             text: String::new(),
             paint,
             family: None,
@@ -304,24 +309,157 @@ impl PaintScene for CapturingScene {
     }
 }
 
+/// Max baseline distance (in content points) at which a captured glyph
+/// run is considered the SAME run as a recovered (text-carrying) one. The
+/// two compute the same geometric point through equivalent transforms (at
+/// scale 1, no CSS transforms — the v0 fragment scope), so a real match is
+/// sub-point; this tolerance only absorbs f32 rounding.
+const RUN_MATCH_TOL_PT: f32 = 0.5;
+
+/// One run recovered from the DOM inline-layout walk: the run's first
+/// positioned-glyph baseline (in content points, matching the capture's
+/// key) + the run's PLAIN source text, sliced from the inline formatting
+/// context's text by the run's byte range.
+struct RecoveredRun {
+    x: f32,
+    y: f32,
+    text: String,
+}
+
 /// Drive parse→style→layout→paint over `html` at `width_px`×`height_px`
-/// (CSS px) and CAPTURE the paint into a [`WebDisplayList`]. Mirrors the W0
-/// spike's `render_fragment`, but records commands instead of counting
-/// them. The output lowers via [`crate::lower::lower`].
+/// (CSS px) and CAPTURE the paint into a [`WebDisplayList`], with each text
+/// run's PLAIN TEXT recovered from the DOM. Mirrors the W0 spike's
+/// `render_fragment`, but records commands instead of counting them, and:
 ///
-/// NOTE: on a host with no registered fonts (wasm32) text shapes to
-/// nothing — the spike's documented 22-vs-19 delta. The wasm integration
-/// registers pinned faces first (W1 task); this native driver uses the
-/// system-font path only when the `blitz-dom/system_fonts` feature is on
-/// (it is OFF by default here to keep the build deterministic), so the
-/// boxes/borders capture is the deterministic part exercised in tests.
+///   1. registers the bundled fallback face ([`build_font_ctx`]) so text
+///      SHAPES on wasm (parley/fontique exposes no system fonts there —
+///      the spike's 22-vs-19 delta); the same context drives the native
+///      build so tests exercise real shaping deterministically;
+///   2. after paint, walks every inline root's parley `Layout` and slices
+///      each glyph run's source text by its byte range, keyed by the run's
+///      baseline, then fills that text into the matching captured run.
+///
+/// The output lowers via [`crate::lower::lower`]. A run with no recovered
+/// match keeps empty text (the lowering skips it) — never a faked string.
 pub fn render_html(html: &str, width_px: u32, height_px: u32) -> WebDisplayList {
-    let mut doc = HtmlDocument::from_html(html, DocumentConfig::default());
+    let config = DocumentConfig {
+        font_ctx: Some(build_font_ctx()),
+        ..Default::default()
+    };
+    let mut doc = HtmlDocument::from_html(html, config);
     doc.set_viewport(Viewport::new(width_px, height_px, 1.0, ColorScheme::Light));
     doc.resolve(0.0);
+
     let mut scene = CapturingScene::new();
     paint_scene(&mut scene, &mut doc, 1.0, width_px, height_px, 0, 0);
-    scene.into_display_list()
+    let mut dl = scene.into_display_list();
+
+    // Recover run text from the resolved document + attach it by baseline.
+    // `HtmlDocument` derefs to `BaseDocument`.
+    let recovered = recover_run_texts(&doc);
+    attach_run_texts(&mut dl, &recovered);
+    dl
+}
+
+/// Walk every inline-root node's parley `Layout`, slicing each glyph run's
+/// PLAIN TEXT by its byte range and keying it on the run's first
+/// positioned-glyph baseline in content points (the same key the capture
+/// records). This is the honest text-recovery path: the text comes from
+/// the DOM's own inline formatting context (`TextLayout::text`), not from
+/// reverse-mapping glyph ids.
+fn recover_run_texts(doc: &BaseDocument) -> Vec<RecoveredRun> {
+    let mut out = Vec::new();
+    // The node arena is contiguous ids; walk all of them and pick inline
+    // roots (each owns one inline formatting context's layout + text).
+    let root = doc.root_node().id;
+    collect_inline_runs(doc, root, &mut out);
+    out
+}
+
+/// Depth-first walk from `node_id`, collecting recovered runs from every
+/// inline-root descendant (and the node itself if it is one).
+fn collect_inline_runs(doc: &BaseDocument, node_id: usize, out: &mut Vec<RecoveredRun>) {
+    let Some(node) = doc.get_node(node_id) else {
+        return;
+    };
+    if node.flags.is_inline_root() {
+        if let Some(element) = node.element_data() {
+            if let Some(ild) = element.inline_layout_data.as_ref() {
+                recover_layout_runs(node, &ild.text, &ild.layout, out);
+            }
+        }
+    }
+    for child in &node.children {
+        collect_inline_runs(doc, *child, out);
+    }
+}
+
+/// Recover every glyph run of one inline formatting context: for each run
+/// on each line, slice `text[run.text_range()]` and compute the run's
+/// first positioned-glyph baseline in absolute (page) content points via
+/// `Node::absolute_position` — the SAME point the capture's `draw_glyphs`
+/// records (`transform * first_positioned_glyph`), so they correlate.
+fn recover_layout_runs(
+    inline_root: &blitz_dom::Node,
+    text: &str,
+    layout: &Layout<TextBrush>,
+    out: &mut Vec<RecoveredRun>,
+) {
+    for line in layout.lines() {
+        for item in line.items() {
+            let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
+                continue;
+            };
+            let run = glyph_run.run();
+            let range = run.text_range();
+            let Some(slice) = text.get(range) else {
+                continue; // defensive: a non-char-boundary range never happens here
+            };
+            if slice.trim().is_empty() {
+                continue;
+            }
+            // The run's first positioned glyph sits at (offset, baseline) in
+            // the inline root's content-local space; map to absolute page
+            // coords (CSS px, scale 1) then px→pt to match the capture key.
+            let local_x = glyph_run.offset();
+            let local_y = glyph_run.baseline();
+            let abs = inline_root.absolute_position(local_x, local_y);
+            out.push(RecoveredRun {
+                x: CapturingScene::px_pt(abs.x as f64),
+                y: CapturingScene::px_pt(abs.y as f64),
+                text: slice.to_string(),
+            });
+        }
+    }
+}
+
+/// Fill each captured `GlyphRun`'s empty `text` (and `family` hint) from
+/// the recovered runs, matched by nearest baseline within
+/// [`RUN_MATCH_TOL_PT`]. A captured run with no match stays empty (the
+/// lowering then skips it). Each recovered run is consumed at most once so
+/// two runs at (numerically) the same baseline don't both grab it.
+fn attach_run_texts(dl: &mut WebDisplayList, recovered: &[RecoveredRun]) {
+    let mut used = vec![false; recovered.len()];
+    for cmd in &mut dl.commands {
+        let WebDrawCmd::GlyphRun(run) = cmd else {
+            continue;
+        };
+        let mut best: Option<(usize, f32)> = None;
+        for (i, rec) in recovered.iter().enumerate() {
+            if used[i] {
+                continue;
+            }
+            let d = (rec.x - run.baseline_x).hypot(rec.y - run.baseline_y);
+            if d <= RUN_MATCH_TOL_PT && best.map(|(_, bd)| d < bd).unwrap_or(true) {
+                best = Some((i, d));
+            }
+        }
+        if let Some((i, _)) = best {
+            used[i] = true;
+            run.text = recovered[i].text.clone();
+            run.family = Some(BUNDLED_FAMILY.to_string());
+        }
+    }
 }
 
 /// Lower a captured render in one call — the bundle/native convenience
@@ -347,6 +485,7 @@ pub fn _demo_flatten() -> Vec<ScenePathSeg> {
 mod tests {
     use super::*;
     use crate::lower::lower;
+    use crate::wire::SceneItem;
 
     /// A flexbox card with backgrounds + borders — the W0 spike's
     /// representative fragment shape (without relying on system fonts).
@@ -394,6 +533,83 @@ mod tests {
             segs[1]
         );
         assert!(matches!(segs.last(), Some(ScenePathSeg::Close)));
+    }
+
+    #[test]
+    fn text_shapes_into_glyph_runs_with_the_bundled_face() {
+        // The font-on-wasm proof (run natively against the SAME bundled
+        // face the wasm engine uses): with the bundled Inter registered,
+        // a paragraph SHAPES into at least one glyph run — i.e. glyph
+        // count > 0. (Without a registered face, parley/fontique on wasm
+        // shapes nothing — the spike's 22-vs-19 delta this closes.)
+        let dl = render_html("<html><body><p>hello world</p></body></html>", 480, 320);
+        let glyph_runs = dl
+            .commands
+            .iter()
+            .filter(|c| matches!(c, WebDrawCmd::GlyphRun(_)))
+            .count();
+        assert!(
+            glyph_runs >= 1,
+            "expected the paragraph to shape into >=1 glyph run, got {glyph_runs} (dl: {dl:?})"
+        );
+    }
+
+    #[test]
+    fn render_html_recovers_run_text_to_a_lowered_c1_text_item() {
+        // THE text-recovery round trip: a `<p>hello</p>` fragment must
+        // lower to a C-1 `text` item whose `text` is the RECOVERED DOM
+        // string "hello" (not glyph ids, not empty). This is the end-to-end
+        // proof of step 3 (DOM run-text recovery).
+        let dl = render_html("<html><body><p>hello</p></body></html>", 480, 320);
+        let out = lower(&dl);
+        let texts: Vec<&str> = out
+            .layer
+            .items
+            .iter()
+            .filter_map(|it| match it {
+                SceneItem::Text(t) => Some(t.text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            texts.iter().any(|t| t.contains("hello")),
+            "expected a recovered text item containing 'hello', got {texts:?} \
+             (report {:?})",
+            out.report
+        );
+        // The recovered run carries the bundled family hint, and the JSON
+        // is the C-1 text wire shape.
+        let json = serde_json::to_string(&out.layer).unwrap();
+        assert!(json.contains("\"kind\":\"text\""), "json: {json}");
+        assert!(json.contains("hello"), "json: {json}");
+    }
+
+    #[test]
+    fn recovered_text_preserves_word_content_across_a_multi_word_run() {
+        // A multi-word run recovers its full text (the byte-range slice of
+        // the inline formatting context), not a truncation.
+        let dl = render_html(
+            "<html><body><p>paged web engine</p></body></html>",
+            480,
+            320,
+        );
+        let out = lower(&dl);
+        let joined: String = out
+            .layer
+            .items
+            .iter()
+            .filter_map(|it| match it {
+                SceneItem::Text(t) => Some(t.text.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        for word in ["paged", "web", "engine"] {
+            assert!(
+                joined.contains(word),
+                "recovered text {joined:?} missing {word:?}"
+            );
+        }
     }
 
     #[test]

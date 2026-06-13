@@ -46,6 +46,7 @@ blitz = [
     "dep:blitz-paint",
     "dep:blitz-traits",
     "dep:kurbo",
+    "dep:parley",
     "dep:peniko",
 ]
 
@@ -60,6 +61,9 @@ blitz-html = { version = "=0.3.0-alpha.4", optional = true }
 blitz-paint = { version = "=0.3.0-alpha.4", optional = true }
 blitz-traits = { version = "=0.3.0-alpha.4", optional = true }
 kurbo = { version = "0.13", optional = true }
+# Parley layout types (Layout / PositionedLayoutItem) for the DOM run-text
+# recovery walk — pinned to the version blitz-dom 0.3.0-alpha.4 re-exports.
+parley = { version = "0.9", optional = true }
 peniko = { version = "0.6", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
