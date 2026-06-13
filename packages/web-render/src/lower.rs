@@ -373,6 +373,49 @@ mod tests {
     }
 
     #[test]
+    fn multi_run_paragraph_lowers_to_one_text_item_per_run() {
+        // A paragraph that parley splits into several runs (font/style/bidi
+        // boundaries) is captured as one `GlyphRun` per run; each lowers to
+        // its OWN C-1 `text` item — distinct string + baseline — in painter
+        // order. Here a 2-run fragment (a regular word then a styled word on
+        // the same line, each its own run).
+        let mut dl = WebDisplayList::new();
+        dl.push(WebDrawCmd::GlyphRun(WebGlyphRun {
+            baseline_x: 10.0,
+            baseline_y: 20.0,
+            size: 12.0,
+            text: "alpha ".to_string(),
+            paint: ScenePaint::BLACK,
+            family: Some("Inter".to_string()),
+            local_key: LocalKey::new(10.0, 20.0),
+        }));
+        dl.push(WebDrawCmd::GlyphRun(WebGlyphRun {
+            baseline_x: 48.0,
+            baseline_y: 20.0,
+            size: 12.0,
+            text: "BETA".to_string(),
+            paint: ScenePaint::rgba(0.8, 0.0, 0.0, 1.0),
+            family: Some("Inter".to_string()),
+            local_key: LocalKey::new(48.0, 20.0),
+        }));
+        let out = lower(&dl);
+        assert_eq!(out.report.text_runs, 2);
+        assert_eq!(out.report.emitted, 2);
+        let texts: Vec<(&str, f32)> = out
+            .layer
+            .items
+            .iter()
+            .filter_map(|it| match it {
+                SceneItem::Text(t) => Some((t.text.as_str(), t.x)),
+                _ => None,
+            })
+            .collect();
+        // Two items, distinct strings, distinct baselines, in painter order.
+        assert_eq!(texts, vec![("alpha ", 10.0), ("BETA", 48.0)]);
+        assert!(out.report.unsupported_note().is_none());
+    }
+
+    #[test]
     fn whitespace_only_text_run_is_skipped() {
         let mut dl = WebDisplayList::new();
         dl.push(WebDrawCmd::GlyphRun(WebGlyphRun {

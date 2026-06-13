@@ -21,23 +21,27 @@
 //!
 //! # What this slice covers vs. defers
 //!
-//! Covered (B2 vector + text): solid-fill rectangles (backgrounds/borders),
-//! solid-fill arbitrary paths (border-radius / non-rect boxes), solid
-//! strokes, and single-line text runs → the matching C-1 items.
+//! Covered (B2 vector + text + raster): solid-fill rectangles
+//! (backgrounds/borders), solid-fill arbitrary paths (border-radius /
+//! non-rect boxes), solid strokes, multi-run text (one C-1 `text` item per
+//! parley run, transform-correct), and axis-aligned raster images (straight
+//! RGBA8 → the Stage-A C-1 `image` item) → the matching C-1 items.
 //!
 //! Deferred (the honest ceiling — C-1's open stages / Tier-B), all COUNTED
 //! and REPORTED by [`lower::LowerReport`], never faked:
-//! gradients, raster/pattern image fills, blend modes, box shadows,
-//! multi-run/bidi text shaping, and CSS fragmentation across linked frames.
+//! gradient paints, rotated/sheared image dests (no per-image transform on
+//! the wire yet), blend modes, box shadows, and CSS fragmentation across
+//! linked frames.
 //!
 //! # The named next slice
 //!
-//! The pure lowering + capture sink compile + run today (native). The
+//! The pure lowering + capture sink compile + run today (native), with
+//! transform-correct multi-run text recovery + raster images wired. The
 //! remaining integration is the **bundle WASM artifact**: build THIS crate
 //! to `wasm32-unknown-unknown` + `wasm-bindgen` into the manifest's
-//! `bin/blitz_web.wasm`, register pinned faces (so text shapes on wasm),
-//! and attach DOM run text to captured glyph runs. Integration point:
-//! [`capture::render_html`] → [`lower::lower`]. See `scripts/build-wasm.sh`.
+//! `bin/blitz_web.wasm`, register pinned faces (so text shapes on wasm).
+//! Integration point: [`capture::render_html`] → [`lower::lower`]. See
+//! `scripts/build-wasm.sh`.
 
 pub mod display_list;
 pub mod lower;
