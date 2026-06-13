@@ -76,11 +76,13 @@ export {
 // The W-01 RENDER CONTRACT — the engine-agnostic seam (ADR-011: "HTML/CSS
 // in, scene layer out"). Today `renderWebFrame` returns the HONEST
 // not-loaded path; the Blitz/WASM lane drops in behind this contract. The
-// SceneLayer types are the C-1 IR (filled paths + single-line text).
+// SceneLayer types are the C-1 IR (filled paths, multi-run text, and
+// axis-aligned raster images).
 export {
   ENGINE_NOT_LOADED_MESSAGE,
   isRendered,
   renderWebFrame,
+  type SceneImageItem,
   type SceneItem,
   type SceneLayer,
   type ScenePaintRgba,

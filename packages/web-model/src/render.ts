@@ -12,9 +12,9 @@
 //     preview only (W-01)>] }
 // When the Blitz engine artifact (manifest `capabilities.wasm` ∋
 // `blitz`, purpose:"engine") is built and loaded, the lane fills in a
-// real SceneLayer (C-1 IR: filled paths + single-line text + — as C-1's
-// texture stage lands — images), lowered from Blitz's display list. The
-// CONTRACT shape never changes: the bundle's bake path (web-bundle) and
+// real SceneLayer (C-1 IR: filled paths + multi-run, transform-correct
+// text + axis-aligned raster images), lowered from Blitz's display list.
+// The CONTRACT shape never changes: the bundle's bake path (web-bundle) and
 // the determinism envelope are written against THIS seam, so the engine
 // drops in behind it without touching the caller. Per ADR-011 the paint
 // output lowers to the plugin `sceneLayer` rail (C-1), NOT a core paint
@@ -79,12 +79,30 @@ export interface ScenePathItem {
   paint: ScenePaintRgba;
 }
 
+/** A pre-decoded raster image painted into an axis-aligned box in
+ *  frame-content points — the Stage-A C-1 `image` `SceneItem` (canvas-wasm
+ *  v0.41+). `rgba` is straight RGBA8 (`width*height*4` bytes); `x,y,w,h`
+ *  is the on-page destination box. The web render lane lowers CSS raster
+ *  image fills (the `draw_image` path) to this; a rotated/sheared image
+ *  dest stays an honest unsupported-paint drop (no per-image transform on
+ *  the wire yet). */
+export interface SceneImageItem {
+  kind: "image";
+  rgba: Uint8Array | number[];
+  width: number;
+  height: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 /** One drawable in a {@link SceneLayer} — the subset of the C-1
- *  `SceneItem` union the web render lane lowers to (filled paths +
- *  single-line text). `strokePath` and `image` are wire kinds the lane
- *  widens into as C-1's stages (and the texture escape hatch) mature
- *  (ADR-011 Option C). */
-export type SceneItem = SceneTextItem | ScenePathItem;
+ *  `SceneItem` union the web render lane lowers to: filled paths,
+ *  (multi-run, transform-correct) single-line text runs, and axis-aligned
+ *  raster images. `strokePath` is the remaining wire kind the lane widens
+ *  into as C-1's stages mature (ADR-011 Option C). */
+export type SceneItem = SceneTextItem | ScenePathItem | SceneImageItem;
 
 /** A plugin-submitted vector layer in frame-content coordinates — the
  *  C-1 `SceneLayer` IR (the wire.d.ts shape). The bundle lowers this to
