@@ -35,6 +35,16 @@ export {
   type SanitizeResult,
 } from "./sanitize";
 
+// Vetted, offline, dependency-free starter templates the insert/source
+// panel seeds from — an empty frame is a poor first run. Each one's HTML
+// passes `diagnoseHtml` with no errors (asserted in templates.spec.ts).
+export {
+  WEB_TEMPLATES,
+  sourceFromTemplate,
+  templateById,
+  type WebTemplate,
+} from "./templates";
+
 export {
   composeFontFaces,
   diagnoseFonts,
