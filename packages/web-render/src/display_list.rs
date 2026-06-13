@@ -91,6 +91,35 @@ pub enum WebDrawCmd {
         blend: WebBlendMode,
     },
 
+    /// A linear/radial/sweep gradient STROKE of a path (C-1.7, protocol v48
+    /// — a CSS gradient border / gradient text-decoration). `path` is the
+    /// flattened stroke geometry (content points), `gradient` the gradient's
+    /// endpoints + stops resolved into the SAME content-point space (the
+    /// paint/brush transform folded into the endpoints by the capture, like
+    /// `FillGradient`), `width` the stroke width in content points. Lowers to
+    /// the C-1 `SceneItem::StrokePathGradient`. Solid strokes stay
+    /// [`WebDrawCmd::StrokePath`]; image/pattern brushes stay a `NonSolidPaint`
+    /// drop, honestly counted.
+    StrokeGradient {
+        path: FlatPath,
+        gradient: WebGradient,
+        width: f32,
+    },
+
+    /// A linear/radial/sweep gradient fill of a path under a non-`Normal`
+    /// compositing blend mode (C-1.8, protocol v48 — a CSS gradient with
+    /// `mix-blend-mode`). `path` is the flattened fill geometry (content
+    /// points), `gradient` the gradient resolved into content points (like
+    /// `FillGradient`), `blend` the mapped blend mode. Lowers to the C-1
+    /// `SceneItem::FillPathGradientBlend`. A SOLID fill under a blend stays
+    /// [`WebDrawCmd::FillBlend`]; a gradient NOT under a blend stays
+    /// [`WebDrawCmd::FillGradient`].
+    FillGradientBlend {
+        path: FlatPath,
+        gradient: WebGradient,
+        blend: WebBlendMode,
+    },
+
     /// A drop shadow (C-1.5 — CSS `box-shadow`). `path` is the shadow's
     /// (rounded-)rect geometry in content points with the shadow OFFSET
     /// ALREADY BAKED IN (blitz-paint bakes the offset into the paint

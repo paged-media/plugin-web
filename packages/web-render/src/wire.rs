@@ -12,7 +12,8 @@
 //! core's produce/consume the same JSON:
 //!   · `SceneItem` is internally tagged `kind` (`fillPath` / `strokePath` /
 //!     `text` / `image` / `fillPathGradient` / `fillPathBlend` /
-//!     `dropShadow` / `innerShadow`), camelCase.
+//!     `dropShadow` / `innerShadow` / `strokePathGradient` /
+//!     `fillPathGradientBlend`), camelCase.
 //!   · `ScenePathSeg` is internally tagged `op` (`moveTo` / `lineTo` /
 //!     `cubicTo` / `close`), camelCase.
 //!   · `SceneGradient` is internally tagged `type` (`linear` / `radial` /
@@ -135,6 +136,37 @@ pub enum SceneItem {
         g: f32,
         b: f32,
         a: f32,
+    },
+    /// Stroke a bezier path with a linear / radial / sweep gradient (C-1.7,
+    /// protocol v48). A faithful twin of core's `SceneItem::StrokePathGradient`:
+    /// the gradient resolution of [`SceneItem::FillPathGradient`] on the stroke
+    /// lane, plus the stroke `width` in content points. Lowers to core's
+    /// existing `DisplayCommand::StrokePath` with a gradient `Paint`. The
+    /// variant's three fields are SINGLE-TOKEN (`path`/`gradient`/`width`), so
+    /// serde's camelCase rename is the identity — no snake_case wire key here
+    /// (unlike `offset_x`/`start_angle`), matching core's identical derive
+    /// byte-for-byte. Additive — solid strokes stay [`SceneItem::StrokePath`].
+    StrokePathGradient {
+        path: Vec<ScenePathSeg>,
+        gradient: SceneGradient,
+        width: f32,
+    },
+    /// Fill a bezier path with a gradient under a non-`Normal` compositing
+    /// blend mode (C-1.8, protocol v48). A faithful twin of core's
+    /// `SceneItem::FillPathGradientBlend`: the gradient of
+    /// [`SceneItem::FillPathGradient`] composited like
+    /// [`SceneItem::FillPathBlend`] (the [`SceneBlendMode`] selects how it
+    /// composites onto the frame content below). Lowers to core's existing
+    /// `DisplayCommand::FillPathBlend` carrying a gradient `Paint`. The three
+    /// fields are SINGLE-TOKEN (`path`/`gradient`/`blend`), so the camelCase
+    /// rename is the identity (no snake_case wire key), matching core's derive
+    /// byte-for-byte. Additive — a SOLID fill under a blend stays
+    /// [`SceneItem::FillPathBlend`]; a gradient NOT under a blend stays
+    /// [`SceneItem::FillPathGradient`].
+    FillPathGradientBlend {
+        path: Vec<ScenePathSeg>,
+        gradient: SceneGradient,
+        blend: SceneBlendMode,
     },
 }
 
@@ -596,6 +628,95 @@ mod gradient_wire_tests {
         }
         // No stray keys leaked (the drop-shadow `choke`-less shape is distinct).
         assert!(json.get("width").is_none());
+        let back: SceneItem = serde_json::from_value(json).unwrap();
+        assert_eq!(back, item);
+    }
+
+    #[test]
+    fn stroke_path_gradient_serializes_to_the_exact_v48_keys_core_consumes() {
+        // CONTRACT GUARD vs core (`SceneItem::StrokePathGradient`, protocol
+        // v48, at core commit 529767d): tag = "kind" → "strokePathGradient";
+        // `path` + a `gradient` (the SAME tag = "type" SceneGradient as
+        // FillPathGradient) + a `width`. All three variant fields are
+        // SINGLE-TOKEN, so serde's camelCase rename is the IDENTITY here
+        // (`path`/`gradient`/`width` — NOT snake_case, unlike `offset_x` /
+        // `start_angle`), exactly what core's identical derive emits AND
+        // deserializes. A drift silently DROPS the item at core's deserialize,
+        // so it must fail HERE.
+        let item = SceneItem::StrokePathGradient {
+            path: vec![
+                ScenePathSeg::MoveTo { x: 0.0, y: 0.0 },
+                ScenePathSeg::LineTo { x: 40.0, y: 0.0 },
+                ScenePathSeg::Close,
+            ],
+            gradient: SceneGradient::Linear {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 40.0,
+                y1: 0.0,
+                stops: vec![stop(0.0, 1.0, 0.0, 0.0, 1.0), stop(1.0, 0.0, 0.0, 1.0, 1.0)],
+            },
+            width: 3.5,
+        };
+        let json = serde_json::to_value(&item).unwrap();
+        assert_eq!(json["kind"], "strokePathGradient");
+        assert_eq!(json["path"][0]["op"], "moveTo");
+        // The gradient rides under "gradient" with the tag = "type" shape.
+        assert_eq!(json["gradient"]["type"], "linear");
+        assert_eq!(json["gradient"]["x1"], 40.0);
+        assert_eq!(json["gradient"]["stops"].as_array().unwrap().len(), 2);
+        // `width` is a single-token field — the camelCase rename is identity.
+        assert_eq!(json["width"], 3.5);
+        // No snake_case alias leaked (it never had a multi-token name, but pin
+        // the wire key core consumes is literally `width`).
+        assert!(
+            json.get("paint").is_none(),
+            "a gradient stroke carries no solid paint"
+        );
+        // Round-trips back to the same Rust value (deserialize parity).
+        let back: SceneItem = serde_json::from_value(json).unwrap();
+        assert_eq!(back, item);
+    }
+
+    #[test]
+    fn fill_path_gradient_blend_serializes_to_the_exact_v48_keys_core_consumes() {
+        // CONTRACT GUARD vs core (`SceneItem::FillPathGradientBlend`, protocol
+        // v48, at core commit 529767d): tag = "kind" → "fillPathGradientBlend";
+        // `path` + a `gradient` (tag = "type" SceneGradient) + a `blend` (the
+        // camelCase SceneBlendMode string). All three variant fields are
+        // SINGLE-TOKEN, so the camelCase rename is the IDENTITY here, exactly
+        // what core's identical derive emits AND deserializes. A drift silently
+        // DROPS the item at core's deserialize, so it must fail HERE.
+        let item = SceneItem::FillPathGradientBlend {
+            path: vec![
+                ScenePathSeg::MoveTo { x: 0.0, y: 0.0 },
+                ScenePathSeg::LineTo { x: 10.0, y: 0.0 },
+                ScenePathSeg::LineTo { x: 10.0, y: 10.0 },
+                ScenePathSeg::Close,
+            ],
+            gradient: SceneGradient::Radial {
+                cx: 5.0,
+                cy: 5.0,
+                radius: 5.0,
+                stops: vec![stop(0.0, 1.0, 1.0, 1.0, 1.0), stop(1.0, 0.0, 0.0, 0.0, 1.0)],
+            },
+            blend: SceneBlendMode::Screen,
+        };
+        let json = serde_json::to_value(&item).unwrap();
+        assert_eq!(json["kind"], "fillPathGradientBlend");
+        assert_eq!(json["path"][3]["op"], "close");
+        // The gradient rides under "gradient" with the tag = "type" shape.
+        assert_eq!(json["gradient"]["type"], "radial");
+        assert_eq!(json["gradient"]["radius"], 5.0);
+        // `blend` is a bare camelCase SceneBlendMode string (NOT an object).
+        assert_eq!(json["blend"], "screen");
+        // No solid paint leaked (the blended fill carries a gradient, not a
+        // ScenePaint — this is what distinguishes it from `fillPathBlend`).
+        assert!(
+            json.get("paint").is_none(),
+            "a gradient blend carries no solid paint"
+        );
+        // Round-trips back to the same Rust value (deserialize parity).
         let back: SceneItem = serde_json::from_value(json).unwrap();
         assert_eq!(back, item);
     }

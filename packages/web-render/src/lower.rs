@@ -25,11 +25,16 @@
 //!     `box-shadow: inset` — the offset is baked into the path so the item
 //!     offset is 0, `choke` is 0 since blitz does not bake CSS `spread` into
 //!     the inset rect, + blur)
+//!   · `StrokeGradient` → `SceneItem::StrokePathGradient` (C-1.7, v48; a
+//!     linear/radial/sweep gradient STROKE — gradient endpoints/centre in
+//!     content points + the stroke width; ready-but-DORMANT for real HTML,
+//!     see below)
+//!   · `FillGradientBlend` → `SceneItem::FillPathGradientBlend` (C-1.8, v48; a
+//!     GRADIENT fill under a `mix-blend-mode` — the gradient + the 1:1-mapped
+//!     blend mode; ready-but-DORMANT for real HTML, see below)
 //!
 //! Deliberately DROPPED (counted + reported, never faked — the honest
 //! ceiling of C-1's current stages / Tier-B):
-//!   · gradient STROKES — C-1.3 carries a gradient FILL only (no gradient
-//!     stroke), so a gradient-stroked path stays an unsupported drop.
 //!   · image/pattern brushes + rotated/sheared image dests — the Stage-A
 //!     image item carries an axis-aligned box only (no per-image transform
 //!     yet), so a transformed image dest is counted unsupported, not faked.
@@ -37,9 +42,27 @@
 //!     OFFSET into the rect but does NOT inflate it by `spread`, so inset
 //!     shadows render at the offset (covered) while their spread is the honest
 //!     follow-on. Outset spread IS covered (blitz bakes it — see below).
-//!   · gradient/image fills INSIDE a blend layer — only a SOLID blended fill
-//!     lowers to `fillPathBlend`; a non-solid one stays the plain item + the
-//!     blend is counted unsupported.
+//!   · IMAGE/text fills INSIDE a blend layer — a solid fill lowers to
+//!     `fillPathBlend`, a gradient fill to `fillPathGradientBlend`; an
+//!     image/glyph-run under a blend stays the plain item + the blend is
+//!     counted unsupported (no blended image/text lane on the C-1 wire).
+//!
+//! HONEST REACHABILITY of the v48 gradient-stroke / gradient-blend lanes
+//! (verified against blitz-paint 0.3.0-alpha.4 — see the capture tests):
+//!   · GRADIENT STROKE — blitz-paint never calls `PaintScene::stroke` with a
+//!     gradient brush. Every `scene.stroke` site passes a SOLID `Color` (text
+//!     underline/strikethrough = the decoration colour, form-control frames =
+//!     WHITE/accent, devtools overlay); CSS BORDERS are painted as FILLS
+//!     (`render.rs::draw_border` → `scene.fill` with a solid border colour),
+//!     and gradient borders (`border-image`) are not implemented. So the
+//!     `strokePathGradient` lane is contract-correct + unit-tested but DORMANT
+//!     for real HTML until a gradient-stroke producer (or a Blitz that emits
+//!     gradient borders) appears.
+//!   · GRADIENT-FILL-UNDER-A-BLEND — like the solid `fillPathBlend`, this is
+//!     DORMANT: blitz-paint 0.3.0-alpha.4 only pushes `Mix::Normal` layers (no
+//!     `mix-blend-mode` → non-Normal `push_layer`), so a gradient fill never
+//!     reaches the blend stack from real HTML. Contract-correct + unit-tested;
+//!     it lights up the moment the alpha emits a non-Normal layer.
 //! CSS fragmentation across linked frames is out of this slice (Tier-B);
 //! see the base-idea lowering-lane status.
 
@@ -76,6 +99,15 @@ pub struct LowerReport {
     /// Solid `mix-blend-mode` fills emitted as C-1 `fillPathBlend` items
     /// (C-1.4, v46).
     pub blends: usize,
+    /// Linear/radial/sweep gradient STROKES emitted as C-1 `strokePathGradient`
+    /// items (C-1.7, v48). A gradient-stroked path is NO LONGER a dropped
+    /// (`dropped_non_solid`) case.
+    pub gradient_strokes: usize,
+    /// Gradient fills under a `mix-blend-mode` emitted as C-1
+    /// `fillPathGradientBlend` items (C-1.8, v48). A gradient fill inside a
+    /// non-`Normal` blend layer is NO LONGER an unblended `gradients` item +
+    /// a dropped blend — it lowers to the blended-gradient lane.
+    pub gradient_blends: usize,
     /// Outset drop shadows emitted as C-1 `dropShadow` items (C-1.5, v46).
     pub shadows: usize,
     /// Inset (inner) shadows emitted as C-1 `innerShadow` items (C-1.6, v47).
@@ -122,7 +154,7 @@ impl LowerReport {
             parts.push(format!("{} shadow(s)/blur(s)", self.dropped_shadows));
         }
         Some(format!(
-            "{} primitive(s) not yet renderable on the scene-layer wire: {} (vector + solid fill + multi-run text + axis-aligned raster images + linear/radial/sweep gradient fills + mix-blend-mode fills + outset drop shadows + inset shadows are supported today)",
+            "{} primitive(s) not yet renderable on the scene-layer wire: {} (vector + solid fill + multi-run text + axis-aligned raster images + linear/radial/sweep gradient fills + gradient strokes + mix-blend-mode fills + blended gradient fills + outset drop shadows + inset shadows are supported today)",
             self.dropped(),
             parts.join(", "),
         ))
@@ -220,6 +252,49 @@ pub fn lower(dl: &WebDisplayList) -> Lowered {
                     blend: map_blend(*blend),
                 });
                 report.blends += 1;
+            }
+            WebDrawCmd::StrokeGradient {
+                path,
+                gradient,
+                width,
+            } => {
+                // A gradient stroke (C-1.7, v48): same degenerate gates as a
+                // gradient FILL (empty path / <2 stops / non-positive radial
+                // radius — `map_gradient`), plus a non-positive width skip
+                // (core skips a `width <= 0.0` stroke). Maps to the
+                // `strokePathGradient` lane, NOT a dropped non-solid.
+                match map_gradient(path, gradient) {
+                    Some(scene) if *width > 0.0 => {
+                        layer.items.push(SceneItem::StrokePathGradient {
+                            path: path.clone(),
+                            gradient: scene,
+                            width: *width,
+                        });
+                        report.gradient_strokes += 1;
+                    }
+                    _ => report.skipped_empty += 1,
+                }
+            }
+            WebDrawCmd::FillGradientBlend {
+                path,
+                gradient,
+                blend,
+            } => {
+                // A gradient fill under a blend (C-1.8, v48): the gradient
+                // degenerate gates of `map_gradient` + the 1:1 blend map. Maps
+                // to the `fillPathGradientBlend` lane (a blended gradient is no
+                // longer an unblended gradient + a dropped blend).
+                match map_gradient(path, gradient) {
+                    Some(scene) => {
+                        layer.items.push(SceneItem::FillPathGradientBlend {
+                            path: path.clone(),
+                            gradient: scene,
+                            blend: map_blend(*blend),
+                        });
+                        report.gradient_blends += 1;
+                    }
+                    None => report.skipped_empty += 1,
+                }
             }
             WebDrawCmd::DrawShadow { path, colour, blur } => {
                 if path.is_empty() {
@@ -344,6 +419,25 @@ fn lower_image(img: &WebImage) -> Option<SceneItem> {
 /// drop. Stops pass through 1:1 as sRGB; the endpoints/centre are already in
 /// content points (the capture folded the paint transform in).
 fn lower_gradient(path: &[crate::wire::ScenePathSeg], gradient: &WebGradient) -> Option<SceneItem> {
+    let scene = map_gradient(path, gradient)?;
+    Some(SceneItem::FillPathGradient {
+        path: path.to_vec(),
+        gradient: scene,
+    })
+}
+
+/// Map a captured [`WebGradient`] to the C-1 wire [`SceneGradient`], applying
+/// the SAME degenerate gates core's `scene_layer.rs` applies (empty `path`,
+/// `<2` stops on any kind, a non-positive RADIAL radius; a sweep has no radius
+/// gate) so the lowering never emits an item core would silently drop. Shared
+/// by the gradient FILL (C-1.3), gradient STROKE (C-1.7), and blended-gradient
+/// fill (C-1.8) lanes — they differ only in which `SceneItem` wraps the result.
+/// Endpoints/centre are already in content points (the capture folded the paint
+/// transform in); stops pass through 1:1 as sRGB.
+fn map_gradient(
+    path: &[crate::wire::ScenePathSeg],
+    gradient: &WebGradient,
+) -> Option<SceneGradient> {
     if path.is_empty() {
         return None;
     }
@@ -400,10 +494,7 @@ fn lower_gradient(path: &[crate::wire::ScenePathSeg], gradient: &WebGradient) ->
             }
         }
     };
-    Some(SceneItem::FillPathGradient {
-        path: path.to_vec(),
-        gradient: scene,
-    })
+    Some(scene)
 }
 
 /// Map a captured blend mode to the C-1.4 wire [`SceneBlendMode`] (1:1 — the
@@ -1162,6 +1253,277 @@ mod tests {
     }
 
     #[test]
+    fn gradient_stroke_lowers_to_a_stroke_path_gradient_with_width() {
+        // C-1.7 v48: a gradient STROKE lowers to a `strokePathGradient`
+        // carrying the gradient + the stroke width — NOT a dropped non-solid.
+        let mut dl = WebDisplayList::new();
+        dl.push(WebDrawCmd::StrokeGradient {
+            path: diag_path(),
+            gradient: WebGradient::Linear {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 100.0,
+                y1: 0.0,
+                stops: two_stops(),
+            },
+            width: 4.0,
+        });
+        let out = lower(&dl);
+        assert_eq!(out.report.gradient_strokes, 1);
+        assert_eq!(
+            out.report.strokes, 0,
+            "a gradient stroke is not a solid stroke"
+        );
+        assert_eq!(
+            out.report.dropped_non_solid, 0,
+            "a gradient stroke is NO LONGER a dropped non-solid"
+        );
+        assert_eq!(out.report.emitted, 1);
+        assert!(out.report.unsupported_note().is_none());
+        let SceneItem::StrokePathGradient {
+            path,
+            gradient,
+            width,
+        } = &out.layer.items[0]
+        else {
+            panic!(
+                "expected a strokePathGradient, got {:?}",
+                out.layer.items[0]
+            );
+        };
+        assert_eq!(path, &diag_path());
+        assert_eq!(*width, 4.0);
+        let SceneGradient::Linear { x0, x1, stops, .. } = gradient else {
+            panic!("expected a linear gradient, got {gradient:?}");
+        };
+        assert_eq!((*x0, *x1), (0.0, 100.0));
+        assert_eq!(stops.len(), 2);
+    }
+
+    #[test]
+    fn radial_and_sweep_gradient_strokes_lower_too() {
+        // The stroke lane carries every SceneGradient kind (radial + sweep),
+        // counted under `gradient_strokes` like the linear case.
+        let mut dl = WebDisplayList::new();
+        dl.push(WebDrawCmd::StrokeGradient {
+            path: diag_path(),
+            gradient: WebGradient::Radial {
+                cx: 50.0,
+                cy: 25.0,
+                radius: 30.0,
+                stops: two_stops(),
+            },
+            width: 2.0,
+        });
+        dl.push(WebDrawCmd::StrokeGradient {
+            path: diag_path(),
+            gradient: WebGradient::Sweep {
+                cx: 50.0,
+                cy: 25.0,
+                start_angle: 0.5,
+                stops: two_stops(),
+            },
+            width: 2.0,
+        });
+        let out = lower(&dl);
+        assert_eq!(out.report.gradient_strokes, 2);
+        assert!(matches!(
+            &out.layer.items[0],
+            SceneItem::StrokePathGradient {
+                gradient: SceneGradient::Radial { .. },
+                ..
+            }
+        ));
+        assert!(matches!(
+            &out.layer.items[1],
+            SceneItem::StrokePathGradient {
+                gradient: SceneGradient::Sweep { .. },
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn degenerate_gradient_stroke_is_skipped_not_emitted() {
+        // The SAME degenerate gates as a gradient fill (empty path, <2 stops,
+        // non-positive radial radius) PLUS a non-positive width skip — none
+        // emit an item, all count as an empty skip (never a dropped non-solid).
+        let one = vec![WebGradientStop {
+            offset: 0.0,
+            r: 1.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
+        }];
+        let cases = [
+            // empty path
+            WebDrawCmd::StrokeGradient {
+                path: vec![],
+                gradient: WebGradient::Linear {
+                    x0: 0.0,
+                    y0: 0.0,
+                    x1: 1.0,
+                    y1: 0.0,
+                    stops: two_stops(),
+                },
+                width: 2.0,
+            },
+            // <2 stops
+            WebDrawCmd::StrokeGradient {
+                path: diag_path(),
+                gradient: WebGradient::Linear {
+                    x0: 0.0,
+                    y0: 0.0,
+                    x1: 1.0,
+                    y1: 0.0,
+                    stops: one.clone(),
+                },
+                width: 2.0,
+            },
+            // non-positive radial radius
+            WebDrawCmd::StrokeGradient {
+                path: diag_path(),
+                gradient: WebGradient::Radial {
+                    cx: 0.0,
+                    cy: 0.0,
+                    radius: 0.0,
+                    stops: two_stops(),
+                },
+                width: 2.0,
+            },
+            // non-positive width
+            WebDrawCmd::StrokeGradient {
+                path: diag_path(),
+                gradient: WebGradient::Linear {
+                    x0: 0.0,
+                    y0: 0.0,
+                    x1: 1.0,
+                    y1: 0.0,
+                    stops: two_stops(),
+                },
+                width: 0.0,
+            },
+        ];
+        for cmd in cases {
+            let mut dl = WebDisplayList::new();
+            dl.push(cmd);
+            let out = lower(&dl);
+            assert!(out.layer.items.is_empty(), "degenerate stroke must skip");
+            assert_eq!(out.report.gradient_strokes, 0);
+            assert_eq!(out.report.dropped_non_solid, 0);
+            assert_eq!(out.report.skipped_empty, 1);
+        }
+    }
+
+    #[test]
+    fn gradient_fill_under_a_blend_lowers_to_a_fill_path_gradient_blend() {
+        // C-1.8 v48: a GRADIENT fill under a non-Normal blend lowers to a
+        // `fillPathGradientBlend` (the gradient + the 1:1-mapped mode), NOT a
+        // plain fillPathGradient and NOT a dropped blend.
+        let mut dl = WebDisplayList::new();
+        dl.push(WebDrawCmd::FillGradientBlend {
+            path: diag_path(),
+            gradient: WebGradient::Linear {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 100.0,
+                y1: 0.0,
+                stops: two_stops(),
+            },
+            blend: WebBlendMode::Multiply,
+        });
+        let out = lower(&dl);
+        assert_eq!(out.report.gradient_blends, 1);
+        assert_eq!(
+            out.report.gradients, 0,
+            "a blended gradient is not a plain gradient"
+        );
+        assert_eq!(
+            out.report.blends, 0,
+            "a gradient blend is not a solid blend"
+        );
+        assert_eq!(out.report.emitted, 1);
+        assert!(out.report.unsupported_note().is_none());
+        let SceneItem::FillPathGradientBlend {
+            path,
+            gradient,
+            blend,
+        } = &out.layer.items[0]
+        else {
+            panic!(
+                "expected a fillPathGradientBlend, got {:?}",
+                out.layer.items[0]
+            );
+        };
+        assert_eq!(path, &diag_path());
+        assert_eq!(*blend, SceneBlendMode::Multiply);
+        assert!(matches!(gradient, SceneGradient::Linear { .. }));
+    }
+
+    #[test]
+    fn every_blend_mode_maps_one_to_one_on_the_gradient_blend_lane() {
+        // The gradient-blend lane shares `map_blend`, so all 15 modes map 1:1
+        // (same coverage as the solid blend lane, on the gradient item).
+        let cases = [
+            (WebBlendMode::Multiply, SceneBlendMode::Multiply),
+            (WebBlendMode::Screen, SceneBlendMode::Screen),
+            (WebBlendMode::Overlay, SceneBlendMode::Overlay),
+            (WebBlendMode::Darken, SceneBlendMode::Darken),
+            (WebBlendMode::Lighten, SceneBlendMode::Lighten),
+            (WebBlendMode::ColorDodge, SceneBlendMode::ColorDodge),
+            (WebBlendMode::ColorBurn, SceneBlendMode::ColorBurn),
+            (WebBlendMode::HardLight, SceneBlendMode::HardLight),
+            (WebBlendMode::SoftLight, SceneBlendMode::SoftLight),
+            (WebBlendMode::Difference, SceneBlendMode::Difference),
+            (WebBlendMode::Exclusion, SceneBlendMode::Exclusion),
+            (WebBlendMode::Hue, SceneBlendMode::Hue),
+            (WebBlendMode::Saturation, SceneBlendMode::Saturation),
+            (WebBlendMode::Color, SceneBlendMode::Color),
+            (WebBlendMode::Luminosity, SceneBlendMode::Luminosity),
+        ];
+        for (web, want) in cases {
+            let mut dl = WebDisplayList::new();
+            dl.push(WebDrawCmd::FillGradientBlend {
+                path: diag_path(),
+                gradient: WebGradient::Radial {
+                    cx: 10.0,
+                    cy: 10.0,
+                    radius: 10.0,
+                    stops: two_stops(),
+                },
+                blend: web,
+            });
+            let out = lower(&dl);
+            let SceneItem::FillPathGradientBlend { blend, .. } = &out.layer.items[0] else {
+                panic!("expected a fillPathGradientBlend for {web:?}");
+            };
+            assert_eq!(*blend, want, "{web:?} must map to {want:?}");
+        }
+    }
+
+    #[test]
+    fn degenerate_gradient_blend_is_skipped_not_emitted() {
+        // <2 stops / empty path skip the blended-gradient lane too (matching
+        // core's gradient gates), counted as an empty skip.
+        let mut dl = WebDisplayList::new();
+        dl.push(WebDrawCmd::FillGradientBlend {
+            path: vec![],
+            gradient: WebGradient::Linear {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 1.0,
+                y1: 0.0,
+                stops: two_stops(),
+            },
+            blend: WebBlendMode::Screen,
+        });
+        let out = lower(&dl);
+        assert!(out.layer.items.is_empty());
+        assert_eq!(out.report.gradient_blends, 0);
+        assert_eq!(out.report.skipped_empty, 1);
+    }
+
+    #[test]
     fn box_shadow_lowers_to_a_drop_shadow_with_baked_offset_and_blur() {
         // C-1.5 v46: an outset box-shadow lowers to a `dropShadow`. The
         // offset is BAKED into the path (the capture folds blitz-paint's
@@ -1703,6 +2065,101 @@ mod wire_json_tests {
         assert!(item.get("blurRadius").is_none());
         // Flat colour fields present (a/alpha rides as the shadow opacity).
         assert_eq!(item["a"], 0.4_f32 as f64);
+    }
+
+    #[test]
+    fn gradient_stroke_lowers_and_serializes_to_the_v48_wire_shape() {
+        // The end-to-end lower → JSON for the C-1.7 gradient stroke: the
+        // `strokePathGradient` kind + the tag = "type" gradient + a `width`.
+        use crate::display_list::{WebGradient, WebGradientStop};
+        let stops = vec![
+            WebGradientStop {
+                offset: 0.0,
+                r: 1.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            },
+            WebGradientStop {
+                offset: 1.0,
+                r: 0.0,
+                g: 0.0,
+                b: 1.0,
+                a: 1.0,
+            },
+        ];
+        let mut dl = WebDisplayList::new();
+        dl.push(WebDrawCmd::StrokeGradient {
+            path: RectPt::new(0.0, 0.0, 8.0, 8.0).to_closed_path(),
+            gradient: WebGradient::Linear {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 8.0,
+                y1: 0.0,
+                stops,
+            },
+            width: 3.0,
+        });
+        let out = lower(&dl);
+        let json = serde_json::to_value(&out.layer).unwrap();
+        let item = &json["items"][0];
+        assert_eq!(item["kind"], "strokePathGradient");
+        assert_eq!(item["path"][0]["op"], "moveTo");
+        assert_eq!(item["gradient"]["type"], "linear");
+        assert_eq!(item["gradient"]["x1"], 8.0);
+        // `width` is a single-token field — the camelCase rename is identity.
+        assert_eq!(item["width"], 3.0);
+        assert!(
+            item.get("paint").is_none(),
+            "no solid paint on a gradient stroke"
+        );
+    }
+
+    #[test]
+    fn gradient_blend_lowers_and_serializes_to_the_v48_wire_shape() {
+        use crate::display_list::{WebBlendMode, WebGradient, WebGradientStop};
+        // The end-to-end lower → JSON for the C-1.8 blended gradient: the
+        // `fillPathGradientBlend` kind + the tag = "type" gradient + the bare
+        // camelCase blend string.
+        let stops = vec![
+            WebGradientStop {
+                offset: 0.0,
+                r: 1.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            },
+            WebGradientStop {
+                offset: 1.0,
+                r: 0.0,
+                g: 0.0,
+                b: 1.0,
+                a: 1.0,
+            },
+        ];
+        let mut dl = WebDisplayList::new();
+        dl.push(WebDrawCmd::FillGradientBlend {
+            path: RectPt::new(0.0, 0.0, 8.0, 8.0).to_closed_path(),
+            gradient: WebGradient::Radial {
+                cx: 4.0,
+                cy: 4.0,
+                radius: 4.0,
+                stops,
+            },
+            blend: WebBlendMode::Screen,
+        });
+        let out = lower(&dl);
+        let json = serde_json::to_value(&out.layer).unwrap();
+        let item = &json["items"][0];
+        assert_eq!(item["kind"], "fillPathGradientBlend");
+        assert_eq!(item["path"][0]["op"], "moveTo");
+        assert_eq!(item["gradient"]["type"], "radial");
+        assert_eq!(item["gradient"]["radius"], 4.0);
+        assert_eq!(item["blend"], "screen");
+        assert!(
+            item.get("paint").is_none(),
+            "no solid paint on a gradient blend"
+        );
     }
 
     #[test]

@@ -439,11 +439,13 @@ impl PaintScene for CapturingScene {
     // clip-layer behaviour. `push`/`pop` stay balanced so painter's order +
     // the active-blend lookup are correct.
     //
-    // KNOWN LIMIT: a gradient/image fill (or a glyph run) inside a non-Normal
-    // blend layer is NOT blended here — only solid fills lower to
-    // `fillPathBlend` (the C-1.4 lane is a solid-paint blend). Such a fill
-    // stays its plain item; the blend is the honest follow-on (count is
-    // visible as the layer was pushed but no blended fill emitted).
+    // A SOLID fill inside a non-Normal blend layer lowers to `fillPathBlend`
+    // (C-1.4); a GRADIENT fill inside one lowers to `fillPathGradientBlend`
+    // (C-1.8, v48). KNOWN LIMIT: an IMAGE fill or a glyph run inside a
+    // non-Normal blend layer is NOT blended here (the C-1 wire has no blended
+    // image/text lane) — such a primitive stays its plain item; the blend is
+    // the honest follow-on (visible as the layer was pushed but no blended
+    // image/text emitted).
     fn push_layer(
         &mut self,
         blend: impl Into<BlendMode>,
@@ -470,16 +472,43 @@ impl PaintScene for CapturingScene {
         style: &Stroke,
         transform: Affine,
         brush: impl Into<PaintRef<'a>>,
-        _brush_transform: Option<Affine>,
+        brush_transform: Option<Affine>,
         shape: &impl Shape,
     ) {
-        match solid_paint(brush) {
+        let pr: PaintRef<'a> = brush.into();
+        // The stroke WIDTH scales with the transform's average scale (the same
+        // mean-scale scalar the radial-gradient radius uses), px→pt. Computed
+        // once; both the solid and gradient stroke lanes carry it.
+        let c = transform.as_coeffs();
+        let scale = ((c[0] * c[3] - c[1] * c[2]).abs()).sqrt();
+        let width = CapturingScene::px_pt(style.width * scale);
+        // A linear/radial/sweep GRADIENT stroke (C-1.7, v48): resolve the
+        // gradient endpoints into content points via the EFFECTIVE brush
+        // transform (`transform` ∘ `brush_transform`, the peniko convention),
+        // exactly like the gradient-FILL lane, and flatten the stroke shape.
+        // Sweep/conic gradients resolve too (`capture_gradient` carries them);
+        // an image/pattern brush returns `None` → the honest `GradientStroke`
+        // drop. Solid strokes stay `StrokePath` below.
+        if let anyrender::Paint::Gradient(grad) = &pr {
+            let effective = transform * brush_transform.unwrap_or(Affine::IDENTITY);
+            match capture_gradient(grad, effective) {
+                Some(gradient) => {
+                    let path = flatten_shape(shape, transform);
+                    self.dl.push(WebDrawCmd::StrokeGradient {
+                        path,
+                        gradient,
+                        width,
+                    });
+                }
+                None => self.dl.push(WebDrawCmd::NonSolidPaint {
+                    what: UnsupportedKind::GradientStroke,
+                }),
+            }
+            return;
+        }
+        match solid_paint(pr) {
             Some(paint) => {
                 let path = flatten_shape(shape, transform);
-                // Stroke width scales with the transform's average scale.
-                let c = transform.as_coeffs();
-                let scale = ((c[0] * c[3] - c[1] * c[2]).abs()).sqrt();
-                let width = CapturingScene::px_pt(style.width * scale);
                 self.dl.push(WebDrawCmd::StrokePath { path, paint, width });
             }
             None => self.dl.push(WebDrawCmd::NonSolidPaint {
@@ -512,17 +541,29 @@ impl PaintScene for CapturingScene {
             }
             return;
         }
-        // A linear/radial gradient fill (C-1.3): map the gradient endpoints
-        // into content points (the path's space) via the EFFECTIVE brush
-        // transform (`transform` ∘ `brush_transform`, the peniko convention),
-        // and flatten the fill shape. Sweep/conic gradients return `None`
-        // from `capture_gradient` → the honest `GradientFill` drop.
+        // A linear/radial/sweep gradient fill (C-1.3): map the gradient
+        // endpoints into content points (the path's space) via the EFFECTIVE
+        // brush transform (`transform` ∘ `brush_transform`, the peniko
+        // convention), and flatten the fill shape. A gradient fill INSIDE a
+        // non-`Normal` blend layer lowers to a C-1.8 `fillPathGradientBlend`
+        // (v48 — a CSS gradient under `mix-blend-mode`), mirroring the solid
+        // `FillBlend` path below; a gradient NOT under a blend stays a plain
+        // `FillGradient`. An image/pattern brush returns `None` from
+        // `capture_gradient` → the honest `GradientFill` drop.
         if let anyrender::Paint::Gradient(grad) = &pr {
             let effective = transform * brush_transform.unwrap_or(Affine::IDENTITY);
             match capture_gradient(grad, effective) {
                 Some(gradient) => {
                     let path = flatten_shape(shape, transform);
-                    self.dl.push(WebDrawCmd::FillGradient { path, gradient });
+                    if let Some(blend) = web_blend_from_mix(self.active_blend()) {
+                        self.dl.push(WebDrawCmd::FillGradientBlend {
+                            path,
+                            gradient,
+                            blend,
+                        });
+                    } else {
+                        self.dl.push(WebDrawCmd::FillGradient { path, gradient });
+                    }
                 }
                 None => self.dl.push(WebDrawCmd::NonSolidPaint {
                     what: UnsupportedKind::GradientFill,
@@ -1698,6 +1739,179 @@ mod tests {
             "blitz-paint 0.3.0-alpha.4 emits no non-Normal layer for \
              mix-blend-mode (capture coverage is via the trait unit tests); \
              if this fires, add a real-HTML blend capture test"
+        );
+    }
+
+    #[test]
+    fn gradient_brush_stroke_captures_a_stroke_gradient_that_lowers() {
+        // C-1.7 v48 capture, driven directly via the PaintScene trait. A
+        // `stroke` whose brush is a `Paint::Gradient` captures a
+        // `StrokeGradient` (NOT a `NonSolidPaint` drop), carrying the gradient
+        // endpoints mapped into content points + the stroke width px→pt; it
+        // lowers to a `strokePathGradient`. (See
+        // `blitz_paint_never_strokes_with_a_gradient_brush` for WHY this is
+        // trait-driven: real HTML never reaches it on this alpha.)
+        let mut scene = CapturingScene::new();
+        let grad = peniko::Gradient::new_linear(Point::new(0.0, 0.0), Point::new(40.0, 0.0))
+            .with_stops([
+                Color::new([1.0, 0.0, 0.0, 1.0]),
+                Color::new([0.0, 0.0, 1.0, 1.0]),
+            ]);
+        let line = kurbo::Line::new((0.0, 0.0), (40.0, 0.0));
+        scene.stroke(
+            &Stroke::new(4.0), // 4 px → 3 pt
+            Affine::IDENTITY,
+            &grad,
+            None,
+            &line,
+        );
+        let dl = scene.into_display_list();
+        let strokes = dl
+            .commands
+            .iter()
+            .filter(|c| matches!(c, WebDrawCmd::StrokeGradient { .. }))
+            .count();
+        assert_eq!(strokes, 1, "the gradient stroke captured: {dl:?}");
+        let WebDrawCmd::StrokeGradient {
+            width, gradient, ..
+        } = dl
+            .commands
+            .iter()
+            .find(|c| matches!(c, WebDrawCmd::StrokeGradient { .. }))
+            .unwrap()
+        else {
+            unreachable!()
+        };
+        // 4 px × 0.75 = 3 pt.
+        assert!((width - 3.0).abs() < 1e-3, "width={width}");
+        assert!(matches!(gradient, WebGradient::Linear { .. }));
+        let out = lower(&dl);
+        assert_eq!(out.report.gradient_strokes, 1);
+        assert_eq!(
+            out.report.dropped_non_solid, 0,
+            "no longer a dropped non-solid"
+        );
+        let json = serde_json::to_string(&out.layer).unwrap();
+        assert!(
+            json.contains("\"kind\":\"strokePathGradient\""),
+            "json: {json}"
+        );
+    }
+
+    #[test]
+    fn solid_stroke_stays_a_plain_stroke_path() {
+        // Additivity guard: a SOLID stroke still captures a `StrokePath`
+        // (not a `StrokeGradient`) — the gradient arm only fires for a
+        // `Paint::Gradient` brush.
+        let mut scene = CapturingScene::new();
+        let line = kurbo::Line::new((0.0, 0.0), (40.0, 0.0));
+        scene.stroke(
+            &Stroke::new(2.0),
+            Affine::IDENTITY,
+            Color::new([0.0, 0.0, 0.0, 1.0]),
+            None,
+            &line,
+        );
+        let dl = scene.into_display_list();
+        assert!(
+            dl.commands
+                .iter()
+                .all(|c| !matches!(c, WebDrawCmd::StrokeGradient { .. })),
+            "a solid stroke must not capture a gradient stroke: {dl:?}"
+        );
+        let out = lower(&dl);
+        assert_eq!(out.report.strokes, 1);
+        assert_eq!(out.report.gradient_strokes, 0);
+    }
+
+    #[test]
+    fn gradient_fill_under_a_multiply_layer_captures_a_gradient_blend() {
+        // C-1.8 v48 capture, driven directly via the PaintScene trait
+        // (blitz-paint 0.3.0-alpha.4 only pushes Normal layers — see
+        // `blitz_paint_pushes_only_normal_layers` — so this exercises the
+        // sink contract any non-Normal producer triggers). A GRADIENT fill
+        // inside a `push_layer(Mix::Screen, …)` bracket → `FillGradientBlend`;
+        // outside it stays a plain `FillGradient`.
+        let mut scene = CapturingScene::new();
+        let clip = kurbo::Rect::new(0.0, 0.0, 100.0, 100.0);
+        let grad = peniko::Gradient::new_linear(Point::new(0.0, 0.0), Point::new(10.0, 0.0))
+            .with_stops([
+                Color::new([1.0, 0.0, 0.0, 1.0]),
+                Color::new([0.0, 0.0, 1.0, 1.0]),
+            ]);
+        scene.push_layer(Mix::Screen, 1.0, Affine::IDENTITY, &clip);
+        scene.fill(
+            Fill::NonZero,
+            Affine::IDENTITY,
+            &grad,
+            None,
+            &kurbo::Rect::new(0.0, 0.0, 10.0, 10.0),
+        );
+        scene.pop_layer();
+        // Outside the layer, the same gradient fill is plain again.
+        scene.fill(
+            Fill::NonZero,
+            Affine::IDENTITY,
+            &grad,
+            None,
+            &kurbo::Rect::new(0.0, 0.0, 10.0, 10.0),
+        );
+        let dl = scene.into_display_list();
+        let out = lower(&dl);
+        assert_eq!(
+            out.report.gradient_blends, 1,
+            "the in-layer gradient blends"
+        );
+        assert_eq!(
+            out.report.gradients, 1,
+            "the out-of-layer gradient stays plain"
+        );
+        let SceneItem::FillPathGradientBlend { blend, .. } = out
+            .layer
+            .items
+            .iter()
+            .find(|it| matches!(it, SceneItem::FillPathGradientBlend { .. }))
+            .expect("a fillPathGradientBlend item")
+        else {
+            unreachable!()
+        };
+        assert_eq!(*blend, crate::wire::SceneBlendMode::Screen);
+    }
+
+    #[test]
+    fn blitz_paint_never_strokes_with_a_gradient_brush_for_this_alpha_version() {
+        // HONEST REACHABILITY NOTE, asserted (the v48 gradient-STROKE twin of
+        // `blitz_paint_pushes_only_normal_layers`): blitz-paint 0.3.0-alpha.4
+        // never calls `PaintScene::stroke` with a gradient brush. Every
+        // `scene.stroke` site passes a SOLID Color (text decoration colour,
+        // form-control WHITE/accent, devtools overlay); CSS BORDERS are painted
+        // as FILLS (`render.rs::draw_border` → `scene.fill`), and gradient
+        // borders (`border-image`) are not implemented. So a real-HTML page with
+        // a gradient border + a gradient-coloured underline captures NO
+        // StrokeGradient today — the lane is contract-correct + unit-tested but
+        // DORMANT. This pins the reality: if the alpha gains a gradient-stroke
+        // path the assertion fires, prompting a real-HTML capture test.
+        let html = r#"<!DOCTYPE html><html><head><style>
+          body { margin: 0; }
+          .b { width: 80px; height: 40px;
+               border: 8px solid;
+               border-image: linear-gradient(to right, #ff0000, #0000ff) 1; }
+          .u { color: #008000; text-decoration: underline;
+               text-decoration-color: #ff0000; }
+        </style></head><body>
+          <div class="b"></div><p class="u">underlined</p></body></html>"#;
+        let dl = render_html(html, 200, 120);
+        let gradient_strokes = dl
+            .commands
+            .iter()
+            .filter(|c| matches!(c, WebDrawCmd::StrokeGradient { .. }))
+            .count();
+        assert_eq!(
+            gradient_strokes, 0,
+            "blitz-paint 0.3.0-alpha.4 never strokes with a gradient brush \
+             (borders are fills, decorations + outlines are solid); gradient-\
+             stroke capture coverage is via the trait unit tests. If this fires, \
+             add a real-HTML gradient-stroke capture test."
         );
     }
 
