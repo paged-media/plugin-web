@@ -1,0 +1,68 @@
+# web-render — the Blitz display-list → C-1 SceneLayer lowering lane
+# (paged.web, ADR-011 Option B: "HTML/CSS in, scene layer out"; lower
+# Blitz's paint output to the plugin `sceneLayer` IR, NEVER a core paint
+# hook). The W0 spike (core/spikes/blitz-wasm) proved the Blitz/Stylo/
+# Taffy/Parley stack compiles + paints on wasm32; this crate is the next
+# slice — the LOWERING from a painted display list to the C-1 wire items
+# core already composes inside a frame (canvas-wasm v0.40+).
+#
+# TWO LAYERS, split so the lowering is testable WITHOUT the alpha Blitz
+# stack:
+#   · default features — the WIRE types (`SceneLayer`/`SceneItem`/…, the
+#     exact C-1 shape) + the PURE `lower()` (captured display list → scene
+#     items). Zero heavy deps; `cargo test`/`clippy` run on this alone.
+#   · `blitz` feature — the CAPTURE layer: a `PaintScene` sink that fills a
+#     `WebDisplayList` from real Blitz paint output, + `render_html` that
+#     drives parse→style→layout→paint exactly like the W0 spike. Pulls the
+#     alpha Blitz/anyrender/kurbo/peniko stack (pinned to the spike's
+#     versions = core's vello/wgpu line) — opt-in so the default build, the
+#     bundle's CI gate, and the lowering tests never touch it.
+#
+# STANDALONE crate with its OWN workspace + lock (like the spike): the
+# Blitz tree pins its own kurbo/peniko/stylo and must stay out of any
+# engine lock. Proprietary (And The Next GmbH) — no MPL header.
+
+[package]
+name = "web-render"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "paged.web: Blitz display-list → C-1 SceneLayer lowering (ADR-011 Option B)."
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# Default = the pure lowering lane + wire types only. The capture layer
+# (real Blitz) is opt-in so the lowering is unit-testable with no alpha
+# stack, and the bundle/CI gate stays light.
+default = []
+# The capture layer: drive Blitz + lower its real paint output. Pulls the
+# spike's exact stack (= core's vello/wgpu versions).
+blitz = [
+    "dep:anyrender",
+    "dep:blitz-dom",
+    "dep:blitz-html",
+    "dep:blitz-paint",
+    "dep:blitz-traits",
+    "dep:kurbo",
+    "dep:peniko",
+]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# --- capture layer (feature = "blitz") — pinned to the W0 spike's stack ---
+anyrender = { version = "0.10", optional = true }
+blitz-dom = { version = "=0.3.0-alpha.4", default-features = false, features = ["woff"], optional = true }
+blitz-html = { version = "=0.3.0-alpha.4", optional = true }
+blitz-paint = { version = "=0.3.0-alpha.4", optional = true }
+blitz-traits = { version = "=0.3.0-alpha.4", optional = true }
+kurbo = { version = "0.13", optional = true }
+peniko = { version = "0.6", optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+
+[workspace]

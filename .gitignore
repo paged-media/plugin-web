@@ -1,3 +1,7 @@
 node_modules/
 dist/
 *.tsbuildinfo
+# Rust build output (web-render) + generated wasm artifact.
+target/
+packages/web-render/target/
+packages/web-bundle/bin/
