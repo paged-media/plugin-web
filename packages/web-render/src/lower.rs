@@ -220,7 +220,7 @@ fn lower_image(img: &WebImage) -> Option<SceneItem> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::display_list::UnsupportedKind;
+    use crate::display_list::{LocalKey, UnsupportedKind};
     use crate::wire::{RectPt, ScenePaint, ScenePathSeg};
 
     fn blue() -> ScenePaint {
@@ -357,6 +357,7 @@ mod tests {
             text: "paged.web".to_string(),
             paint: ScenePaint::BLACK,
             family: Some("Inter".to_string()),
+            local_key: LocalKey::default(),
         }));
         let out = lower(&dl);
         assert_eq!(out.report.text_runs, 1);
@@ -381,6 +382,7 @@ mod tests {
             text: "   \n\t ".to_string(),
             paint: ScenePaint::BLACK,
             family: None,
+            local_key: LocalKey::default(),
         }));
         let out = lower(&dl);
         assert!(out.layer.items.is_empty());
@@ -480,6 +482,7 @@ mod tests {
             text: "caption".to_string(),
             paint: ScenePaint::BLACK,
             family: None,
+            local_key: LocalKey::default(),
         }));
         let out = lower(&dl);
         assert_eq!(out.report.emitted, 3);
@@ -549,6 +552,7 @@ mod tests {
             text: "Heading".to_string(),
             paint: ScenePaint::BLACK,
             family: None,
+            local_key: LocalKey::default(),
         }));
         let out = lower(&dl);
         assert_eq!(out.report.emitted, 3);
@@ -588,6 +592,7 @@ mod wire_json_tests {
     //! pin the tag/field names so a drift from the contract fails here, not
     //! silently at submit time.
     use super::*;
+    use crate::display_list::LocalKey;
     use crate::wire::{RectPt, ScenePaint};
 
     #[test]
@@ -618,6 +623,7 @@ mod wire_json_tests {
             text: "hi".to_string(),
             paint: ScenePaint::BLACK,
             family: None,
+            local_key: LocalKey::default(),
         }));
         let out = lower(&dl);
         let json = serde_json::to_value(&out.layer).unwrap();

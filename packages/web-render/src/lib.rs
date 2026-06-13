@@ -49,7 +49,9 @@ pub mod capture;
 #[cfg(feature = "blitz")]
 pub mod fonts;
 
-pub use display_list::{UnsupportedKind, WebDisplayList, WebDrawCmd, WebGlyphRun};
+pub use display_list::{
+    LocalKey, UnsupportedKind, WebDisplayList, WebDrawCmd, WebGlyphRun, WebImage,
+};
 pub use lower::{lower, LowerReport, Lowered};
 pub use wire::{RectPt, SceneItem, SceneLayer, ScenePaint, ScenePathSeg, SceneTextItem};
 

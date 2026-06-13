@@ -32,7 +32,9 @@ use kurbo::{Affine, BezPath, PathEl, Point, Rect, Shape, Stroke, Vec2};
 use parley::{Layout, PositionedLayoutItem};
 use peniko::{BlendMode, Color, Fill, FontData, StyleRef};
 
-use crate::display_list::{UnsupportedKind, WebDisplayList, WebDrawCmd, WebGlyphRun, WebImage};
+use crate::display_list::{
+    LocalKey, UnsupportedKind, WebDisplayList, WebDrawCmd, WebGlyphRun, WebImage,
+};
 use crate::fonts::{build_font_ctx, BUNDLED_FAMILY};
 use crate::wire::{RectPt, ScenePaint, ScenePathSeg};
 
@@ -340,15 +342,21 @@ impl PaintScene for CapturingScene {
         _glyph_transform: Option<Affine>,
         glyphs: impl Iterator<Item = Glyph> + Clone,
     ) {
-        // The run's baseline is the first POSITIONED glyph's pen position,
-        // carried through the transform — the same point the recovery walk
-        // ([`recover_run_texts`]) computes via `Node::absolute_position`, so
-        // the two correlate EXACTLY (no fuzzy matching). The `PaintScene`
-        // sink never sees the run's source text (blitz-paint hands it only
-        // glyph ids + positions), so this records empty `text`; the recovery
-        // pass in [`render_html`] fills it from the DOM by baseline key.
-        // C-1.1 reshapes the recovered string in the document default font,
-        // so the lowering needs the plain text, never the glyph ids.
+        // The run's WIRE baseline is the first POSITIONED glyph's pen
+        // position carried THROUGH the paint transform — so a CSS transform
+        // (translate/scale/rotate/skew on the inline root) is already folded
+        // into what crosses the wire. The TRANSFORM-INVARIANT correlation
+        // key, by contrast, is that same first-glyph point in the inline
+        // root's UNTRANSFORMED content-local space (`first.x`/`first.y`,
+        // which parley sets to the run's `offset`/`baseline`). The DOM
+        // run-text recovery computes the identical local point straight from
+        // the parley layout, so a run correlates by `local_key` even when a
+        // transform moved its painted position — no transform reconstruction.
+        // The `PaintScene` sink never sees the run's source text
+        // (blitz-paint hands it only glyph ids + positions), so this records
+        // empty `text`; the recovery pass in [`render_html`] fills it. C-1.1
+        // reshapes the recovered string in the document default font, so the
+        // lowering needs the plain text, never the glyph ids.
         let paint = match solid_paint(brush) {
             Some(mut p) => {
                 p.a *= brush_alpha.clamp(0.0, 1.0);
@@ -369,13 +377,17 @@ impl PaintScene for CapturingScene {
             baseline_x: CapturingScene::px_pt(baseline.x),
             baseline_y: CapturingScene::px_pt(baseline.y),
             size: CapturingScene::px_pt(font_size as f64),
-            // Empty here; [`render_html`]'s recovery pass keys this run's
-            // baseline against a DOM inline-layout walk and fills the plain
-            // text. An unmatched run STAYS empty (the lowering skips it),
-            // never a faked glyph-id string — the seam stays honest.
+            // Empty here; [`render_html`]'s recovery pass keys this run by
+            // `local_key` against a DOM inline-layout walk and fills the
+            // plain text. An unmatched run STAYS empty (the lowering skips
+            // it), never a faked glyph-id string — the seam stays honest.
             text: String::new(),
             paint,
             family: None,
+            local_key: LocalKey::new(
+                CapturingScene::px_pt(first.x as f64),
+                CapturingScene::px_pt(first.y as f64),
+            ),
         }));
     }
 
@@ -391,20 +403,28 @@ impl PaintScene for CapturingScene {
     }
 }
 
-/// Max baseline distance (in content points) at which a captured glyph
-/// run is considered the SAME run as a recovered (text-carrying) one. The
-/// two compute the same geometric point through equivalent transforms (at
-/// scale 1, no CSS transforms — the v0 fragment scope), so a real match is
-/// sub-point; this tolerance only absorbs f32 rounding.
+/// Max distance (in content points) at which a captured glyph run is
+/// considered the SAME run as a recovered (text-carrying) one. Capture and
+/// recovery compute the SAME geometric point (the local key, or the
+/// untransformed baseline), so a real match is sub-point; this tolerance
+/// only absorbs f32 rounding.
 const RUN_MATCH_TOL_PT: f32 = 0.5;
 
-/// One run recovered from the DOM inline-layout walk: the run's first
-/// positioned-glyph baseline (in content points, matching the capture's
-/// key) + the run's PLAIN source text, sliced from the inline formatting
-/// context's text by the run's byte range.
+/// One run recovered from the DOM inline-layout walk: the run's
+/// transform-invariant LOCAL KEY (first-glyph point in the inline root's
+/// untransformed content-local space — the primary match key, robust to a
+/// CSS transform on the inline root), its UNTRANSFORMED absolute baseline
+/// (the disambiguator when two inline roots share a local key), and the
+/// run's PLAIN source text sliced from the inline formatting context by the
+/// run's byte range.
 struct RecoveredRun {
-    x: f32,
-    y: f32,
+    /// Transform-invariant local key (content points) — matches the
+    /// capture's `WebGlyphRun::local_key`.
+    local: LocalKey,
+    /// Untransformed absolute baseline (content points) — disambiguates a
+    /// local-key collision across inline roots that aren't transformed.
+    abs_x: f32,
+    abs_y: f32,
     text: String,
 }
 
@@ -477,10 +497,14 @@ fn collect_inline_runs(doc: &BaseDocument, node_id: usize, out: &mut Vec<Recover
 }
 
 /// Recover every glyph run of one inline formatting context: for each run
-/// on each line, slice `text[run.text_range()]` and compute the run's
-/// first positioned-glyph baseline in absolute (page) content points via
-/// `Node::absolute_position` — the SAME point the capture's `draw_glyphs`
-/// records (`transform * first_positioned_glyph`), so they correlate.
+/// on each line, slice `text[run.text_range()]` and compute BOTH keys the
+/// matcher uses:
+///   · the LOCAL KEY — the run's first positioned glyph at
+///     `(offset, baseline)` in the inline root's untransformed content-local
+///     space, the SAME point the capture records as `WebGlyphRun::local_key`
+///     (so it survives a CSS transform on the inline root); and
+///   · the untransformed absolute baseline via `Node::absolute_position`
+///     (the disambiguator for a local-key collision across inline roots).
 fn recover_layout_runs(
     inline_root: &blitz_dom::Node,
     text: &str,
@@ -501,14 +525,19 @@ fn recover_layout_runs(
                 continue;
             }
             // The run's first positioned glyph sits at (offset, baseline) in
-            // the inline root's content-local space; map to absolute page
-            // coords (CSS px, scale 1) then px→pt to match the capture key.
+            // the inline root's content-local space — the transform-invariant
+            // key. `absolute_position` then maps it to untransformed page
+            // coords (CSS px, scale 1); both px→pt to match the capture.
             let local_x = glyph_run.offset();
             let local_y = glyph_run.baseline();
             let abs = inline_root.absolute_position(local_x, local_y);
             out.push(RecoveredRun {
-                x: CapturingScene::px_pt(abs.x as f64),
-                y: CapturingScene::px_pt(abs.y as f64),
+                local: LocalKey::new(
+                    CapturingScene::px_pt(local_x as f64),
+                    CapturingScene::px_pt(local_y as f64),
+                ),
+                abs_x: CapturingScene::px_pt(abs.x as f64),
+                abs_y: CapturingScene::px_pt(abs.y as f64),
                 text: slice.to_string(),
             });
         }
@@ -516,27 +545,52 @@ fn recover_layout_runs(
 }
 
 /// Fill each captured `GlyphRun`'s empty `text` (and `family` hint) from
-/// the recovered runs, matched by nearest baseline within
-/// [`RUN_MATCH_TOL_PT`]. A captured run with no match stays empty (the
-/// lowering then skips it). Each recovered run is consumed at most once so
-/// two runs at (numerically) the same baseline don't both grab it.
+/// the recovered runs.
+///
+/// Matching is on the TRANSFORM-INVARIANT local key (the first-glyph point
+/// in the inline root's untransformed content-local space): capture and
+/// recovery compute it from the SAME parley layout, so a run correlates even
+/// when a CSS transform (translate/scale/rotate/skew on the inline root)
+/// moved its painted baseline — no transform reconstruction. When several
+/// unused recovered runs share a local key (distinct inline roots that
+/// happen to start at the same local point), the captured run's PAINTED
+/// baseline disambiguates by nearest untransformed absolute baseline — exact
+/// for the untransformed roots (degrading to the prior baseline behaviour),
+/// and the honest remaining slice is several SIMULTANEOUSLY-transformed
+/// inline roots colliding on one local key (rare): the loser stays empty
+/// (the lowering then skips it), never a faked or misattached string. Each
+/// recovered run is consumed at most once.
 fn attach_run_texts(dl: &mut WebDisplayList, recovered: &[RecoveredRun]) {
     let mut used = vec![false; recovered.len()];
     for cmd in &mut dl.commands {
         let WebDrawCmd::GlyphRun(run) = cmd else {
             continue;
         };
-        let mut best: Option<(usize, f32)> = None;
+        // Best candidate: smallest local-key distance; ties (a local-key
+        // collision) broken by nearest untransformed absolute baseline.
+        let mut best: Option<(usize, f32, f32)> = None;
         for (i, rec) in recovered.iter().enumerate() {
             if used[i] {
                 continue;
             }
-            let d = (rec.x - run.baseline_x).hypot(rec.y - run.baseline_y);
-            if d <= RUN_MATCH_TOL_PT && best.map(|(_, bd)| d < bd).unwrap_or(true) {
-                best = Some((i, d));
+            let key_d = (rec.local.x - run.local_key.x).hypot(rec.local.y - run.local_key.y);
+            if key_d > RUN_MATCH_TOL_PT {
+                continue;
+            }
+            let abs_d = (rec.abs_x - run.baseline_x).hypot(rec.abs_y - run.baseline_y);
+            let better = match best {
+                None => true,
+                Some((_, bk, ba)) => {
+                    // Prefer a strictly closer local key; on a local-key tie,
+                    // prefer the nearer absolute baseline.
+                    key_d < bk - f32::EPSILON || ((key_d - bk).abs() <= f32::EPSILON && abs_d < ba)
+                }
+            };
+            if better {
+                best = Some((i, key_d, abs_d));
             }
         }
-        if let Some((i, _)) = best {
+        if let Some((i, _, _)) = best {
             used[i] = true;
             run.text = recovered[i].text.clone();
             run.family = Some(BUNDLED_FAMILY.to_string());
@@ -845,6 +899,109 @@ mod tests {
                 "recovered text {joined:?} missing {word:?}"
             );
         }
+    }
+
+    /// Collect (text, painted-baseline-x, painted-baseline-y) for every C-1
+    /// text item a fragment lowers to.
+    fn text_items(html: &str) -> Vec<(String, f32, f32)> {
+        let out = lower(&render_html(html, 480, 320));
+        out.layer
+            .items
+            .iter()
+            .filter_map(|it| match it {
+                SceneItem::Text(t) => Some((t.text.clone(), t.x, t.y)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn css_translate_text_recovers_and_the_baseline_is_transformed() {
+        // A CSS `transform: translate(...)` on the paragraph moves its
+        // painted baseline; the run text must STILL recover (the local-key
+        // correlation is transform-invariant), and the painted baseline must
+        // reflect the translate (proving the transform is folded into the
+        // wire geometry — not dropped).
+        let plain = text_items("<html><body><p style=\"margin:0\">hello</p></body></html>");
+        let shifted = text_items(
+            "<html><body><p style=\"margin:0;transform:translate(40px,30px)\">hello</p></body></html>",
+        );
+        let plain_hello = plain
+            .iter()
+            .find(|(t, ..)| t.contains("hello"))
+            .expect("plain 'hello' recovered");
+        let shifted_hello = shifted
+            .iter()
+            .find(|(t, ..)| t.contains("hello"))
+            .expect("transformed 'hello' STILL recovered (local-key match)");
+        // 40px×0.75 = 30pt right, 30px×0.75 = 22.5pt down vs the plain run.
+        let dx = shifted_hello.1 - plain_hello.1;
+        let dy = shifted_hello.2 - plain_hello.2;
+        assert!(
+            (dx - 30.0).abs() < 1.0,
+            "expected ~+30pt x from translate(40px), got dx={dx} \
+             (plain {plain:?}, shifted {shifted:?})"
+        );
+        assert!(
+            (dy - 22.5).abs() < 1.0,
+            "expected ~+22.5pt y from translate(30px), got dy={dy}"
+        );
+    }
+
+    #[test]
+    fn css_scale_text_recovers_under_a_transform() {
+        // A CSS `transform: scale(2)` (about the default centre origin)
+        // scales the paragraph; the run text must STILL recover via the
+        // transform-invariant local key (the painted baseline geometry is
+        // the painter's, already transform-correct on the wire).
+        let scaled = text_items(
+            "<html><body><p style=\"margin:0;transform:scale(2)\">scaled text</p></body></html>",
+        );
+        let joined: String = scaled
+            .iter()
+            .map(|(t, ..)| t.clone())
+            .collect::<Vec<_>>()
+            .join(" ");
+        for word in ["scaled", "text"] {
+            assert!(
+                joined.contains(word),
+                "scaled run text {joined:?} missing {word:?} (items {scaled:?})"
+            );
+        }
+    }
+
+    #[test]
+    fn multi_run_paragraph_lowers_to_one_text_item_per_run() {
+        // A paragraph that splits into multiple parley runs (here a bold
+        // span forces a style boundary → two runs) lowers to MULTIPLE C-1
+        // text items, one per run, each carrying its own recovered string +
+        // baseline. (Capture pushes one GlyphRun per `draw_glyphs`, and
+        // blitz-paint calls it once per run.)
+        let items = text_items(
+            "<html><body><p style=\"margin:0\">alpha <b>BETA</b> gamma</p></body></html>",
+        );
+        // At least two distinct runs recovered.
+        assert!(
+            items.len() >= 2,
+            "expected >=2 text items (one per run), got {items:?}"
+        );
+        let joined: String = items
+            .iter()
+            .map(|(t, ..)| t.clone())
+            .collect::<Vec<_>>()
+            .join(" ");
+        for word in ["alpha", "BETA", "gamma"] {
+            assert!(
+                joined.contains(word),
+                "multi-run text {joined:?} missing {word:?}"
+            );
+        }
+        // The bold word recovers as its OWN item (a distinct run), not merged
+        // into a neighbour.
+        assert!(
+            items.iter().any(|(t, ..)| t.contains("BETA")),
+            "the bold run 'BETA' must be its own recovered text item: {items:?}"
+        );
     }
 
     #[test]

@@ -99,8 +99,9 @@ impl UnsupportedKind {
 }
 
 /// A captured, positioned text run — the input to the C-1 `text` lowering.
-/// `baseline_x`/`baseline_y` are the run origin in content points; `text`
-/// is the run's plain string (single logical line).
+/// `baseline_x`/`baseline_y` are the run origin in content points (the
+/// paint transform already folded in, so the wire baseline is correct under
+/// CSS transforms); `text` is the run's plain string (single logical line).
 #[derive(Debug, Clone, PartialEq)]
 pub struct WebGlyphRun {
     pub baseline_x: f32,
@@ -111,6 +112,31 @@ pub struct WebGlyphRun {
     /// The resolved family name, if the capture knows it (a face HINT for
     /// the renderer; C-1.1 still reshapes in the doc default font).
     pub family: Option<String>,
+    /// The run's first-glyph point in the inline root's UNTRANSFORMED
+    /// content-local space (content points) — the capture's
+    /// transform-INVARIANT correlation key. The DOM run-text recovery
+    /// computes the same point straight from the parley layout
+    /// (`offset`/`baseline`), so a run correlates by this key even when a
+    /// CSS transform moved its painted (`baseline_x`/`baseline_y`) position.
+    /// The lowering IGNORES it (it only crosses the wire via the baseline).
+    pub local_key: LocalKey,
+}
+
+/// A run's transform-invariant correlation key: the first-glyph point in the
+/// inline root's untransformed content-local space (content points). Two
+/// runs in the same inline formatting context never share one; the recovery
+/// computes it identically from the parley layout, so it survives any CSS
+/// transform on the inline root.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct LocalKey {
+    pub x: f32,
+    pub y: f32,
+}
+
+impl LocalKey {
+    pub fn new(x: f32, y: f32) -> Self {
+        LocalKey { x, y }
+    }
 }
 
 /// A captured raster image — the input to the C-1 `image` lowering. `rgba`
