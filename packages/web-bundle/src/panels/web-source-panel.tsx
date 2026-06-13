@@ -54,16 +54,32 @@ import {
   normalizeViewportWidth,
   renderWebFrameSource,
   sourceFromEnvelope,
+  sourceFromTemplate,
   sourceKeyFor,
+  tagOutline,
   TEMPLATE_FILTERS,
+  templateById,
+  WEB_TEMPLATES,
   type ResolvedFontFace,
+  type TagOutlineEntry,
   type WebDiagnostic,
   type WebFrameSource,
 } from "@paged-media/web-model";
 
 import { createDebouncer } from "./debounce";
-import { resolveEditorLane, type EditorLane } from "./editor-lane";
+import {
+  FallbackCodeEditor,
+  resolveEditorLane,
+  type EditorLane,
+} from "./editor-lane";
 import { resolvePreviewFontFaces } from "./font-resolution";
+import {
+  clipboardAvailable,
+  describeRemoval,
+  ingestFromClipboard,
+  ingestHtml,
+} from "./ingest";
+import { selectRange } from "./find-in-source";
 
 /** Trailing-edge debounce between a keystroke and the preview/lint
  *  refresh. Document writes do NOT ride this timer — see `persistDraft`. */
@@ -186,6 +202,51 @@ export function previewFontBadge(
     shown: shownMatched,
     severity: unregistered.length > 0 ? "review" : "info",
   };
+}
+
+// ----------------------------------------------------------- templates
+
+/** The starter-template picker — a vetted, offline, dependency-free seed
+ *  set (web-model's `WEB_TEMPLATES`). An empty frame is a poor first
+ *  run; the picker seeds the source HTML/CSS from a chosen template. */
+function TemplatePicker({
+  onSeed,
+}: {
+  onSeed(templateId: string): void;
+}): ReactElement {
+  return (
+    <div data-web-templates style={{ margin: "var(--space-1, 4px) 0" }}>
+      <div style={{ ...kicker, marginTop: 0 }}>Start from a template</div>
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "var(--space-1, 4px)",
+        }}
+      >
+        {WEB_TEMPLATES.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            data-web-template={t.id}
+            title={t.description}
+            onClick={() => onSeed(t.id)}
+            style={{
+              font: "500 11px var(--font-sans, sans-serif)",
+              color: "var(--pg-fg)",
+              background: "var(--pg-bg)",
+              border: "1px solid var(--pg-border)",
+              borderRadius: "var(--radius-sm, 4px)",
+              padding: "3px 9px",
+              cursor: "pointer",
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 // ------------------------------------------------------------ persistence
@@ -352,6 +413,10 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
       );
     }
     if (!source) {
+      const makeFrom = (src: WebFrameSource): void => {
+        void host.document.setMetadata(selection[0], envelopeFor(src));
+        setSource(src);
+      };
       return (
         <div data-web-panel="convert" style={{ padding: "var(--space-3, 12px)", font: "12px var(--font-sans, sans-serif)" }}>
           <p style={{ margin: "0 0 var(--space-2, 8px)", color: "var(--pg-muted-fg)" }}>
@@ -360,13 +425,7 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
           <button
             type="button"
             data-web-make
-            onClick={() => {
-              void host.document.setMetadata(
-                selection[0],
-                envelopeFor(DEFAULT_SOURCE),
-              );
-              setSource(DEFAULT_SOURCE);
-            }}
+            onClick={() => makeFrom(DEFAULT_SOURCE)}
             style={{
               font: "500 12px var(--font-sans, sans-serif)",
               color: "var(--primary-fg, #fff)",
@@ -379,6 +438,14 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
           >
             Make web frame
           </button>
+          {/* Seed the new frame from a vetted starter instead of the
+              default — an empty frame is a poor first run. */}
+          <TemplatePicker
+            onSeed={(id) => {
+              const t = templateById(id);
+              if (t) makeFrom(sourceFromTemplate(t, DEFAULT_SOURCE.options));
+            }}
+          />
         </div>
       );
     }
@@ -431,6 +498,15 @@ function SourceEditor({
   const [draft, setDraft] = useState<WebFrameSource>(initial);
   const [persisted, setPersisted] = useState<WebFrameSource>(initial);
   const preview = useDebouncedValue(draft, PREVIEW_DEBOUNCE_MS);
+  // The bundle-owned HTML <textarea> (fallback lane only) — the target
+  // the "Find in source" affordance drives the caret in. The host
+  // widget lane has no selection prop, so this stays null there and the
+  // affordance degrades to a "go to line N" hint (find-in-source.ts).
+  const htmlTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  // The paste-HTML box — a small ingest surface shown on demand. Filled
+  // by a paste; its content is SANITIZED before it can seed the source.
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [ingestNote, setIngestNote] = useState<string | null>(null);
   // §6.2 deterministic slice — the template pass sits between the
   // (debounced) source and EVERYTHING downstream: the srcdoc, the html
   // lint, and the font parity all consume the RENDERED html/css. The
@@ -552,6 +628,63 @@ function SourceEditor({
     });
   }, [draft, id, onPersisted]);
 
+  // Seed the draft from a starter template — replaces html/css, keeps
+  // the author's current frame OPTIONS (media/viewport). A draft edit
+  // (not a document write): the explicit save still commits it.
+  const seedTemplate = useCallback((templateId: string) => {
+    const t = templateById(templateId);
+    if (!t) return;
+    setDraft((d) => sourceFromTemplate(t, d.options));
+    setIngestNote(null);
+  }, []);
+
+  // Paste-HTML ingestion — SANITIZE on the way in (§6.1: page JS never
+  // runs, so strip it, don't just diagnose). Sets the draft html to the
+  // cleaned markup and notes what was removed. Pure web-model strip via
+  // `ingestHtml`; the linter still runs over the result downstream.
+  const ingestInto = useCallback((raw: string) => {
+    const { html, removed } = ingestHtml(raw);
+    setDraft((d) => ({ ...d, html }));
+    setIngestNote(
+      describeRemoval(removed) ??
+        "Pasted HTML — nothing to clean (no scripts or handlers).",
+    );
+    setPasteOpen(false);
+  }, []);
+
+  // Read from the K-6 system clipboard when wired; else open the paste
+  // box (the affordance always available). Never throws.
+  const pasteFromClipboard = useCallback(() => {
+    void ingestFromClipboard(host).then((result) => {
+      if (!result) {
+        // No backend / empty clipboard → fall back to the paste box.
+        setPasteOpen(true);
+        setIngestNote(null);
+        return;
+      }
+      setDraft((d) => ({ ...d, html: result.html }));
+      setIngestNote(
+        describeRemoval(result.removed) ??
+          "Pasted from clipboard — nothing to clean.",
+      );
+    });
+  }, []);
+
+  // "Find in source" — the tag outline over the DRAFT html (the live
+  // editor text, not the debounced preview). Clicking a tag selects its
+  // source range in the bundle-owned textarea (fallback lane); in the
+  // host-widget lane there is no selection prop, so it cannot move the
+  // caret (the honest W-01 subset boundary — see find-in-source.ts).
+  const outline = useMemo<TagOutlineEntry[]>(
+    () => tagOutline(draft.html),
+    [draft.html],
+  );
+  const findInSource = useCallback((entry: TagOutlineEntry) => {
+    const el = htmlTextareaRef.current;
+    if (!el) return; // host-widget lane: no caret to drive
+    selectRange(el, entry.sourceStart, entry.sourceEnd);
+  }, []);
+
   // §6.2 slice — the panel-edited variables map. Rows render in entry
   // order; a key rename rebuilds the object (a rename ONTO an existing
   // key keeps the later entry — Object.fromEntries semantics, fine for
@@ -584,17 +717,169 @@ function SourceEditor({
       data-web-editor-lane={lane.native ? "widget" : "textarea"}
       style={{ padding: "var(--space-3, 12px)", display: "flex", flexDirection: "column" }}
     >
-      <div style={{ ...kicker, marginTop: 0 }}>HTML</div>
-      <div data-web-html>
-        <CodeEditor
-          language="html"
-          value={draft.html}
-          onChange={(html) => setDraft({ ...draft, html })}
-          diagnostics={htmlGutter}
-          minHeight={96}
-          ariaLabel="Web frame HTML"
-        />
+      <div
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          justifyContent: "space-between",
+        }}
+      >
+        <div style={{ ...kicker, marginTop: 0 }}>HTML</div>
+        {/* Paste-HTML ingest affordance: reads the K-6 system clipboard
+            when wired, else opens the paste box — either way the markup
+            is SANITIZED before it seeds the source (§6.1). */}
+        <button
+          type="button"
+          data-web-paste
+          onClick={pasteFromClipboard}
+          title={
+            clipboardAvailable(host)
+              ? "Read HTML from the clipboard and sanitize it"
+              : "Paste HTML and sanitize it"
+          }
+          style={{
+            font: "500 10px var(--font-sans, sans-serif)",
+            color: "var(--pg-fg)",
+            background: "var(--pg-bg)",
+            border: "1px solid var(--pg-border)",
+            borderRadius: "var(--radius-sm, 4px)",
+            padding: "2px 8px",
+            cursor: "pointer",
+          }}
+        >
+          Paste HTML
+        </button>
       </div>
+      {pasteOpen && (
+        <div data-web-paste-box style={{ margin: "0 0 var(--space-1, 4px)" }}>
+          <textarea
+            data-web-paste-input
+            autoFocus
+            spellCheck={false}
+            placeholder="Paste HTML here — it is sanitized on insert"
+            aria-label="Paste HTML to ingest"
+            onPaste={(e) => {
+              const text = e.clipboardData.getData("text/html") ||
+                e.clipboardData.getData("text/plain");
+              if (text) {
+                e.preventDefault();
+                ingestInto(text);
+              }
+            }}
+            style={{
+              width: "100%",
+              minHeight: 56,
+              resize: "vertical",
+              font: "11px/1.5 var(--font-mono, monospace)",
+              color: "var(--pg-fg)",
+              background: "var(--pg-bg)",
+              border: "1px dashed var(--pg-border)",
+              borderRadius: "var(--radius-sm, 4px)",
+              padding: "var(--space-2, 8px)",
+              boxSizing: "border-box",
+            }}
+          />
+        </div>
+      )}
+      {ingestNote && (
+        <p
+          data-web-ingest-note
+          style={{ margin: "0 0 var(--space-1, 4px)", ...mutedNote }}
+        >
+          {ingestNote}
+        </p>
+      )}
+      <div data-web-html>
+        {lane.native ? (
+          <CodeEditor
+            language="html"
+            value={draft.html}
+            onChange={(html) => setDraft({ ...draft, html })}
+            diagnostics={htmlGutter}
+            minHeight={96}
+            ariaLabel="Web frame HTML"
+          />
+        ) : (
+          // Fallback lane — render the bundle's own textarea with a ref
+          // so "Find in source" can drive its caret.
+          <FallbackCodeEditor
+            ref={htmlTextareaRef}
+            language="html"
+            value={draft.html}
+            onChange={(html) => setDraft({ ...draft, html })}
+            diagnostics={htmlGutter}
+            minHeight={96}
+            ariaLabel="Web frame HTML"
+          />
+        )}
+      </div>
+      {/* Find in source — the W-01 source-side subset of click-to-inspect.
+          Lists the markup's opening tags (the pure `tagOutline` scan);
+          clicking one selects its source range in the editor. Full live
+          element inspection (hovering a rendered box) awaits the engine
+          render lane. */}
+      {outline.length > 0 && (
+        <details data-web-outline style={{ margin: "var(--space-1, 4px) 0 0" }}>
+          <summary
+            style={{
+              font: "700 10px var(--font-sans, sans-serif)",
+              letterSpacing: "var(--tracking-wide, 0.14em)",
+              textTransform: "uppercase",
+              color: "var(--pg-muted-fg)",
+              cursor: "pointer",
+            }}
+          >
+            Find in source ({outline.length})
+          </summary>
+          <ul
+            style={{
+              listStyle: "none",
+              margin: "var(--space-1, 4px) 0 0",
+              padding: 0,
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "var(--space-1, 4px)",
+            }}
+          >
+            {outline.map((entry, i) => (
+              <li key={i}>
+                <button
+                  type="button"
+                  data-web-outline-tag={entry.tag}
+                  data-web-outline-line={entry.line}
+                  onClick={() => findInSource(entry)}
+                  title={
+                    lane.native
+                      ? `line ${entry.line} — select in the host editor is not wired`
+                      : `select <${entry.tag}> at line ${entry.line}`
+                  }
+                  style={{
+                    font: "11px var(--font-mono, monospace)",
+                    color: "var(--pg-fg)",
+                    background: "var(--pg-bg)",
+                    border: "1px solid var(--pg-border)",
+                    borderRadius: "var(--radius-sm, 4px)",
+                    padding: "1px 6px",
+                    cursor: lane.native ? "default" : "pointer",
+                  }}
+                >
+                  {entry.tag}
+                  <span style={{ color: "var(--pg-muted-fg)" }}>
+                    :{entry.line}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          {lane.native && (
+            <p style={{ margin: "var(--space-1, 4px) 0 0", ...mutedNote }}>
+              The host code editor has no selection channel yet — these
+              show the line; full element inspection ships with the engine
+              render lane.
+            </p>
+          )}
+        </details>
+      )}
       <div style={kicker}>CSS</div>
       <div data-web-css>
         <CodeEditor
@@ -605,6 +890,23 @@ function SourceEditor({
           ariaLabel="Web frame CSS"
         />
       </div>
+      {/* Replace the draft's HTML/CSS with a vetted starter (keeps the
+          current frame options). A draft edit — the explicit save still
+          commits it. */}
+      <details data-web-template-replace style={{ margin: "var(--space-1, 4px) 0 0" }}>
+        <summary
+          style={{
+            font: "700 10px var(--font-sans, sans-serif)",
+            letterSpacing: "var(--tracking-wide, 0.14em)",
+            textTransform: "uppercase",
+            color: "var(--pg-muted-fg)",
+            cursor: "pointer",
+          }}
+        >
+          Replace with template
+        </summary>
+        <TemplatePicker onSeed={seedTemplate} />
+      </details>
       <div style={kicker}>Options</div>
       <label style={optionRow}>
         Media

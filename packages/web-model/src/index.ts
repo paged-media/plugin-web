@@ -45,6 +45,12 @@ export {
   type WebTemplate,
 } from "./templates";
 
+// The source-side subset of click-to-inspect ("Find in source"): a tag-
+// position scan exposing each opening tag's source range, so the panel
+// can list tags and map a click to the editor selection. Full live
+// element inspection awaits the Blitz render lane (W-01).
+export { tagOutline, type TagOutlineEntry } from "./outline";
+
 export {
   composeFontFaces,
   diagnoseFonts,

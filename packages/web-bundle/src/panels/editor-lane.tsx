@@ -10,17 +10,25 @@
 // `data-web-editor-lane` says which lane is live (honest seams — the
 // fallback never pretends to be the widget).
 
-import type { ComponentType, ReactElement } from "react";
+import { forwardRef, type ComponentType, type ReactElement, type Ref } from "react";
 
 import type { CodeEditorProps } from "@paged-media/plugin-api";
 
 /** The bundle's honest plain-textarea fallback. Same props CONTRACT as
  *  the host widget so the panel wires both lanes identically; the
  *  `diagnostics` prop is accepted but renders no gutter (the panel's
- *  diagnostics list below the preview still shows every finding). */
-export function FallbackCodeEditor(props: CodeEditorProps): ReactElement {
+ *  diagnostics list below the preview still shows every finding).
+ *
+ *  Forwards a ref to its underlying <textarea> so the "Find in source"
+ *  affordance can drive the caret in THIS lane (the host widget lane has
+ *  no selection prop — see find-in-source.ts's seam note). */
+export const FallbackCodeEditor = forwardRef(function FallbackCodeEditor(
+  props: CodeEditorProps,
+  ref: Ref<HTMLTextAreaElement>,
+): ReactElement {
   return (
     <textarea
+      ref={ref}
       data-web-editor-fallback={props.language ?? "text"}
       value={props.value}
       readOnly={props.readOnly}
@@ -42,7 +50,7 @@ export function FallbackCodeEditor(props: CodeEditorProps): ReactElement {
       }}
     />
   );
-}
+});
 
 export interface EditorLane {
   /** True when the HOST's rich widget is live (the W-04 surface). */
