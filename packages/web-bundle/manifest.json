@@ -10,13 +10,22 @@
       "write": "scoped"
     },
     "rendering": [
-      "hitTest"
+      "hitTest",
+      "sceneLayer"
     ],
     "editContext": [
       "webFrame"
     ],
     "assets": [
       "fonts"
+    ],
+    "wasm": [
+      {
+        "name": "blitz",
+        "path": "bin/blitz_web.wasm",
+        "purpose": "engine",
+        "maxBytes": 4194304
+      }
     ],
     "network": false,
     "clipboard": "none"
@@ -26,7 +35,8 @@
       "media.paged.web.panel.source"
     ],
     "commands": [
-      "media.paged.web.command.insertWebFrame"
+      "media.paged.web.command.insertWebFrame",
+      "media.paged.web.command.renderWebFrame"
     ],
     "editContexts": [
       {

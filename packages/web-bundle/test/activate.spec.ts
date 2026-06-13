@@ -102,7 +102,7 @@ const mapBacking = () => {
 };
 
 describe("webBundle.activate", () => {
-  it("registers the source panel + the insert command (show/hide host-derived per B-15)", () => {
+  it("registers the source panel + the insert/render commands (show/hide host-derived per B-15)", () => {
     const fake = makeFakeEditor();
     loadBundle(() => fake.editor, webBundle, {
       console: silent,
@@ -110,8 +110,11 @@ describe("webBundle.activate", () => {
       shell: { openPanel() {}, closePanel() {}, async pickFile() { return []; } },
     });
     expect(fake.panels.ids()).toEqual(["media.paged.web.panel.source"]);
+    // W-01 — the bake-path "Render web frame to canvas" command joins the
+    // insert command (the honest not-loaded affordance).
     expect(fake.commands.ids()).toEqual([
       "media.paged.web.command.insertWebFrame",
+      "media.paged.web.command.renderWebFrame",
     ]);
   });
 

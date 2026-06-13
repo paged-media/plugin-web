@@ -6,6 +6,8 @@
 // `sourceKeyFor` remains for the one-time legacy-storage migration
 // and as the diagnostics key.
 
+import { engineStamp } from "./engine";
+
 export interface WebFrameOptions {
   /** CSS media the frame renders under (§9: a DTP-native switch). */
   media: "print" | "screen";
@@ -117,9 +119,17 @@ export interface WebSourceEnvelope {
   engine?: Record<string, string>;
 }
 
-/** Wrap a source for `host.document.setMetadata`. */
+/** Wrap a source for `host.document.setMetadata`. Stamps the pinned
+ *  web-engine stack into the envelope's `engine` record (ADR-011
+ *  determinism — a re-render can detect when the document was last
+ *  rendered under an older stack). The stamp is forward-declared today
+ *  (the engine isn't built); recording it now keeps the door honest. */
 export function envelopeFor(source: WebFrameSource): WebSourceEnvelope {
-  return { v: SOURCE_METADATA_VERSION, data: { ...source } };
+  return {
+    v: SOURCE_METADATA_VERSION,
+    data: { ...source },
+    engine: engineStamp(),
+  };
 }
 
 /** Unwrap + validate a `getMetadata` envelope. Unknown versions and

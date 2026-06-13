@@ -46,3 +46,31 @@ export {
   type TemplateFilter,
   type TemplateResult,
 } from "./transform";
+
+// The W-01 RENDER CONTRACT — the engine-agnostic seam (ADR-011: "HTML/CSS
+// in, scene layer out"). Today `renderWebFrame` returns the HONEST
+// not-loaded path; the Blitz/WASM lane drops in behind this contract. The
+// SceneLayer types are the C-1 IR (filled paths + single-line text).
+export {
+  ENGINE_NOT_LOADED_MESSAGE,
+  isRendered,
+  renderWebFrame,
+  type SceneItem,
+  type SceneLayer,
+  type ScenePaintRgba,
+  type ScenePathItem,
+  type SceneTextItem,
+  type WebRenderRequest,
+  type WebRenderResult,
+} from "./render";
+
+// Engine version PINNING — the determinism record (ADR-011). The pin is
+// forward-declared from the W0 spike's proven stack and stamped into the
+// source envelope so a future re-render is reproducible.
+export {
+  ENGINE_PIN,
+  engineStamp,
+  pinFromStamp,
+  pinMatches,
+  type EnginePin,
+} from "./engine";

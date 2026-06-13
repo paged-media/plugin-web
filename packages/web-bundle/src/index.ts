@@ -19,3 +19,7 @@ export {
   makeWebFrameEditContext,
   WEB_FRAME_TYPE,
 } from "./edit-context";
+// W-01 — the bake path (render contract → C-1 sceneLayer) + its command
+// handler, exported for the render-lane specs.
+export { bakeWebFrame, type BakeOutcome } from "./bake";
+export { renderSelectedWebFrame } from "./render-command";

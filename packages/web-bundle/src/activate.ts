@@ -16,6 +16,7 @@ import {
 import manifest from "../manifest.json";
 
 import { insertWebFrame } from "./insert";
+import { renderSelectedWebFrame } from "./render-command";
 import {
   makeWebFrameEditContext,
   webFrameObjectType,
@@ -37,6 +38,18 @@ export function activate(host: BundleHost): BundleHandle {
     title: "Insert web frame",
     category: "Web",
     handler: () => insertWebFrame(host, PANEL_ID),
+  });
+  // W-01 — "Render to frame": the bake-path affordance. Calls the render
+  // contract for the selected web frame and lowers a real SceneLayer to
+  // the C-1 rail (ADR-011 Option B). TODAY the engine is not loaded, so
+  // it surfaces the honest "engine not loaded" diagnostic and the
+  // sandboxed source-lane preview stays the only preview — never a fake
+  // render. The door is wired; the Blitz engine drops in behind it.
+  host.contribute.command({
+    id: "media.paged.web.command.renderWebFrame",
+    title: "Render web frame to canvas",
+    category: "Web",
+    handler: () => renderSelectedWebFrame(host),
   });
   // W3.2 — register the webFrame OBJECT TYPE + its source EDIT CONTEXT
   // (closes W-03): a webFrame is a rectangle with attached source
