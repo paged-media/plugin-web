@@ -54,10 +54,14 @@ pub mod capture;
 pub mod fonts;
 
 pub use display_list::{
-    LocalKey, UnsupportedKind, WebDisplayList, WebDrawCmd, WebGlyphRun, WebImage,
+    LocalKey, UnsupportedKind, WebDisplayList, WebDrawCmd, WebGlyphRun, WebGradient,
+    WebGradientStop, WebImage,
 };
 pub use lower::{lower, LowerReport, Lowered};
-pub use wire::{RectPt, SceneItem, SceneLayer, ScenePaint, ScenePathSeg, SceneTextItem};
+pub use wire::{
+    RectPt, SceneGradient, SceneGradientStop, SceneItem, SceneLayer, ScenePaint, ScenePathSeg,
+    SceneTextItem,
+};
 
 /// The wasm entry point for the (future) bundle artifact. Behind `blitz`
 /// (the only build that needs to expose a render to JS): takes HTML +

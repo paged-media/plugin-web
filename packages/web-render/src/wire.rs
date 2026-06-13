@@ -60,6 +60,54 @@ pub enum SceneItem {
         w: f32,
         h: f32,
     },
+    /// Fill a bezier path with a linear or radial gradient (C-1.3). The
+    /// gradient geometry is authored in frame-content points (the SAME space
+    /// as `path`); core maps both by the frame transform, so the web lane
+    /// emits gradient endpoints in the same content-point space its fills
+    /// use. Additive to `FillPath` — solid fills are untouched.
+    FillPathGradient {
+        path: Vec<ScenePathSeg>,
+        gradient: SceneGradient,
+    },
+}
+
+/// A plugin gradient paint for [`SceneItem::FillPathGradient`] (C-1.3). A
+/// faithful twin of core's `paged_compose::scene_layer::SceneGradient` —
+/// the serde tag (`type`) + camelCase fields are LOAD-BEARING (a drift
+/// silently drops the item at core's deserialize). Coordinates are
+/// frame-content points; colours are sRGB 0..=1 (core linearises +
+/// offset-sorts at lowering, so stop order/space need not be normalised
+/// here — but emit 0..=1 sRGB).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum SceneGradient {
+    /// Linear gradient from `(x0,y0)` to `(x1,y1)` in content points.
+    Linear {
+        x0: f32,
+        y0: f32,
+        x1: f32,
+        y1: f32,
+        stops: Vec<SceneGradientStop>,
+    },
+    /// Radial gradient centred at `(cx,cy)` with `radius`, in content points.
+    Radial {
+        cx: f32,
+        cy: f32,
+        radius: f32,
+        stops: Vec<SceneGradientStop>,
+    },
+}
+
+/// One colour stop in a [`SceneGradient`]. `offset` is `0.0..=1.0` along the
+/// gradient axis; the colour is sRGB 0..=1 (core linearises at lowering).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneGradientStop {
+    pub offset: f32,
+    pub r: f32,
+    pub g: f32,
+    pub b: f32,
+    pub a: f32,
 }
 
 /// A single-line text run in frame-content coordinates (C-1.1).
@@ -175,5 +223,84 @@ impl RectPt {
     /// nothing — the honest skip).
     pub fn is_positive(self) -> bool {
         self.w > 0.0 && self.h > 0.0
+    }
+}
+
+#[cfg(test)]
+mod gradient_wire_tests {
+    //! The CONTRACT GUARD for the C-1.3 gradient wire. These pin the exact
+    //! serde tags + field names core's `paged_compose::scene_layer`
+    //! (`SceneItem::FillPathGradient` / `SceneGradient` / `SceneGradientStop`)
+    //! deserializes. If the shape drifts from core, the item is silently
+    //! DROPPED at submit — so a drift must fail HERE, not in production.
+    use super::*;
+
+    fn stop(offset: f32, r: f32, g: f32, b: f32, a: f32) -> SceneGradientStop {
+        SceneGradientStop { offset, r, g, b, a }
+    }
+
+    #[test]
+    fn linear_fill_path_gradient_serializes_to_the_exact_c1_3_keys() {
+        let item = SceneItem::FillPathGradient {
+            path: vec![
+                ScenePathSeg::MoveTo { x: 0.0, y: 0.0 },
+                ScenePathSeg::LineTo { x: 10.0, y: 0.0 },
+                ScenePathSeg::Close,
+            ],
+            gradient: SceneGradient::Linear {
+                x0: 1.0,
+                y0: 2.0,
+                x1: 3.0,
+                y1: 4.0,
+                stops: vec![stop(0.0, 1.0, 0.0, 0.0, 1.0), stop(1.0, 0.0, 0.0, 1.0, 0.5)],
+            },
+        };
+        let json = serde_json::to_value(&item).unwrap();
+        // SceneItem is tag = "kind", camelCase.
+        assert_eq!(json["kind"], "fillPathGradient");
+        // The path carries through under "path".
+        assert_eq!(json["path"][0]["op"], "moveTo");
+        // SceneGradient is tag = "type", camelCase; linear endpoints + stops.
+        assert_eq!(json["gradient"]["type"], "linear");
+        assert_eq!(json["gradient"]["x0"], 1.0);
+        assert_eq!(json["gradient"]["y0"], 2.0);
+        assert_eq!(json["gradient"]["x1"], 3.0);
+        assert_eq!(json["gradient"]["y1"], 4.0);
+        // SceneGradientStop fields: offset + r/g/b/a (camelCase = identity).
+        let s0 = &json["gradient"]["stops"][0];
+        assert_eq!(s0["offset"], 0.0);
+        assert_eq!(s0["r"], 1.0);
+        assert_eq!(s0["g"], 0.0);
+        assert_eq!(s0["b"], 0.0);
+        assert_eq!(s0["a"], 1.0);
+        assert_eq!(json["gradient"]["stops"][1]["a"], 0.5);
+        // No stray keys leaked onto the gradient (radial-only fields absent).
+        assert!(json["gradient"].get("cx").is_none());
+        assert!(json["gradient"].get("radius").is_none());
+        // It round-trips back to the same Rust value (deserialize parity).
+        let back: SceneItem = serde_json::from_value(json).unwrap();
+        assert_eq!(back, item);
+    }
+
+    #[test]
+    fn radial_gradient_serializes_with_centre_and_radius() {
+        let g = SceneGradient::Radial {
+            cx: 5.0,
+            cy: 6.0,
+            radius: 7.0,
+            stops: vec![stop(0.0, 1.0, 1.0, 1.0, 1.0), stop(1.0, 0.0, 0.0, 0.0, 1.0)],
+        };
+        let json = serde_json::to_value(&g).unwrap();
+        assert_eq!(json["type"], "radial");
+        assert_eq!(json["cx"], 5.0);
+        assert_eq!(json["cy"], 6.0);
+        assert_eq!(json["radius"], 7.0);
+        assert_eq!(json["stops"].as_array().unwrap().len(), 2);
+        // Linear-only endpoints are absent on a radial.
+        assert!(json.get("x0").is_none());
+        assert!(json.get("x1").is_none());
+        // Round-trips.
+        let back: SceneGradient = serde_json::from_value(json).unwrap();
+        assert_eq!(back, g);
     }
 }

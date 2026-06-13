@@ -66,10 +66,23 @@ pub enum WebDrawCmd {
     /// honestly counted, until C-1 carries an image transform).
     DrawImage(WebImage),
 
-    /// A fill/stroke/glyph whose brush was NOT a solid colour (gradient,
-    /// image, pattern) — the C-1 wire carries only solid paint today, so
-    /// the lowering DROPS it and counts it as an unsupported-paint skip.
-    /// Recorded (not discarded at capture) so the diagnostic is truthful.
+    /// A linear/radial gradient fill of a path (C-1.3). `path` is the
+    /// flattened fill geometry (content points), `gradient` the gradient's
+    /// endpoints + stops already resolved into the SAME content-point space
+    /// (the paint/brush transform folded into the endpoints by the capture,
+    /// like fills/images). Lowers to the C-1 `SceneItem::FillPathGradient`.
+    /// Sweep/conic gradients are NOT this variant (no C-1 equivalent — the
+    /// capture records them as a `NonSolidPaint` drop, honestly counted).
+    FillGradient {
+        path: FlatPath,
+        gradient: WebGradient,
+    },
+
+    /// A fill/stroke/glyph whose brush was NOT a solid colour AND not a
+    /// linear/radial gradient (image, pattern, sweep/conic gradient) — the
+    /// C-1 wire can't carry it, so the lowering DROPS it and counts it as an
+    /// unsupported-paint skip. Recorded (not discarded at capture) so the
+    /// diagnostic is truthful.
     NonSolidPaint { what: UnsupportedKind },
 
     /// A box shadow / blur — no C-1 representation; counted + skipped.
@@ -153,6 +166,42 @@ pub struct WebImage {
     pub height: u32,
     /// The on-page destination box (content points).
     pub dest: RectPt,
+}
+
+/// A captured gradient paint — the input to the C-1.3 `fillPathGradient`
+/// lowering. Endpoints are in content points (the paint/brush transform
+/// folded in by the capture, like image dests), stops are sRGB 0..=1.
+/// Plain data (no peniko) so the lowering is testable without Blitz. Sweep/
+/// conic gradients have no variant here (no C-1 equivalent — dropped at
+/// capture).
+#[derive(Debug, Clone, PartialEq)]
+pub enum WebGradient {
+    /// A linear gradient along the axis from `(x0,y0)` to `(x1,y1)`.
+    Linear {
+        x0: f32,
+        y0: f32,
+        x1: f32,
+        y1: f32,
+        stops: Vec<WebGradientStop>,
+    },
+    /// A radial gradient centred at `(cx,cy)` with `radius` (content points).
+    Radial {
+        cx: f32,
+        cy: f32,
+        radius: f32,
+        stops: Vec<WebGradientStop>,
+    },
+}
+
+/// One captured gradient colour stop: normalized `offset` (0..=1) + straight
+/// sRGB RGBA (0..=1). The lowering passes these to the C-1 wire 1:1.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WebGradientStop {
+    pub offset: f32,
+    pub r: f32,
+    pub g: f32,
+    pub b: f32,
+    pub a: f32,
 }
 
 /// The recorded paint of one web frame, in z-order (painter's order —

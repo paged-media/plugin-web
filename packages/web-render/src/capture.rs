@@ -33,7 +33,8 @@ use parley::{Layout, PositionedLayoutItem};
 use peniko::{BlendMode, Color, Fill, FontData, StyleRef};
 
 use crate::display_list::{
-    LocalKey, UnsupportedKind, WebDisplayList, WebDrawCmd, WebGlyphRun, WebImage,
+    LocalKey, UnsupportedKind, WebDisplayList, WebDrawCmd, WebGlyphRun, WebGradient,
+    WebGradientStop, WebImage,
 };
 use crate::fonts::{build_font_ctx, BUNDLED_FAMILY};
 use crate::wire::{RectPt, ScenePaint, ScenePathSeg};
@@ -156,6 +157,75 @@ fn image_to_straight_rgba8(image: &peniko::ImageData, extra_alpha: f32) -> Optio
 fn pt(transform: Affine, p: Point) -> (f32, f32) {
     let tp = transform * p;
     (CapturingScene::px_pt(tp.x), CapturingScene::px_pt(tp.y))
+}
+
+/// Map a peniko gradient color stop to a captured [`WebGradientStop`]:
+/// normalized offset + STRAIGHT sRGB RGBA in 0..=1. peniko `DynamicColor`
+/// converts to the sRGB color space (`peniko::Color = AlphaColor<Srgb>`),
+/// whose `components` are `[r, g, b, a]` — the SAME sRGB space `solid_paint`
+/// hands the wire, so gradient stops and solid fills composite consistently.
+fn gradient_stop(stop: &peniko::ColorStop) -> WebGradientStop {
+    let [r, g, b, a] = stop
+        .color
+        .to_alpha_color::<peniko::color::Srgb>()
+        .components;
+    WebGradientStop {
+        offset: stop.offset,
+        r,
+        g,
+        b,
+        a,
+    }
+}
+
+/// Resolve a peniko [`Gradient`] (under the EFFECTIVE brush transform — the
+/// paint `transform` composed with the optional `brush_transform`, the
+/// standard peniko brush-to-device convention) into a content-point
+/// [`WebGradient`].
+///
+/// - **Linear**: the start/end points map through `effective` into content
+///   points (blitz-paint authors them in the fill box's space with no brush
+///   transform, so `effective == transform`).
+/// - **Radial**: blitz-paint builds the unit circle (`new_radial((0,0),1)`)
+///   and carries the ellipse placement in `brush_transform`; the centre maps
+///   through `effective`, and the radius scales by the transform's mean scale
+///   (`sqrt(|det|)`, the same scalar the stroke-width capture uses). An
+///   anisotropic (ellipse) radial collapses to this single radius — the
+///   honest approximation C-1.3's single-radius `Radial` allows.
+/// - **Sweep/conic**: no C-1 equivalent → `None` (the caller records an
+///   honest `GradientFill` drop; never approximated as linear/radial).
+fn capture_gradient(gradient: &peniko::Gradient, effective: Affine) -> Option<WebGradient> {
+    let stops: Vec<WebGradientStop> = gradient.stops.iter().map(gradient_stop).collect();
+    match &gradient.kind {
+        peniko::GradientKind::Linear(lin) => {
+            let (x0, y0) = pt(effective, lin.start);
+            let (x1, y1) = pt(effective, lin.end);
+            Some(WebGradient::Linear {
+                x0,
+                y0,
+                x1,
+                y1,
+                stops,
+            })
+        }
+        peniko::GradientKind::Radial(rad) => {
+            // Use the OUTER (end) circle — CSS radial gradients ramp 0→1 from
+            // the focal/start circle out to the end circle; blitz-paint sets
+            // start_radius 0 at the centre, so the end circle is the extent.
+            let (cx, cy) = pt(effective, rad.end_center);
+            let coeffs = effective.as_coeffs();
+            let mean_scale = ((coeffs[0] * coeffs[3] - coeffs[1] * coeffs[2]).abs()).sqrt();
+            let radius = (rad.end_radius as f64 * mean_scale * PX_TO_PT) as f32;
+            Some(WebGradient::Radial {
+                cx,
+                cy,
+                radius,
+                stops,
+            })
+        }
+        // Sweep/conic has no C-1 representation — never faked.
+        peniko::GradientKind::Sweep(_) => None,
+    }
 }
 
 /// Flatten a kurbo `Shape` (under `transform`) to C-1 path segments in
@@ -285,7 +355,7 @@ impl PaintScene for CapturingScene {
         _style: Fill,
         transform: Affine,
         brush: impl Into<PaintRef<'a>>,
-        _brush_transform: Option<Affine>,
+        brush_transform: Option<Affine>,
         shape: &impl Shape,
     ) {
         let pr: PaintRef<'a> = brush.into();
@@ -300,6 +370,24 @@ impl PaintScene for CapturingScene {
                 Some(img) => self.dl.push(WebDrawCmd::DrawImage(img)),
                 None => self.dl.push(WebDrawCmd::NonSolidPaint {
                     what: UnsupportedKind::ImageFill,
+                }),
+            }
+            return;
+        }
+        // A linear/radial gradient fill (C-1.3): map the gradient endpoints
+        // into content points (the path's space) via the EFFECTIVE brush
+        // transform (`transform` ∘ `brush_transform`, the peniko convention),
+        // and flatten the fill shape. Sweep/conic gradients return `None`
+        // from `capture_gradient` → the honest `GradientFill` drop.
+        if let anyrender::Paint::Gradient(grad) = &pr {
+            let effective = transform * brush_transform.unwrap_or(Affine::IDENTITY);
+            match capture_gradient(grad, effective) {
+                Some(gradient) => {
+                    let path = flatten_shape(shape, transform);
+                    self.dl.push(WebDrawCmd::FillGradient { path, gradient });
+                }
+                None => self.dl.push(WebDrawCmd::NonSolidPaint {
+                    what: UnsupportedKind::GradientFill,
                 }),
             }
             return;
@@ -1002,6 +1090,46 @@ mod tests {
             items.iter().any(|(t, ..)| t.contains("BETA")),
             "the bold run 'BETA' must be its own recovered text item: {items:?}"
         );
+    }
+
+    #[test]
+    fn real_blitz_paint_captures_a_linear_gradient_background_that_lowers() {
+        // The end-to-end native proof for C-1.3: a div with a CSS
+        // `linear-gradient` background paints a `Paint::Gradient` fill; the
+        // capture maps it to a `FillGradient`, which lowers to a C-1
+        // `fillPathGradient` (NOT an unsupported drop). The endpoints + stops
+        // are real Blitz output.
+        let html = r#"<!DOCTYPE html><html><head><style>
+          body { margin: 0; }
+          .g { width: 200px; height: 100px;
+               background: linear-gradient(to right, #ff0000, #0000ff); }
+        </style></head><body><div class="g"></div></body></html>"#;
+        let dl = render_html(html, 320, 200);
+        // The capture recorded at least one gradient fill command.
+        let grad_cmds = dl
+            .commands
+            .iter()
+            .filter(|c| matches!(c, WebDrawCmd::FillGradient { .. }))
+            .count();
+        assert!(
+            grad_cmds >= 1,
+            "expected >=1 captured FillGradient from the CSS linear-gradient, \
+             got dl: {dl:?}"
+        );
+        let out = lower(&dl);
+        assert!(
+            out.report.gradients >= 1,
+            "expected the linear-gradient background to lower to a \
+             fillPathGradient, got report {:?}",
+            out.report
+        );
+        // It serializes to the C-1.3 wire core consumes.
+        let json = serde_json::to_string(&out.layer).unwrap();
+        assert!(
+            json.contains("\"kind\":\"fillPathGradient\""),
+            "json: {json}"
+        );
+        assert!(json.contains("\"type\":\"linear\""), "json: {json}");
     }
 
     #[test]
