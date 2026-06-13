@@ -25,6 +25,16 @@ export {
 
 export { diagnoseHtml, type WebDiagnostic } from "./diagnose";
 
+// The PASTE-INGEST enforcement twin of the linter — strips executable
+// surface (<script>, on*= handlers, javascript: URLs) from HTML brought
+// in from outside the editor (§6.1: page JavaScript never executes, so
+// sanitize on ingest — don't just diagnose).
+export {
+  sanitizeHtml,
+  type SanitizeRemoval,
+  type SanitizeResult,
+} from "./sanitize";
+
 export {
   composeFontFaces,
   diagnoseFonts,
