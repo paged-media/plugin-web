@@ -11,13 +11,23 @@
 //! The serde attributes are LOAD-BEARING — they make this Rust type and
 //! core's produce/consume the same JSON:
 //!   · `SceneItem` is internally tagged `kind` (`fillPath` / `strokePath` /
-//!     `text` / `image`), camelCase.
+//!     `text` / `image` / `fillPathGradient` / `fillPathBlend` /
+//!     `dropShadow`), camelCase.
 //!   · `ScenePathSeg` is internally tagged `op` (`moveTo` / `lineTo` /
 //!     `cubicTo` / `close`), camelCase.
-//!   · field names are camelCase.
+//!   · `SceneGradient` is internally tagged `type` (`linear` / `radial` /
+//!     `sweep`); `SceneBlendMode` is a camelCase unit enum serializing to a
+//!     bare string (`multiply` / `screen` / `colorDodge` / …).
+//!   · field names are camelCase WHERE serde renames them — note that
+//!     serde's `rename_all = "camelCase"` does NOT reach the struct fields of
+//!     an INTERNALLY-TAGGED enum variant, so multi-word variant fields stay
+//!     SNAKE_CASE on the wire (`start_angle`, `offset_x`, `offset_y`,
+//!     `blur_radius`). Core uses the identical derive, so this matches core
+//!     byte-for-byte (the JSON-shape contract tests pin each key).
 //! Only the subset the web lane lowers to today is exercised (fillPath +
-//! text); the other variants exist so the type is the full contract and a
-//! widening slice (strokePath, image) is additive.
+//! text + gradient + blend + drop-shadow); the other variants exist so the
+//! type is the full contract and a widening slice (strokePath, image) is
+//! additive.
 
 use serde::{Deserialize, Serialize};
 
@@ -60,15 +70,76 @@ pub enum SceneItem {
         w: f32,
         h: f32,
     },
-    /// Fill a bezier path with a linear or radial gradient (C-1.3). The
-    /// gradient geometry is authored in frame-content points (the SAME space
-    /// as `path`); core maps both by the frame transform, so the web lane
-    /// emits gradient endpoints in the same content-point space its fills
-    /// use. Additive to `FillPath` — solid fills are untouched.
+    /// Fill a bezier path with a linear, radial, or sweep (conic) gradient
+    /// (C-1.3). The gradient geometry is authored in frame-content points
+    /// (the SAME space as `path`); core maps both by the frame transform, so
+    /// the web lane emits gradient endpoints in the same content-point space
+    /// its fills use. Additive to `FillPath` — solid fills are untouched.
     FillPathGradient {
         path: Vec<ScenePathSeg>,
         gradient: SceneGradient,
     },
+    /// Fill a bezier path with a solid paint under a non-`Normal`
+    /// compositing blend mode (C-1.4 — per-fill blend). A faithful twin of
+    /// core's `SceneItem::FillPathBlend`: the `path` + `paint` are identical
+    /// to a solid `FillPath`, plus a [`SceneBlendMode`] selecting how the
+    /// fill composites onto the frame content already painted below it. The
+    /// web lane lowers a CSS `mix-blend-mode` solid fill here. Additive to
+    /// `FillPath`.
+    FillPathBlend {
+        path: Vec<ScenePathSeg>,
+        paint: ScenePaint,
+        blend: SceneBlendMode,
+    },
+    /// Stamp a CSS-style drop shadow behind a path (C-1.5 — `box-shadow` /
+    /// `filter: drop-shadow`). A faithful twin of core's
+    /// `SceneItem::DropShadow`: the path filled with the shadow `(r,g,b,a)`
+    /// colour, offset by `(offset_x, offset_y)` content points and softened by
+    /// a Gaussian of `blur_radius` (pt; all three stay snake_case on the wire,
+    /// matching core). Core keeps the colour opaque and
+    /// rides `a` as the shadow opacity, so emit `a` as the shadow alpha.
+    /// Additive — it emits ONLY the shadow stamp (submit it BEFORE the fill,
+    /// like CSS draws the shadow behind the element). Inset shadows + the CSS
+    /// `spread` radius are honest follow-ons (not on this wire).
+    DropShadow {
+        path: Vec<ScenePathSeg>,
+        offset_x: f32,
+        offset_y: f32,
+        blur_radius: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+        a: f32,
+    },
+}
+
+/// A compositing blend mode for [`SceneItem::FillPathBlend`] (C-1.4). A
+/// faithful twin of core's `paged_compose::scene_layer::SceneBlendMode` —
+/// the CSS-relevant subset of the display list's blend modes. `Normal` is
+/// intentionally absent (a normal fill is just [`SceneItem::FillPath`]). The
+/// camelCase serde rename is LOAD-BEARING: each variant serializes to the
+/// exact JSON string core deserializes (`multiply`, `screen`, `overlay`,
+/// `darken`, `lighten`, `colorDodge`, `colorBurn`, `hardLight`, `softLight`,
+/// `difference`, `exclusion`, `hue`, `saturation`, `color`, `luminosity`);
+/// a drift silently drops the item at core's deserialize.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SceneBlendMode {
+    Multiply,
+    Screen,
+    Overlay,
+    Darken,
+    Lighten,
+    ColorDodge,
+    ColorBurn,
+    HardLight,
+    SoftLight,
+    Difference,
+    Exclusion,
+    Hue,
+    Saturation,
+    Color,
+    Luminosity,
 }
 
 /// A plugin gradient paint for [`SceneItem::FillPathGradient`] (C-1.3). A
@@ -94,6 +165,21 @@ pub enum SceneGradient {
         cx: f32,
         cy: f32,
         radius: f32,
+        stops: Vec<SceneGradientStop>,
+    },
+    /// Sweep (conic) gradient centred at `(cx,cy)` in content points, with
+    /// the colour ramp beginning at `start_angle` (radians, from +x, turning
+    /// CLOCKWISE in the y-down content space — the SAME convention peniko's
+    /// `SweepGradientPosition::start_angle` uses) and wrapping once around the
+    /// full turn. Lowers a CSS `conic-gradient`. A faithful twin of core's
+    /// `SceneGradient::Sweep`: core carries only `startAngle` (a single full
+    /// turn), so the captured `endAngle` is not on this wire — repeating /
+    /// partial-arc conic gradients collapse to the full-turn ramp (the honest
+    /// approximation, counted by the lowering).
+    Sweep {
+        cx: f32,
+        cy: f32,
+        start_angle: f32,
         stops: Vec<SceneGradientStop>,
     },
 }
@@ -302,5 +388,140 @@ mod gradient_wire_tests {
         // Round-trips.
         let back: SceneGradient = serde_json::from_value(json).unwrap();
         assert_eq!(back, g);
+    }
+
+    #[test]
+    fn sweep_gradient_serializes_to_the_exact_v46_keys_core_consumes() {
+        // CONTRACT GUARD vs core (`SceneGradient::Sweep`, protocol v46):
+        // tag = "type" → "sweep", fields cx / cy / start_angle / stops.
+        // NOTE: serde's `rename_all = "camelCase"` on an INTERNALLY-TAGGED
+        // enum does NOT rename the variant's struct FIELDS in this serde
+        // version — so `start_angle` stays SNAKE_CASE on the wire. Core uses
+        // the identical derive (same attrs, same field name), so snake_case
+        // is exactly what core produces AND deserializes. (This is the silent-
+        // drop trap the gradient lowering hit; the test pins the REAL key.)
+        let g = SceneGradient::Sweep {
+            cx: 25.0,
+            cy: 30.0,
+            start_angle: std::f32::consts::FRAC_PI_2,
+            stops: vec![stop(0.0, 1.0, 0.0, 0.0, 1.0), stop(1.0, 0.0, 0.0, 1.0, 1.0)],
+        };
+        let json = serde_json::to_value(&g).unwrap();
+        assert_eq!(json["type"], "sweep");
+        assert_eq!(json["cx"], 25.0);
+        assert_eq!(json["cy"], 30.0);
+        // The wire key is `start_angle` (snake_case — what core emits/consumes).
+        assert_eq!(json["start_angle"], std::f32::consts::FRAC_PI_2);
+        assert!(
+            json.get("startAngle").is_none(),
+            "core emits start_angle (snake), NOT startAngle"
+        );
+        assert_eq!(json["stops"].as_array().unwrap().len(), 2);
+        // Linear/radial-only fields are absent on a sweep.
+        assert!(json.get("x0").is_none());
+        assert!(json.get("radius").is_none());
+        // Round-trips back to the same Rust value (deserialize parity).
+        let back: SceneGradient = serde_json::from_value(json).unwrap();
+        assert_eq!(back, g);
+    }
+
+    #[test]
+    fn fill_path_blend_serializes_to_the_exact_v46_keys_core_consumes() {
+        // CONTRACT GUARD vs core (`SceneItem::FillPathBlend`, protocol v46):
+        // tag = "kind" → "fillPathBlend"; path + paint identical to a solid
+        // FillPath, plus `blend` as the camelCase SceneBlendMode string.
+        let item = SceneItem::FillPathBlend {
+            path: vec![
+                ScenePathSeg::MoveTo { x: 0.0, y: 0.0 },
+                ScenePathSeg::LineTo { x: 10.0, y: 0.0 },
+                ScenePathSeg::Close,
+            ],
+            paint: ScenePaint::rgba(1.0, 0.0, 0.0, 1.0),
+            blend: SceneBlendMode::Multiply,
+        };
+        let json = serde_json::to_value(&item).unwrap();
+        assert_eq!(json["kind"], "fillPathBlend");
+        assert_eq!(json["path"][0]["op"], "moveTo");
+        assert_eq!(json["paint"]["r"], 1.0);
+        assert_eq!(json["paint"]["a"], 1.0);
+        // SceneBlendMode is a bare camelCase string (NOT an object/tag).
+        assert_eq!(json["blend"], "multiply");
+        let back: SceneItem = serde_json::from_value(json).unwrap();
+        assert_eq!(back, item);
+    }
+
+    #[test]
+    fn every_blend_mode_serializes_to_the_css_string_core_expects() {
+        // The 15 CSS modes → the exact JSON string core's SceneBlendMode
+        // deserializes (the camelCase rename of each variant). A mismatch on
+        // ANY mode silently drops that blended fill at submit.
+        let cases = [
+            (SceneBlendMode::Multiply, "multiply"),
+            (SceneBlendMode::Screen, "screen"),
+            (SceneBlendMode::Overlay, "overlay"),
+            (SceneBlendMode::Darken, "darken"),
+            (SceneBlendMode::Lighten, "lighten"),
+            (SceneBlendMode::ColorDodge, "colorDodge"),
+            (SceneBlendMode::ColorBurn, "colorBurn"),
+            (SceneBlendMode::HardLight, "hardLight"),
+            (SceneBlendMode::SoftLight, "softLight"),
+            (SceneBlendMode::Difference, "difference"),
+            (SceneBlendMode::Exclusion, "exclusion"),
+            (SceneBlendMode::Hue, "hue"),
+            (SceneBlendMode::Saturation, "saturation"),
+            (SceneBlendMode::Color, "color"),
+            (SceneBlendMode::Luminosity, "luminosity"),
+        ];
+        for (mode, want) in cases {
+            let json = serde_json::to_value(mode).unwrap();
+            assert_eq!(json, want, "{mode:?} must serialize to {want:?}");
+            // And round-trips back.
+            let back: SceneBlendMode = serde_json::from_value(json).unwrap();
+            assert_eq!(back, mode);
+        }
+    }
+
+    #[test]
+    fn drop_shadow_serializes_to_the_exact_v46_keys_core_consumes() {
+        // CONTRACT GUARD vs core (`SceneItem::DropShadow`, protocol v46):
+        // tag = "kind" → "dropShadow"; path + offset_x/offset_y/blur_radius +
+        // the flat r/g/b/a colour fields. As with the sweep, the variant's
+        // struct fields stay SNAKE_CASE on the wire (serde does not rename
+        // internally-tagged-variant fields here) — and core's identical derive
+        // emits/consumes the same snake_case keys.
+        let item = SceneItem::DropShadow {
+            path: vec![
+                ScenePathSeg::MoveTo { x: 0.0, y: 0.0 },
+                ScenePathSeg::LineTo { x: 20.0, y: 0.0 },
+                ScenePathSeg::LineTo { x: 20.0, y: 20.0 },
+                ScenePathSeg::Close,
+            ],
+            offset_x: 4.0,
+            offset_y: 6.0,
+            blur_radius: 3.0,
+            r: 0.1,
+            g: 0.2,
+            b: 0.3,
+            a: 0.6,
+        };
+        let json = serde_json::to_value(&item).unwrap();
+        assert_eq!(json["kind"], "dropShadow");
+        assert_eq!(json["path"][3]["op"], "close");
+        // The SNAKE_CASE keys core emits/consumes (NOT camelCase).
+        assert_eq!(json["offset_x"], 4.0);
+        assert_eq!(json["offset_y"], 6.0);
+        assert_eq!(json["blur_radius"], 3.0);
+        assert!(
+            json.get("offsetX").is_none(),
+            "core emits offset_x (snake), NOT offsetX"
+        );
+        assert!(json.get("blurRadius").is_none());
+        // The flat colour fields are present (exact float values are covered
+        // by the round-trip below, which is the real deserialize-parity guard).
+        for k in ["r", "g", "b", "a"] {
+            assert!(json.get(k).is_some(), "colour field {k} present");
+        }
+        let back: SceneItem = serde_json::from_value(json).unwrap();
+        assert_eq!(back, item);
     }
 }

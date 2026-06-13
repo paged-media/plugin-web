@@ -66,27 +66,80 @@ pub enum WebDrawCmd {
     /// honestly counted, until C-1 carries an image transform).
     DrawImage(WebImage),
 
-    /// A linear/radial gradient fill of a path (C-1.3). `path` is the
+    /// A linear/radial/sweep gradient fill of a path (C-1.3). `path` is the
     /// flattened fill geometry (content points), `gradient` the gradient's
     /// endpoints + stops already resolved into the SAME content-point space
     /// (the paint/brush transform folded into the endpoints by the capture,
-    /// like fills/images). Lowers to the C-1 `SceneItem::FillPathGradient`.
-    /// Sweep/conic gradients are NOT this variant (no C-1 equivalent — the
-    /// capture records them as a `NonSolidPaint` drop, honestly counted).
+    /// like fills/images). Lowers to the C-1 `SceneItem::FillPathGradient`
+    /// (linear/radial/sweep). Image/pattern brushes are NOT this variant
+    /// (the capture records them as a `NonSolidPaint` drop, honestly counted).
     FillGradient {
         path: FlatPath,
         gradient: WebGradient,
     },
 
+    /// A solid-colour fill of a path under a non-`Normal` compositing blend
+    /// mode (C-1.4 — CSS `mix-blend-mode`). `path` is the flattened fill
+    /// geometry (content points), `paint` the solid sRGB colour, `blend` the
+    /// mapped blend mode. Lowers to the C-1 `SceneItem::FillPathBlend`. Only
+    /// SOLID fills under a blend layer reach this variant; a gradient/image
+    /// fill inside a blend layer is an honest follow-on (the capture emits
+    /// the plain non-blended item + counts the blend as unsupported).
+    FillBlend {
+        path: FlatPath,
+        paint: ScenePaint,
+        blend: WebBlendMode,
+    },
+
+    /// A drop shadow (C-1.5 — CSS `box-shadow`). `path` is the shadow's
+    /// (rounded-)rect geometry in content points with the shadow OFFSET
+    /// ALREADY BAKED IN (blitz-paint bakes the offset into the paint
+    /// transform, which the capture folds into the path), `colour` the
+    /// straight sRGB shadow colour, `blur` the Gaussian std-dev in content
+    /// points. Lowers to the C-1 `SceneItem::DropShadow` with `offset_x =
+    /// offset_y = 0` (the offset is in the path). Inset shadows are an honest
+    /// follow-on (counted as `BoxShadow`, not built).
+    DrawShadow {
+        path: FlatPath,
+        colour: ScenePaint,
+        blur: f32,
+    },
+
     /// A fill/stroke/glyph whose brush was NOT a solid colour AND not a
-    /// linear/radial gradient (image, pattern, sweep/conic gradient) — the
-    /// C-1 wire can't carry it, so the lowering DROPS it and counts it as an
-    /// unsupported-paint skip. Recorded (not discarded at capture) so the
+    /// gradient the C-1 wire carries (image, pattern) — DROPPED + counted as
+    /// an unsupported-paint skip. Recorded (not discarded at capture) so the
     /// diagnostic is truthful.
     NonSolidPaint { what: UnsupportedKind },
 
-    /// A box shadow / blur — no C-1 representation; counted + skipped.
+    /// A box shadow / blur with no C-1 representation (an INSET shadow, or a
+    /// degenerate stamp) — counted + skipped. Outset drop shadows are NOT
+    /// this variant (they lower via `DrawShadow`).
     BoxShadow,
+}
+
+/// A compositing blend mode for [`WebDrawCmd::FillBlend`] — the captured
+/// twin of a CSS `mix-blend-mode` (peniko `Mix`), mapped 1:1 to the C-1
+/// [`crate::wire::SceneBlendMode`] at lowering. `Normal` is intentionally
+/// absent: a normal-blend fill is a plain [`WebDrawCmd::FillRect`] /
+/// [`WebDrawCmd::FillPath`]. Plain data (no peniko) so the lowering is
+/// testable without Blitz.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WebBlendMode {
+    Multiply,
+    Screen,
+    Overlay,
+    Darken,
+    Lighten,
+    ColorDodge,
+    ColorBurn,
+    HardLight,
+    SoftLight,
+    Difference,
+    Exclusion,
+    Hue,
+    Saturation,
+    Color,
+    Luminosity,
 }
 
 /// What kind of primitive carried the unsupported (non-solid) paint —
@@ -169,11 +222,9 @@ pub struct WebImage {
 }
 
 /// A captured gradient paint — the input to the C-1.3 `fillPathGradient`
-/// lowering. Endpoints are in content points (the paint/brush transform
-/// folded in by the capture, like image dests), stops are sRGB 0..=1.
-/// Plain data (no peniko) so the lowering is testable without Blitz. Sweep/
-/// conic gradients have no variant here (no C-1 equivalent — dropped at
-/// capture).
+/// lowering. Endpoints/centre are in content points (the paint/brush
+/// transform folded in by the capture, like image dests), stops are sRGB
+/// 0..=1. Plain data (no peniko) so the lowering is testable without Blitz.
 #[derive(Debug, Clone, PartialEq)]
 pub enum WebGradient {
     /// A linear gradient along the axis from `(x0,y0)` to `(x1,y1)`.
@@ -189,6 +240,18 @@ pub enum WebGradient {
         cx: f32,
         cy: f32,
         radius: f32,
+        stops: Vec<WebGradientStop>,
+    },
+    /// A sweep (conic) gradient centred at `(cx,cy)` in content points, with
+    /// the ramp beginning at `start_angle` (radians, from +x, clockwise in
+    /// y-down — peniko's `SweepGradientPosition::start_angle` convention) and
+    /// wrapping once around the full turn. Maps a CSS `conic-gradient`. Core
+    /// carries only the start angle (a single full turn), so a repeating /
+    /// partial-arc conic collapses to the full-turn ramp at lowering.
+    Sweep {
+        cx: f32,
+        cy: f32,
+        start_angle: f32,
         stops: Vec<WebGradientStop>,
     },
 }

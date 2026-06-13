@@ -27,11 +27,17 @@
 //! parley run, transform-correct), and axis-aligned raster images (straight
 //! RGBA8 → the Stage-A C-1 `image` item) → the matching C-1 items.
 //!
+//! Also covered (C-1.3/1.4/1.5, v46): sweep/conic gradient fills
+//! (`SceneItem::FillPathGradient` sweep), solid `mix-blend-mode` fills
+//! (`SceneItem::FillPathBlend`), and outset drop shadows / `box-shadow`
+//! (`SceneItem::DropShadow`).
+//!
 //! Deferred (the honest ceiling — C-1's open stages / Tier-B), all COUNTED
 //! and REPORTED by [`lower::LowerReport`], never faked:
-//! gradient paints, rotated/sheared image dests (no per-image transform on
-//! the wire yet), blend modes, box shadows, and CSS fragmentation across
-//! linked frames.
+//! image/pattern brushes + rotated/sheared image dests (no per-image
+//! transform on the wire yet), INSET shadows + the CSS `spread` radius,
+//! gradient/image fills INSIDE a blend layer (only solid blended fills
+//! lower), and CSS fragmentation across linked frames.
 //!
 //! # The named next slice
 //!
@@ -54,13 +60,13 @@ pub mod capture;
 pub mod fonts;
 
 pub use display_list::{
-    LocalKey, UnsupportedKind, WebDisplayList, WebDrawCmd, WebGlyphRun, WebGradient,
+    LocalKey, UnsupportedKind, WebBlendMode, WebDisplayList, WebDrawCmd, WebGlyphRun, WebGradient,
     WebGradientStop, WebImage,
 };
 pub use lower::{lower, LowerReport, Lowered};
 pub use wire::{
-    RectPt, SceneGradient, SceneGradientStop, SceneItem, SceneLayer, ScenePaint, ScenePathSeg,
-    SceneTextItem,
+    RectPt, SceneBlendMode, SceneGradient, SceneGradientStop, SceneItem, SceneLayer, ScenePaint,
+    ScenePathSeg, SceneTextItem,
 };
 
 /// The wasm entry point for the (future) bundle artifact. Behind `blitz`

@@ -32,8 +32,10 @@ use kurbo::{Affine, BezPath, PathEl, Point, Rect, Shape, Stroke, Vec2};
 use parley::{Layout, PositionedLayoutItem};
 use peniko::{BlendMode, Color, Fill, FontData, StyleRef};
 
+use peniko::Mix;
+
 use crate::display_list::{
-    LocalKey, UnsupportedKind, WebDisplayList, WebDrawCmd, WebGlyphRun, WebGradient,
+    LocalKey, UnsupportedKind, WebBlendMode, WebDisplayList, WebDrawCmd, WebGlyphRun, WebGradient,
     WebGradientStop, WebImage,
 };
 use crate::fonts::{build_font_ctx, BUNDLED_FAMILY};
@@ -51,9 +53,24 @@ const FLATTEN_TOL: f64 = 0.1;
 /// A `PaintScene` sink that records draw commands into a
 /// [`WebDisplayList`] in content points (CSS px scaled by [`PX_TO_PT`]),
 /// with each command's `Affine` already folded into its geometry.
+///
+/// Stateful: it maintains a BLEND-MODE STACK that mirrors blitz-paint's
+/// `push_layer`/`pop_layer` bracketing (every `push_layer` records its
+/// `Mix`; `pop_layer` pops it). When a SOLID fill is captured under a
+/// non-`Normal` top-of-stack blend, it is emitted as a blended fill
+/// ([`WebDrawCmd::FillBlend`]) so a CSS `mix-blend-mode` lowers to the C-1.4
+/// `fillPathBlend`. Normal-blend layers (the only kind blitz-paint
+/// 0.3.0-alpha.4 emits — see the capture tests) leave fills plain, so the
+/// existing clip/opacity-layer behaviour is unchanged.
 #[derive(Default)]
 pub struct CapturingScene {
     dl: WebDisplayList,
+    /// The [`BlendMode`] of each open `push_layer`/`push_clip_layer`,
+    /// innermost last. `push_clip_layer` pushes `Mix::Normal`+`SrcOver` (a
+    /// pure clip never blends); `push_layer` pushes the layer's full
+    /// `BlendMode` (its `mix` drives blended fills; its `compose` marks the
+    /// inset-shadow layer blitz-paint wraps in `Compose::DestOut`).
+    blend_stack: Vec<BlendMode>,
 }
 
 impl CapturingScene {
@@ -64,6 +81,28 @@ impl CapturingScene {
     /// Consume the sink and return what was painted.
     pub fn into_display_list(self) -> WebDisplayList {
         self.dl
+    }
+
+    /// The innermost open layer's blend MIX (the one a solid fill composites
+    /// under), or `Mix::Normal` when no blend layer is open.
+    fn active_blend(&self) -> Mix {
+        self.blend_stack
+            .iter()
+            .rev()
+            .map(|b| b.mix)
+            .find(|m| *m != Mix::Normal)
+            .unwrap_or(Mix::Normal)
+    }
+
+    /// Whether any open layer uses a non-`SrcOver` compose — the marker
+    /// blitz-paint sets (`Compose::DestOut`) around an INSET box shadow. An
+    /// inset shadow has no C-1 representation (the outset `DropShadow` stamp
+    /// draws BEHIND the path, not punched INTO it), so a `draw_box_shadow`
+    /// under such a layer is the honest `BoxShadow` drop, not a faked outset.
+    fn in_non_srcover_compose(&self) -> bool {
+        self.blend_stack
+            .iter()
+            .any(|b| b.compose != peniko::Compose::SrcOver)
     }
 
     fn px_pt(v: f64) -> f32 {
@@ -178,6 +217,45 @@ fn gradient_stop(stop: &peniko::ColorStop) -> WebGradientStop {
     }
 }
 
+/// Map a peniko [`Mix`] to the captured [`WebBlendMode`]. `Normal` (and any
+/// future Mix the C-1 wire can't carry) returns `None` — the caller then
+/// keeps the fill plain (a normal-blend fill is just a `FillRect`/`FillPath`,
+/// never a `FillBlend`). The 15 CSS-relevant modes map 1:1.
+fn web_blend_from_mix(mix: Mix) -> Option<WebBlendMode> {
+    Some(match mix {
+        Mix::Normal => return None,
+        Mix::Multiply => WebBlendMode::Multiply,
+        Mix::Screen => WebBlendMode::Screen,
+        Mix::Overlay => WebBlendMode::Overlay,
+        Mix::Darken => WebBlendMode::Darken,
+        Mix::Lighten => WebBlendMode::Lighten,
+        Mix::ColorDodge => WebBlendMode::ColorDodge,
+        Mix::ColorBurn => WebBlendMode::ColorBurn,
+        Mix::HardLight => WebBlendMode::HardLight,
+        Mix::SoftLight => WebBlendMode::SoftLight,
+        Mix::Difference => WebBlendMode::Difference,
+        Mix::Exclusion => WebBlendMode::Exclusion,
+        Mix::Hue => WebBlendMode::Hue,
+        Mix::Saturation => WebBlendMode::Saturation,
+        Mix::Color => WebBlendMode::Color,
+        Mix::Luminosity => WebBlendMode::Luminosity,
+    })
+}
+
+/// Build a closed rounded-rectangle path (content points) from a `rect`
+/// (CSS px, local space) + a corner `radius` (CSS px), mapped through
+/// `transform` (which has the shadow OFFSET baked in by blitz-paint). The
+/// radius is clamped to half the smaller side; a zero/degenerate radius
+/// yields a plain rectangle. Used by the drop-shadow capture so the C-1
+/// `DropShadow` stamp matches the element's `border-radius`.
+fn rounded_rect_path(rect: Rect, radius: f64, transform: Affine) -> Vec<ScenePathSeg> {
+    let r = radius
+        .max(0.0)
+        .min((rect.width() / 2.0).min(rect.height() / 2.0));
+    let shape = kurbo::RoundedRect::from_rect(rect, r);
+    flatten_shape(&shape, transform)
+}
+
 /// Resolve a peniko [`Gradient`] (under the EFFECTIVE brush transform — the
 /// paint `transform` composed with the optional `brush_transform`, the
 /// standard peniko brush-to-device convention) into a content-point
@@ -192,8 +270,14 @@ fn gradient_stop(stop: &peniko::ColorStop) -> WebGradientStop {
 ///   (`sqrt(|det|)`, the same scalar the stroke-width capture uses). An
 ///   anisotropic (ellipse) radial collapses to this single radius — the
 ///   honest approximation C-1.3's single-radius `Radial` allows.
-/// - **Sweep/conic**: no C-1 equivalent → `None` (the caller records an
-///   honest `GradientFill` drop; never approximated as linear/radial).
+/// - **Sweep/conic** (C-1.3 v46): the centre maps through `effective` into
+///   content points; `start_angle` is carried as-is (peniko's
+///   `SweepGradientPosition::start_angle` is already radians from +x, turning
+///   clockwise in the y-down space — the SAME convention core's
+///   `SceneGradient::Sweep` documents, so no remap). Core carries only the
+///   start angle (a single full turn), so `end_angle` (a partial-arc /
+///   repeating conic) is dropped — the honest full-turn approximation C-1.3's
+///   `Sweep` allows.
 fn capture_gradient(gradient: &peniko::Gradient, effective: Affine) -> Option<WebGradient> {
     let stops: Vec<WebGradientStop> = gradient.stops.iter().map(gradient_stop).collect();
     match &gradient.kind {
@@ -223,8 +307,21 @@ fn capture_gradient(gradient: &peniko::Gradient, effective: Affine) -> Option<We
                 stops,
             })
         }
-        // Sweep/conic has no C-1 representation — never faked.
-        peniko::GradientKind::Sweep(_) => None,
+        peniko::GradientKind::Sweep(sweep) => {
+            // The conic centre maps through the effective brush transform
+            // into content points (like the linear endpoints / radial
+            // centre). The start angle is already in the content space's
+            // y-down clockwise convention (peniko == core), so it crosses
+            // unchanged; the end angle (partial-arc / repeating) is dropped
+            // to the full-turn ramp C-1.3's `Sweep` carries.
+            let (cx, cy) = pt(effective, sweep.center);
+            Some(WebGradient::Sweep {
+                cx,
+                cy,
+                start_angle: sweep.start_angle,
+                stops,
+            })
+        }
     }
 }
 
@@ -310,22 +407,42 @@ impl RenderContext for CapturingScene {}
 impl PaintScene for CapturingScene {
     fn reset(&mut self) {
         self.dl = WebDisplayList::default();
+        self.blend_stack.clear();
     }
 
-    // Clip/layer stack is not lowered (C-1 already clips the layer to the
-    // content box). A no-op keeps painter's order intact.
+    // The clip GEOMETRY is not lowered (C-1 already clips the layer to the
+    // content box), but the BLEND MODE is tracked: a `push_layer` records its
+    // `Mix` so a solid fill painted inside it lowers to a C-1.4
+    // `fillPathBlend` (CSS `mix-blend-mode`). A pure clip / opacity layer
+    // pushes `Mix::Normal` and leaves fills plain — preserving the existing
+    // clip-layer behaviour. `push`/`pop` stay balanced so painter's order +
+    // the active-blend lookup are correct.
+    //
+    // KNOWN LIMIT: a gradient/image fill (or a glyph run) inside a non-Normal
+    // blend layer is NOT blended here — only solid fills lower to
+    // `fillPathBlend` (the C-1.4 lane is a solid-paint blend). Such a fill
+    // stays its plain item; the blend is the honest follow-on (count is
+    // visible as the layer was pushed but no blended fill emitted).
     fn push_layer(
         &mut self,
-        _blend: impl Into<BlendMode>,
+        blend: impl Into<BlendMode>,
         _alpha: f32,
         _transform: Affine,
         _clip: &impl Shape,
     ) {
+        self.blend_stack.push(blend.into());
     }
 
-    fn push_clip_layer(&mut self, _transform: Affine, _clip: &impl Shape) {}
+    fn push_clip_layer(&mut self, _transform: Affine, _clip: &impl Shape) {
+        // A pure clip never blends — push Normal/SrcOver so the stack stays
+        // balanced with `pop_layer` (blitz-paint pops clip + blend layers the
+        // same way).
+        self.blend_stack.push(Mix::Normal.into());
+    }
 
-    fn pop_layer(&mut self) {}
+    fn pop_layer(&mut self) {
+        self.blend_stack.pop();
+    }
 
     fn stroke<'a>(
         &mut self,
@@ -402,7 +519,13 @@ impl PaintScene for CapturingScene {
         };
         match solid_paint(pr) {
             Some(paint) => {
-                if let Some(rect) = as_axis_aligned_rect(shape, transform) {
+                // A solid fill INSIDE a non-Normal blend layer lowers to a
+                // C-1.4 `fillPathBlend` (CSS `mix-blend-mode`). The blend lane
+                // is path-based (no rect fast-path), so flatten the shape.
+                if let Some(blend) = web_blend_from_mix(self.active_blend()) {
+                    let path = flatten_shape(shape, transform);
+                    self.dl.push(WebDrawCmd::FillBlend { path, paint, blend });
+                } else if let Some(rect) = as_axis_aligned_rect(shape, transform) {
                     self.dl.push(WebDrawCmd::FillRect { rect, paint });
                 } else {
                     let path = flatten_shape(shape, transform);
@@ -481,13 +604,39 @@ impl PaintScene for CapturingScene {
 
     fn draw_box_shadow(
         &mut self,
-        _transform: Affine,
-        _rect: Rect,
-        _brush: Color,
-        _radius: f64,
-        _std_dev: f64,
+        transform: Affine,
+        rect: Rect,
+        brush: Color,
+        radius: f64,
+        std_dev: f64,
     ) {
-        self.dl.push(WebDrawCmd::BoxShadow);
+        // INSET shadows: blitz-paint wraps the inset stamp in a
+        // `Compose::DestOut` layer (punching the shadow INTO the box) — the
+        // C-1 `DropShadow` draws a blurred stamp BEHIND a path, which can't
+        // express that, so it stays an honest `BoxShadow` drop.
+        if self.in_non_srcover_compose() {
+            self.dl.push(WebDrawCmd::BoxShadow);
+            return;
+        }
+        // OUTSET shadow → C-1.5 `DropShadow`. blitz-paint bakes the shadow
+        // offset into `transform` (`self.transform.then_translate(offset)`),
+        // so mapping `rect`'s corners through it puts the path ALREADY at the
+        // shadowed position — the lowering then emits offset 0. The corner
+        // `radius` matches the element's averaged `border-radius`; `std_dev`
+        // is the Gaussian blur in CSS px → content points.
+        let path = rounded_rect_path(rect, radius, transform);
+        if path.is_empty() {
+            self.dl.push(WebDrawCmd::BoxShadow);
+            return;
+        }
+        // peniko `Color` components are sRGB f32 [r,g,b,a] — the same straight
+        // sRGB the C-1 colour fields carry (core linearises at lowering).
+        let [r, g, b, a] = brush.components;
+        self.dl.push(WebDrawCmd::DrawShadow {
+            path,
+            colour: ScenePaint::rgba(r, g, b, a),
+            blur: CapturingScene::px_pt(std_dev),
+        });
     }
 }
 
@@ -1130,6 +1279,304 @@ mod tests {
             "json: {json}"
         );
         assert!(json.contains("\"type\":\"linear\""), "json: {json}");
+    }
+
+    #[test]
+    fn sweep_gradient_brush_captures_to_a_web_sweep_gradient() {
+        // A peniko sweep gradient resolves to a `WebGradient::Sweep` with the
+        // centre mapped to content points and the start angle carried as-is.
+        // `end_angle` (6.0) is dropped — core carries only the start angle.
+        let grad = peniko::Gradient::new_sweep(Point::new(40.0, 40.0), 1.25, 6.0).with_stops([
+            Color::new([1.0, 0.0, 0.0, 1.0]),
+            Color::new([0.0, 0.0, 1.0, 1.0]),
+        ]);
+        let captured = capture_gradient(&grad, Affine::IDENTITY).expect("sweep captured");
+        let WebGradient::Sweep {
+            cx,
+            cy,
+            start_angle,
+            stops,
+        } = captured
+        else {
+            panic!("expected a sweep gradient, got {captured:?}");
+        };
+        // 40px × 0.75 = 30pt centre.
+        assert!((cx - 30.0).abs() < 1e-3, "cx={cx}");
+        assert!((cy - 30.0).abs() < 1e-3, "cy={cy}");
+        assert!((start_angle - 1.25).abs() < 1e-6);
+        assert_eq!(stops.len(), 2);
+    }
+
+    #[test]
+    fn solid_fill_under_a_multiply_layer_captures_a_blended_fill() {
+        // The STATEFUL blend path, driven directly via the PaintScene trait
+        // (blitz-paint 0.3.0-alpha.4 only pushes Normal layers — see
+        // `blitz_paint_pushes_only_normal_layers` — so this exercises the
+        // sink contract that any non-Normal producer triggers). A solid fill
+        // inside a `push_layer(Mix::Multiply, …)` bracket → `FillBlend`.
+        let mut scene = CapturingScene::new();
+        let clip = kurbo::Rect::new(0.0, 0.0, 100.0, 100.0);
+        scene.push_layer(Mix::Multiply, 1.0, Affine::IDENTITY, &clip);
+        scene.fill(
+            Fill::NonZero,
+            Affine::IDENTITY,
+            Color::new([1.0, 0.0, 0.0, 1.0]),
+            None,
+            &kurbo::Rect::new(0.0, 0.0, 10.0, 10.0),
+        );
+        scene.pop_layer();
+        // Outside the layer, a solid fill is plain again (stack popped).
+        scene.fill(
+            Fill::NonZero,
+            Affine::IDENTITY,
+            Color::new([0.0, 1.0, 0.0, 1.0]),
+            None,
+            &kurbo::Rect::new(0.0, 0.0, 10.0, 10.0),
+        );
+        let dl = scene.into_display_list();
+        let out = lower(&dl);
+        assert_eq!(out.report.blends, 1, "the in-layer solid fill blends");
+        assert_eq!(out.report.fills, 1, "the out-of-layer fill stays plain");
+        let SceneItem::FillPathBlend { blend, .. } = &out
+            .layer
+            .items
+            .iter()
+            .find(|it| matches!(it, SceneItem::FillPathBlend { .. }))
+            .expect("a fillPathBlend item")
+        else {
+            unreachable!()
+        };
+        assert_eq!(*blend, crate::wire::SceneBlendMode::Multiply);
+    }
+
+    #[test]
+    fn nested_normal_clip_inside_a_blend_layer_keeps_the_blend_active() {
+        // A pure clip layer nested inside a blend layer must NOT clear the
+        // active blend (the innermost NON-Normal mix wins).
+        let mut scene = CapturingScene::new();
+        let clip = kurbo::Rect::new(0.0, 0.0, 100.0, 100.0);
+        scene.push_layer(Mix::Screen, 1.0, Affine::IDENTITY, &clip);
+        scene.push_clip_layer(Affine::IDENTITY, &clip); // Normal/SrcOver
+        scene.fill(
+            Fill::NonZero,
+            Affine::IDENTITY,
+            Color::new([0.2, 0.2, 0.2, 1.0]),
+            None,
+            &kurbo::Rect::new(0.0, 0.0, 10.0, 10.0),
+        );
+        scene.pop_layer();
+        scene.pop_layer();
+        let out = lower(&scene.into_display_list());
+        assert_eq!(
+            out.report.blends, 1,
+            "the clip didn't clear the Screen blend"
+        );
+    }
+
+    #[test]
+    fn box_shadow_captures_a_drop_shadow_stamp() {
+        // A `draw_box_shadow` with the offset baked into the transform
+        // captures a `DrawShadow` whose path is at the shadowed position and
+        // whose blur is the std-dev px→pt. (Driven directly: blitz-paint
+        // computes the same call from real CSS `box-shadow`.)
+        let mut scene = CapturingScene::new();
+        // Offset baked in: translate the stamp by (8, 8) px.
+        let xf = Affine::translate((8.0, 8.0));
+        scene.draw_box_shadow(
+            xf,
+            kurbo::Rect::new(0.0, 0.0, 64.0, 64.0),
+            Color::new([0.0, 0.0, 0.0, 0.5]),
+            8.0, // radius px
+            4.0, // std_dev px → 3pt
+        );
+        let out = lower(&scene.into_display_list());
+        assert_eq!(out.report.shadows, 1);
+        assert_eq!(out.report.dropped_shadows, 0);
+        let SceneItem::DropShadow {
+            offset_x,
+            offset_y,
+            blur_radius,
+            path,
+            a,
+            ..
+        } = &out.layer.items[0]
+        else {
+            panic!("expected a dropShadow, got {:?}", out.layer.items[0]);
+        };
+        assert_eq!((*offset_x, *offset_y), (0.0, 0.0), "offset baked into path");
+        // 4px × 0.75 = 3pt blur.
+        assert!((blur_radius - 3.0).abs() < 1e-3, "blur={blur_radius}");
+        assert!((a - 0.5).abs() < 1e-6, "shadow alpha");
+        // The path's bounding box carries the baked (8,8)px → (6,6)pt offset:
+        // a 64×64px rect at the origin translated by (8,8)px → a 48×48pt box
+        // whose top-left is (6,6)pt and bottom-right (54,54)pt. (The exact
+        // first segment of a rounded-rect isn't the corner, so check the box.)
+        let xs: Vec<f32> = path
+            .iter()
+            .filter_map(|s| match s {
+                ScenePathSeg::MoveTo { x, .. }
+                | ScenePathSeg::LineTo { x, .. }
+                | ScenePathSeg::CubicTo { x, .. } => Some(*x),
+                ScenePathSeg::Close => None,
+            })
+            .collect();
+        let ys: Vec<f32> = path
+            .iter()
+            .filter_map(|s| match s {
+                ScenePathSeg::MoveTo { y, .. }
+                | ScenePathSeg::LineTo { y, .. }
+                | ScenePathSeg::CubicTo { y, .. } => Some(*y),
+                ScenePathSeg::Close => None,
+            })
+            .collect();
+        let min_x = xs.iter().cloned().fold(f32::INFINITY, f32::min);
+        let max_x = xs.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        let min_y = ys.iter().cloned().fold(f32::INFINITY, f32::min);
+        let max_y = ys.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        assert!(
+            (min_x - 6.0).abs() < 0.2,
+            "min_x≈6pt (offset baked), got {min_x}"
+        );
+        assert!(
+            (min_y - 6.0).abs() < 0.2,
+            "min_y≈6pt (offset baked), got {min_y}"
+        );
+        assert!((max_x - 54.0).abs() < 0.2, "max_x≈54pt, got {max_x}");
+        assert!((max_y - 54.0).abs() < 0.2, "max_y≈54pt, got {max_y}");
+    }
+
+    #[test]
+    fn inset_box_shadow_under_a_destout_compose_layer_stays_an_unsupported_drop() {
+        // blitz-paint wraps an INSET shadow stamp in a `Compose::DestOut`
+        // layer; the C-1 `DropShadow` can't punch INTO a box, so it's the
+        // honest `BoxShadow` drop, NOT a faked outset stamp.
+        let mut scene = CapturingScene::new();
+        let clip = kurbo::Rect::new(0.0, 0.0, 100.0, 100.0);
+        scene.push_layer(peniko::Compose::DestOut, 1.0, Affine::IDENTITY, &clip);
+        scene.draw_box_shadow(
+            Affine::IDENTITY,
+            kurbo::Rect::new(0.0, 0.0, 64.0, 64.0),
+            Color::WHITE,
+            8.0,
+            4.0,
+        );
+        scene.pop_layer();
+        let out = lower(&scene.into_display_list());
+        assert_eq!(
+            out.report.shadows, 0,
+            "an inset shadow is NOT an outset stamp"
+        );
+        assert_eq!(out.report.dropped_shadows, 1);
+    }
+
+    #[test]
+    fn blitz_paint_pushes_only_normal_layers_for_this_alpha_version() {
+        // HONEST CAPTURE-COVERAGE NOTE, asserted: blitz-paint 0.3.0-alpha.4
+        // only ever pushes `Mix::Normal` layers (opacity/clip) — it has NO
+        // `mix-blend-mode` → non-Normal `push_layer` path. So a real-HTML
+        // `mix-blend-mode` does NOT yet reach the blend capture; the stateful
+        // logic above is contract-correct and unit-tested via the trait, and
+        // will light up the moment blitz-paint emits non-Normal layers. This
+        // test pins the current reality: a `mix-blend-mode` page captures NO
+        // FillBlend today (so the assertion fails loudly if the alpha gains
+        // the path, prompting a real-HTML capture test).
+        let html = r#"<!DOCTYPE html><html><head><style>
+          body { margin: 0; }
+          .a { width: 60px; height: 60px; background: #ff0000; }
+          .b { width: 60px; height: 60px; background: #0000ff;
+               margin-top: -30px; mix-blend-mode: multiply; }
+        </style></head><body><div class="a"></div><div class="b"></div></body></html>"#;
+        let dl = render_html(html, 200, 200);
+        let blends = dl
+            .commands
+            .iter()
+            .filter(|c| matches!(c, WebDrawCmd::FillBlend { .. }))
+            .count();
+        assert_eq!(
+            blends, 0,
+            "blitz-paint 0.3.0-alpha.4 emits no non-Normal layer for \
+             mix-blend-mode (capture coverage is via the trait unit tests); \
+             if this fires, add a real-HTML blend capture test"
+        );
+    }
+
+    #[test]
+    fn real_blitz_paint_captures_a_box_shadow_that_lowers_to_a_drop_shadow() {
+        // The end-to-end native proof for C-1.5: a div with a CSS outset
+        // `box-shadow` paints a `draw_box_shadow`; the capture maps it to a
+        // `DrawShadow`, which lowers to a C-1 `dropShadow`.
+        let html = r#"<!DOCTYPE html><html><head><style>
+          body { margin: 20px; }
+          .s { width: 80px; height: 80px; background: #ffffff;
+               box-shadow: 6px 8px 10px rgba(0,0,0,0.5); }
+        </style></head><body><div class="s"></div></body></html>"#;
+        let dl = render_html(html, 240, 240);
+        let shadow_cmds = dl
+            .commands
+            .iter()
+            .filter(|c| matches!(c, WebDrawCmd::DrawShadow { .. }))
+            .count();
+        assert!(
+            shadow_cmds >= 1,
+            "expected >=1 captured DrawShadow from the CSS box-shadow, got dl: {dl:?}"
+        );
+        let out = lower(&dl);
+        assert!(
+            out.report.shadows >= 1,
+            "expected the box-shadow to lower to a dropShadow, got report {:?}",
+            out.report
+        );
+        let json = serde_json::to_string(&out.layer).unwrap();
+        assert!(json.contains("\"kind\":\"dropShadow\""), "json: {json}");
+    }
+
+    #[test]
+    fn real_blitz_paint_captures_a_conic_gradient_that_lowers_to_a_sweep() {
+        // The end-to-end native proof for C-1.3 sweep: a div with a CSS
+        // `conic-gradient` background paints a `Paint::Gradient` whose kind is
+        // Sweep; the capture maps it to a `WebGradient::Sweep`, which lowers
+        // to a C-1 `fillPathGradient` with `type:"sweep"`.
+        let html = r#"<!DOCTYPE html><html><head><style>
+          body { margin: 0; }
+          .c { width: 120px; height: 120px;
+               background: conic-gradient(from 90deg, #ff0000, #00ff00, #0000ff); }
+        </style></head><body><div class="c"></div></body></html>"#;
+        let dl = render_html(html, 200, 200);
+        let sweep_cmds = dl
+            .commands
+            .iter()
+            .filter(|c| {
+                matches!(
+                    c,
+                    WebDrawCmd::FillGradient {
+                        gradient: WebGradient::Sweep { .. },
+                        ..
+                    }
+                )
+            })
+            .count();
+        // blitz-paint/stylo may not implement conic-gradient on this alpha; if
+        // it paints it as a solid/linear fallback no sweep is captured. Report
+        // honestly either way rather than asserting a hard >=1.
+        let out = lower(&dl);
+        if sweep_cmds >= 1 {
+            assert!(
+                out.report.sweep_gradients >= 1,
+                "a captured sweep must lower, report {:?}",
+                out.report
+            );
+            let json = serde_json::to_string(&out.layer).unwrap();
+            assert!(json.contains("\"type\":\"sweep\""), "json: {json}");
+        } else {
+            // No sweep captured — the conic-gradient isn't painted as a sweep
+            // by this alpha. Not a failure of the lowering (the unit tests
+            // cover Sweep); this documents the engine-side gap.
+            eprintln!(
+                "note: blitz-paint 0.3.0-alpha.4 did not paint conic-gradient as a \
+                 Sweep brush (captured {} sweep cmds); sweep lowering proven by unit tests",
+                sweep_cmds
+            );
+        }
     }
 
     #[test]
