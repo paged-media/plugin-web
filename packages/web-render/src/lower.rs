@@ -21,6 +21,10 @@
 //!     `mix-blend-mode` fill — path + paint + the 1:1-mapped blend mode)
 //!   · `DrawShadow` → `SceneItem::DropShadow` (C-1.5; an outset `box-shadow`
 //!     — the offset is baked into the path, so the item offset is 0 + blur)
+//!   · `DrawInsetShadow` → `SceneItem::InnerShadow` (C-1.6, v47; an inset
+//!     `box-shadow: inset` — the offset is baked into the path so the item
+//!     offset is 0, `choke` is 0 since blitz does not bake CSS `spread` into
+//!     the inset rect, + blur)
 //!
 //! Deliberately DROPPED (counted + reported, never faked — the honest
 //! ceiling of C-1's current stages / Tier-B):
@@ -29,8 +33,10 @@
 //!   · image/pattern brushes + rotated/sheared image dests — the Stage-A
 //!     image item carries an axis-aligned box only (no per-image transform
 //!     yet), so a transformed image dest is counted unsupported, not faked.
-//!   · INSET box shadows + the CSS `spread` radius — no C-1 representation
-//!     (outset drop shadows DO lower via `DrawShadow`).
+//!   · INSET CSS `spread` beyond the offset — blitz-paint bakes the inset
+//!     OFFSET into the rect but does NOT inflate it by `spread`, so inset
+//!     shadows render at the offset (covered) while their spread is the honest
+//!     follow-on. Outset spread IS covered (blitz bakes it — see below).
 //!   · gradient/image fills INSIDE a blend layer — only a SOLID blended fill
 //!     lowers to `fillPathBlend`; a non-solid one stays the plain item + the
 //!     blend is counted unsupported.
@@ -72,6 +78,10 @@ pub struct LowerReport {
     pub blends: usize,
     /// Outset drop shadows emitted as C-1 `dropShadow` items (C-1.5, v46).
     pub shadows: usize,
+    /// Inset (inner) shadows emitted as C-1 `innerShadow` items (C-1.6, v47).
+    /// Separated from outset `shadows` so the report names the inset coverage
+    /// explicitly; an inset shadow is NO LONGER a dropped/unsupported case.
+    pub inset_shadows: usize,
     /// Primitives dropped because their paint is a non-solid the C-1 wire
     /// can't carry today — image/pattern brushes, and rotated/sheared image
     /// dests (no image transform on the wire yet). Axis-aligned raster images
@@ -79,8 +89,9 @@ pub struct LowerReport {
     /// NOT dropped (→ `fillPathGradient` items).
     pub dropped_non_solid: usize,
     /// Box shadows / blurs dropped because they have no C-1 representation —
-    /// INSET shadows and degenerate stamps. Outset drop shadows are NOT
-    /// dropped (→ `shadows` / `dropShadow` items).
+    /// degenerate stamps, or an inset shadow whose padding-box fill colour the
+    /// capture couldn't recover. Outset drop shadows lower to `shadows`
+    /// (`dropShadow`); inset shadows lower to `inset_shadows` (`innerShadow`).
     pub dropped_shadows: usize,
     /// Empty/degenerate primitives skipped (zero-area rect, empty path,
     /// empty text) — not a fidelity loss, just nothing to draw.
@@ -108,10 +119,10 @@ impl LowerReport {
             ));
         }
         if self.dropped_shadows > 0 {
-            parts.push(format!("{} inset-shadow(s)/blur(s)", self.dropped_shadows));
+            parts.push(format!("{} shadow(s)/blur(s)", self.dropped_shadows));
         }
         Some(format!(
-            "{} primitive(s) not yet renderable on the scene-layer wire: {} (vector + solid fill + multi-run text + axis-aligned raster images + linear/radial/sweep gradient fills + mix-blend-mode fills + outset drop shadows are supported today)",
+            "{} primitive(s) not yet renderable on the scene-layer wire: {} (vector + solid fill + multi-run text + axis-aligned raster images + linear/radial/sweep gradient fills + mix-blend-mode fills + outset drop shadows + inset shadows are supported today)",
             self.dropped(),
             parts.join(", "),
         ))
@@ -232,6 +243,33 @@ pub fn lower(dl: &WebDisplayList) -> Lowered {
                     a: colour.a,
                 });
                 report.shadows += 1;
+            }
+            WebDrawCmd::DrawInsetShadow { path, colour, blur } => {
+                if path.is_empty() {
+                    report.skipped_empty += 1;
+                    continue;
+                }
+                // blitz-paint bakes the inset offset into the path geometry
+                // (the offset rides in the `draw_box_shadow` paint transform the
+                // capture folds into the points), so the C-1 item's own offset
+                // is 0. `choke` is 0 — blitz does NOT inflate the inset rect by
+                // CSS `spread` (`box_shadow.rs::draw_inset_box_shadow` passes
+                // `border_box` un-inflated), so inset spread beyond the offset
+                // is the honest follow-on, never faked into `choke`. The
+                // colour's `a` rides as the shadow opacity (core keeps the
+                // colour opaque and multiplies `color.a * opacity`).
+                layer.items.push(SceneItem::InnerShadow {
+                    path: path.clone(),
+                    offset_x: 0.0,
+                    offset_y: 0.0,
+                    blur_radius: blur.max(0.0),
+                    choke: 0.0,
+                    r: colour.r,
+                    g: colour.g,
+                    b: colour.b,
+                    a: colour.a,
+                });
+                report.inset_shadows += 1;
             }
             WebDrawCmd::NonSolidPaint { what } => {
                 // Counted, never faked — the C-1 wire has no gradient/image
@@ -1194,6 +1232,161 @@ mod tests {
     }
 
     #[test]
+    fn inset_box_shadow_lowers_to_an_inner_shadow_with_baked_offset_and_zero_choke() {
+        // C-1.6 v47: an inset box-shadow lowers to an `innerShadow`. The offset
+        // is BAKED into the path (the capture folds blitz-paint's inset offset
+        // transform into the points), so the item's own offset is 0; `choke` is
+        // 0 (blitz does not bake CSS spread into the inset rect); the blur rides
+        // as `blurRadius`, and the colour's `a` as the shadow alpha. The inset
+        // is counted under `inset_shadows`, NOT `dropped_shadows`.
+        let mut dl = WebDisplayList::new();
+        dl.push(WebDrawCmd::DrawInsetShadow {
+            path: diag_path(),
+            colour: ScenePaint::rgba(0.2, 0.2, 0.2, 0.7),
+            blur: 5.0,
+        });
+        let out = lower(&dl);
+        assert_eq!(out.report.inset_shadows, 1);
+        assert_eq!(out.report.shadows, 0, "an inset shadow is not an outset");
+        assert_eq!(
+            out.report.dropped_shadows, 0,
+            "an inset shadow is not a drop"
+        );
+        assert_eq!(out.report.emitted, 1);
+        assert!(out.report.unsupported_note().is_none());
+        let SceneItem::InnerShadow {
+            path,
+            offset_x,
+            offset_y,
+            blur_radius,
+            choke,
+            r,
+            g,
+            b,
+            a,
+        } = &out.layer.items[0]
+        else {
+            panic!("expected an innerShadow, got {:?}", out.layer.items[0]);
+        };
+        assert_eq!(path, &diag_path());
+        assert_eq!((*offset_x, *offset_y), (0.0, 0.0), "offset baked into path");
+        assert_eq!(*choke, 0.0, "blitz does not bake inset spread → choke 0");
+        assert_eq!(*blur_radius, 5.0);
+        assert_eq!((*r, *g, *b, *a), (0.2, 0.2, 0.2, 0.7));
+    }
+
+    #[test]
+    fn empty_path_inset_shadow_is_skipped() {
+        let mut dl = WebDisplayList::new();
+        dl.push(WebDrawCmd::DrawInsetShadow {
+            path: vec![],
+            colour: ScenePaint::BLACK,
+            blur: 2.0,
+        });
+        let out = lower(&dl);
+        assert!(out.layer.items.is_empty());
+        assert_eq!(out.report.inset_shadows, 0);
+        assert_eq!(out.report.skipped_empty, 1);
+    }
+
+    #[test]
+    fn negative_blur_inset_shadow_clamps_to_zero() {
+        let mut dl = WebDisplayList::new();
+        dl.push(WebDrawCmd::DrawInsetShadow {
+            path: diag_path(),
+            colour: ScenePaint::BLACK,
+            blur: -4.0,
+        });
+        let out = lower(&dl);
+        let SceneItem::InnerShadow { blur_radius, .. } = &out.layer.items[0] else {
+            panic!("expected an innerShadow");
+        };
+        assert_eq!(*blur_radius, 0.0);
+    }
+
+    #[test]
+    fn outset_box_shadow_spread_is_carried_through_the_lowered_path_faithfully() {
+        // VERIFY + PIN that OUTSET CSS `spread` is already covered: blitz-paint
+        // inflates the border box by `spread` BEFORE calling `draw_box_shadow`
+        // (`box_shadow.rs::draw_outset_box_shadow`: `border_box.inflate(spread,
+        // spread)`), so the captured `DrawShadow` path is the SPREAD-INFLATED
+        // rect. The lowering passes the rect through faithfully — spread is
+        // geometry blitz already applied, not a separate wire field. This test
+        // proves the lowered `dropShadow` path covers the inflated rect: an
+        // inflated 100×50 box (border box) by spread 8 → a 116×66 path whose
+        // bounds are strictly LARGER than the un-inflated border box.
+        let border_box = RectPt::new(10.0, 10.0, 100.0, 50.0);
+        // Emulate blitz's inflate(spread, spread) on the border box: grow by
+        // `spread` on every side (the capture would flatten exactly this rect).
+        let spread = 8.0_f32;
+        let inflated = RectPt::new(
+            border_box.x - spread,
+            border_box.y - spread,
+            border_box.w + 2.0 * spread,
+            border_box.h + 2.0 * spread,
+        );
+        let mut dl = WebDisplayList::new();
+        dl.push(WebDrawCmd::DrawShadow {
+            path: inflated.to_closed_path(),
+            colour: ScenePaint::rgba(0.0, 0.0, 0.0, 0.5),
+            blur: 4.0,
+        });
+        let out = lower(&dl);
+        assert_eq!(out.report.shadows, 1);
+        let SceneItem::DropShadow { path, .. } = &out.layer.items[0] else {
+            panic!("expected a dropShadow, got {:?}", out.layer.items[0]);
+        };
+        // The lowered path is the spread-inflated rect, byte-for-byte (spread is
+        // geometry, passed through — not a separate wire field core must know).
+        assert_eq!(path, &inflated.to_closed_path());
+        // And it is strictly LARGER than the un-inflated border box on each
+        // side (the spread really inflated the shadow path).
+        let (min_x, min_y, max_x, max_y) = path_bounds(path);
+        assert!(min_x < border_box.x, "spread grew the left edge");
+        assert!(min_y < border_box.y, "spread grew the top edge");
+        assert!(
+            max_x > border_box.x + border_box.w,
+            "spread grew the right edge"
+        );
+        assert!(
+            max_y > border_box.y + border_box.h,
+            "spread grew the bottom edge"
+        );
+        // Concretely: a 100×50 border box + spread 8 → a 116×66 shadow path.
+        assert!(((max_x - min_x) - 116.0).abs() < 1e-3, "width = 100 + 2*8");
+        assert!(((max_y - min_y) - 66.0).abs() < 1e-3, "height = 50 + 2*8");
+    }
+
+    /// Axis-aligned bounds of a flattened path (for the spread pin test).
+    fn path_bounds(path: &[ScenePathSeg]) -> (f32, f32, f32, f32) {
+        let mut min_x = f32::INFINITY;
+        let mut min_y = f32::INFINITY;
+        let mut max_x = f32::NEG_INFINITY;
+        let mut max_y = f32::NEG_INFINITY;
+        for s in path {
+            let pts: &[(f32, f32)] = &match *s {
+                ScenePathSeg::MoveTo { x, y } | ScenePathSeg::LineTo { x, y } => vec![(x, y)],
+                ScenePathSeg::CubicTo {
+                    cx1,
+                    cy1,
+                    cx2,
+                    cy2,
+                    x,
+                    y,
+                } => vec![(cx1, cy1), (cx2, cy2), (x, y)],
+                ScenePathSeg::Close => vec![],
+            };
+            for &(x, y) in pts {
+                min_x = min_x.min(x);
+                min_y = min_y.min(y);
+                max_x = max_x.max(x);
+                max_y = max_y.max(y);
+            }
+        }
+        (min_x, min_y, max_x, max_y)
+    }
+
+    #[test]
     fn gradient_preserves_painters_order_among_fills_and_text() {
         // background gradient, then a solid badge, then a caption.
         let mut dl = WebDisplayList::new();
@@ -1475,6 +1668,34 @@ mod wire_json_tests {
         assert_eq!(item["offset_x"], 0.0);
         assert_eq!(item["offset_y"], 0.0);
         assert_eq!(item["blur_radius"], 2.5);
+        assert!(
+            item.get("offsetX").is_none(),
+            "core key is offset_x (snake)"
+        );
+        assert!(item.get("blurRadius").is_none());
+        // Flat colour fields present (a/alpha rides as the shadow opacity).
+        assert_eq!(item["a"], 0.4_f32 as f64);
+    }
+
+    #[test]
+    fn inset_shadow_lowers_and_serializes_to_the_v47_wire_shape() {
+        let mut dl = WebDisplayList::new();
+        dl.push(WebDrawCmd::DrawInsetShadow {
+            path: RectPt::new(0.0, 0.0, 8.0, 8.0).to_closed_path(),
+            colour: ScenePaint::rgba(0.0, 0.0, 0.0, 0.4),
+            blur: 2.5,
+        });
+        let out = lower(&dl);
+        let json = serde_json::to_value(&out.layer).unwrap();
+        let item = &json["items"][0];
+        assert_eq!(item["kind"], "innerShadow");
+        assert_eq!(item["path"][0]["op"], "moveTo");
+        // Snake_case offset/blur/choke keys (core's v47 wire); offset baked → 0,
+        // choke 0 (blitz doesn't bake inset spread).
+        assert_eq!(item["offset_x"], 0.0);
+        assert_eq!(item["offset_y"], 0.0);
+        assert_eq!(item["blur_radius"], 2.5);
+        assert_eq!(item["choke"], 0.0);
         assert!(
             item.get("offsetX").is_none(),
             "core key is offset_x (snake)"

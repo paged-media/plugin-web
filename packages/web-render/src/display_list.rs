@@ -105,15 +105,36 @@ pub enum WebDrawCmd {
         blur: f32,
     },
 
+    /// An INSET (inner) shadow (C-1.6, protocol v47 — CSS `box-shadow: inset`).
+    /// `path` is the box's (rounded-)rect geometry in content points with the
+    /// inset OFFSET ALREADY BAKED IN (blitz-paint bakes the offset into the
+    /// `draw_box_shadow` paint transform, which the capture folds into the
+    /// path), `colour` the straight sRGB shadow colour, `blur` the Gaussian
+    /// std-dev in content points. Lowers to the C-1 `SceneItem::InnerShadow`
+    /// with `offset_x = offset_y = 0` (offset baked into the path) and
+    /// `choke = 0` (blitz-paint does NOT inflate the inset rect by CSS
+    /// `spread` — see `box_shadow.rs::draw_inset_box_shadow`, which passes
+    /// `border_box` un-inflated — so inset spread beyond the offset is the
+    /// honest follow-on, never faked into `choke`). The colour comes from the
+    /// padding-box shadow FILL blitz paints just before the `Compose::DestOut`
+    /// punch (the inset `draw_box_shadow` brush itself is the WHITE punch-out
+    /// mask, not the colour), recovered by the capture.
+    DrawInsetShadow {
+        path: FlatPath,
+        colour: ScenePaint,
+        blur: f32,
+    },
+
     /// A fill/stroke/glyph whose brush was NOT a solid colour AND not a
     /// gradient the C-1 wire carries (image, pattern) — DROPPED + counted as
     /// an unsupported-paint skip. Recorded (not discarded at capture) so the
     /// diagnostic is truthful.
     NonSolidPaint { what: UnsupportedKind },
 
-    /// A box shadow / blur with no C-1 representation (an INSET shadow, or a
-    /// degenerate stamp) — counted + skipped. Outset drop shadows are NOT
-    /// this variant (they lower via `DrawShadow`).
+    /// A box shadow / blur with no C-1 representation (a degenerate stamp, or
+    /// an inset shadow whose padding-box fill colour the capture couldn't
+    /// recover) — counted + skipped. Outset drop shadows lower via
+    /// `DrawShadow`; inset shadows lower via `DrawInsetShadow`.
     BoxShadow,
 }
 

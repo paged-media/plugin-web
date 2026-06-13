@@ -12,7 +12,7 @@
 //! core's produce/consume the same JSON:
 //!   · `SceneItem` is internally tagged `kind` (`fillPath` / `strokePath` /
 //!     `text` / `image` / `fillPathGradient` / `fillPathBlend` /
-//!     `dropShadow`), camelCase.
+//!     `dropShadow` / `innerShadow`), camelCase.
 //!   · `ScenePathSeg` is internally tagged `op` (`moveTo` / `lineTo` /
 //!     `cubicTo` / `close`), camelCase.
 //!   · `SceneGradient` is internally tagged `type` (`linear` / `radial` /
@@ -106,6 +106,31 @@ pub enum SceneItem {
         offset_x: f32,
         offset_y: f32,
         blur_radius: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+        a: f32,
+    },
+    /// Stamp an INSET (inner) shadow inside a path (C-1.6, protocol v47 — the
+    /// CSS `box-shadow: inset` case). A faithful twin of core's
+    /// `SceneItem::InnerShadow`: the path filled with the shadow `(r,g,b,a)`
+    /// colour, composited INSIDE the path edge (CSS inset semantics) and
+    /// softened by a Gaussian of `blur_radius` (pt). `choke` (pt) expands the
+    /// shadow's hard edge before blurring (the inset-spread control); the web
+    /// lane passes `choke: 0` because blitz-paint bakes the inset offset into
+    /// the rect and does NOT inflate it by CSS `spread` (so inset spread beyond
+    /// the offset is an honest follow-on, not faked into `choke`). Core keeps
+    /// the colour opaque and rides `a` as the shadow opacity, composited Normal
+    /// (CSS-faithful — not InDesign's Multiply default). As with `DropShadow`
+    /// the variant's struct fields stay SNAKE_CASE on the wire (serde does not
+    /// rename internally-tagged-variant fields here), matching core's identical
+    /// derive byte-for-byte.
+    InnerShadow {
+        path: Vec<ScenePathSeg>,
+        offset_x: f32,
+        offset_y: f32,
+        blur_radius: f32,
+        choke: f32,
         r: f32,
         g: f32,
         b: f32,
@@ -521,6 +546,56 @@ mod gradient_wire_tests {
         for k in ["r", "g", "b", "a"] {
             assert!(json.get(k).is_some(), "colour field {k} present");
         }
+        let back: SceneItem = serde_json::from_value(json).unwrap();
+        assert_eq!(back, item);
+    }
+
+    #[test]
+    fn inner_shadow_serializes_to_the_exact_v47_keys_core_consumes() {
+        // CONTRACT GUARD vs core (`SceneItem::InnerShadow`, protocol v47, at
+        // core commit dbf68d3): tag = "kind" → "innerShadow"; path +
+        // offset_x/offset_y/blur_radius/choke + the flat r/g/b/a colour fields.
+        // As with the sweep + drop shadow, the variant's struct fields stay
+        // SNAKE_CASE on the wire (serde does not rename internally-tagged-
+        // variant fields here) — and core's identical derive emits/consumes the
+        // same snake_case keys. A drift silently DROPS the item at core's
+        // deserialize, so it must fail HERE.
+        let item = SceneItem::InnerShadow {
+            path: vec![
+                ScenePathSeg::MoveTo { x: 0.0, y: 0.0 },
+                ScenePathSeg::LineTo { x: 20.0, y: 0.0 },
+                ScenePathSeg::LineTo { x: 20.0, y: 20.0 },
+                ScenePathSeg::Close,
+            ],
+            offset_x: 2.0,
+            offset_y: 3.0,
+            blur_radius: 5.0,
+            choke: 0.0,
+            r: 0.1,
+            g: 0.2,
+            b: 0.3,
+            a: 0.5,
+        };
+        let json = serde_json::to_value(&item).unwrap();
+        assert_eq!(json["kind"], "innerShadow");
+        assert_eq!(json["path"][3]["op"], "close");
+        // The SNAKE_CASE keys core emits/consumes (NOT camelCase).
+        assert_eq!(json["offset_x"], 2.0);
+        assert_eq!(json["offset_y"], 3.0);
+        assert_eq!(json["blur_radius"], 5.0);
+        assert_eq!(json["choke"], 0.0);
+        assert!(
+            json.get("offsetX").is_none(),
+            "core emits offset_x (snake), NOT offsetX"
+        );
+        assert!(json.get("blurRadius").is_none());
+        // The flat colour fields are present (exact float values covered by the
+        // round-trip below, the real deserialize-parity guard).
+        for k in ["r", "g", "b", "a"] {
+            assert!(json.get(k).is_some(), "colour field {k} present");
+        }
+        // No stray keys leaked (the drop-shadow `choke`-less shape is distinct).
+        assert!(json.get("width").is_none());
         let back: SceneItem = serde_json::from_value(json).unwrap();
         assert_eq!(back, item);
     }
