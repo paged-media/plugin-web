@@ -17,7 +17,11 @@
 // it lowers WHATEVER scene the engine produced and is therefore equally
 // engine-gated. It is named here as the next seam, not implemented.
 
-import type { BundleHost, ElementId } from "@paged-media/plugin-api";
+import type {
+  BundleHost,
+  ElementId,
+  SceneLayerSurface,
+} from "@paged-media/plugin-api";
 import {
   asFrameTarget,
   composeSrcdoc,
@@ -44,6 +48,34 @@ const DEFAULT_DPI = 300;
  *  the capture converts px→pt internally, so feeding the px-equivalent
  *  size brings the lowered geometry back into frame-content points. */
 const PX_PER_PT = 96 / 72;
+
+/** The bundle's PERSISTENT scene-layer surface, memoized per host.
+ *
+ *  A baked web render is a PERSISTENT layer: it stays painted in the frame
+ *  until the source changes or the frame is removed (unlike sheet's
+ *  ephemeral in-frame grid, but the same surface-lifetime discipline). The
+ *  surface MUST therefore outlive a single `bakeWebFrame` call — its
+ *  `dispose()` clears every id it submitted (`host-impl.ts` interprets
+ *  disposing a contribution as releasing it, i.e. `clear()` per submitted
+ *  element). The earlier code created a surface, submitted, and disposed it
+ *  in the SAME call's `finally`, so the submit was immediately followed by a
+ *  fire-and-forget `clearSceneLayer(id)` that wiped the layer — the frame
+ *  rendered 0 visible pixels. Caching one surface per host (like the sheet
+ *  session caches `sceneSurface`) keeps the submitted layer alive. */
+const sceneSurfaces = new WeakMap<BundleHost, SceneLayerSurface>();
+
+/** Get (or lazily create) the host's persistent scene-layer surface, or
+ *  `null` when the host wires no scene channel. Never disposed here — it
+ *  lives for the host's lifetime so the submitted layer persists. */
+function persistentSceneSurface(host: BundleHost): SceneLayerSurface | null {
+  if (!host.supports("rendering.sceneLayer@1")) return null;
+  let surface = sceneSurfaces.get(host);
+  if (!surface) {
+    surface = host.contribute.sceneLayer();
+    sceneSurfaces.set(host, surface);
+  }
+  return surface;
+}
 
 /** The outcome of a bake attempt — surfaced to the caller (the command
  *  handler / panel) so it can show the honest diagnostic or report a
@@ -142,21 +174,22 @@ export async function bakeWebFrame(
     };
   }
 
-  // The future lane: a real SceneLayer lowers to the C-1 rail. Gated on
-  // the host wiring a scene channel (`rendering.sceneLayer@1`); when it
-  // doesn't, the layer is produced but not submitted (honest no-op).
+  // A real SceneLayer lowers to the C-1 rail. Gated on the host wiring a
+  // scene channel (`rendering.sceneLayer@1`); when it doesn't, the layer is
+  // produced but not submitted (honest no-op).
+  //
+  // CRITICAL: the surface is the host-PERSISTENT one (see
+  // `persistentSceneSurface`) and is NOT disposed after submit. A baked
+  // render must STAY painted in the frame; disposing the surface would
+  // `clear()` the just-submitted layer (the 0-visible-pixels defect).
   let submitted = false;
-  if (host.supports("rendering.sceneLayer@1")) {
-    const surface = host.contribute.sceneLayer();
-    try {
-      // The local SceneLayer twin is the C-1 IR by construction
-      // (fillPath/text + ScenePathSeg) — the wire `SceneLayer` shape, so
-      // the submit is a structural pass-through.
-      await surface.submit(target.id, result.sceneLayer as never);
-      submitted = true;
-    } finally {
-      surface.dispose();
-    }
+  const surface = persistentSceneSurface(host);
+  if (surface) {
+    // The local SceneLayer twin is the C-1 IR by construction
+    // (fillPath/text + ScenePathSeg) — the wire `SceneLayer` shape, so
+    // the submit is a structural pass-through.
+    await surface.submit(target.id, result.sceneLayer as never);
+    submitted = true;
   }
 
   return {
@@ -197,7 +230,11 @@ function renderWithEngine(
     return {
       sceneLayer: null,
       diagnostics: [
-        { severity: "info", message: ENGINE_NOT_LOADED_MESSAGE, source: "render" },
+        {
+          severity: "info",
+          message: ENGINE_NOT_LOADED_MESSAGE,
+          source: "render",
+        },
       ],
     };
   }
