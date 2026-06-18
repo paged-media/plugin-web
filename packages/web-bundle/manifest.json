@@ -49,6 +49,14 @@
         "type": "webFrame",
         "bakedFallback": "rectangle"
       }
+    ],
+    "partTypes": [
+      {
+        "type": "webSource",
+        "role": "spec",
+        "format": "json",
+        "linkable": false
+      }
     ]
   }
 }
