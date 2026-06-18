@@ -35,6 +35,7 @@ import {
   persistDraft,
   PREVIEW_DEBOUNCE_MS,
 } from "../src/panels/web-source-panel";
+import { readSourcePart } from "../src/source-part";
 
 const manifest = webBundle.manifest;
 const silent = { debug() {}, info() {}, warn() {}, error() {} };
@@ -171,7 +172,9 @@ describe("persistDraft (the explicit save — the panel's only document write)",
           return { applied: true };
         },
       },
-    } as unknown as Pick<BundleHost, "document">;
+      parts: { write: async () => {}, read: async () => null, list: async () => [] },
+      supports: () => false, // no container writer → the part write no-ops
+    } as unknown as Pick<BundleHost, "document" | "parts" | "supports">;
     await expect(persistDraft(host, id, draft)).resolves.toBe(true);
     expect(writes).toHaveLength(1);
     expect(writes[0].id).toBe(id);
@@ -185,7 +188,35 @@ describe("persistDraft (the explicit save — the panel's only document write)",
       document: {
         setMetadata: async () => ({ applied: false }),
       },
-    } as unknown as Pick<BundleHost, "document">;
+      parts: { write: async () => {}, read: async () => null, list: async () => [] },
+      supports: () => false,
+    } as unknown as Pick<BundleHost, "document" | "parts" | "supports">;
     await expect(persistDraft(host, id, draft)).resolves.toBe(false);
+  });
+
+  it("write-throughs the source to a portable .paged container part", async () => {
+    // Against a host WITH a container writer, persistDraft also writes the
+    // source as a paged/ part — the uncapped, portable source-of-truth — and
+    // readSourcePart reads it back (the migration round-trip).
+    const store = new Map<string, Uint8Array>();
+    const host = {
+      document: {
+        setMetadata: async () => ({ applied: true }),
+        getMetadata: async () => null,
+      },
+      parts: {
+        write: async (p: string, b: Uint8Array) => void store.set(p, b),
+        read: async (p: string) => store.get(p) ?? null,
+        list: async () => [...store.keys()],
+      },
+      supports: (f: string) => f === "storage.parts@1",
+    } as unknown as BundleHost;
+
+    await expect(persistDraft(host, id, draft)).resolves.toBe(true);
+    // The part landed under the frame-id-keyed relative path (the host
+    // prepends the plugin namespace; this layer speaks relative paths).
+    expect([...store.keys()]).toEqual([`${(id as { id: string }).id}/source.json`]);
+    // And it round-trips back to the exact source.
+    expect(await readSourcePart(host, id)).toEqual(draft);
   });
 });

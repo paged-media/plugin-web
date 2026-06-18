@@ -37,6 +37,7 @@ import {
 } from "@paged-media/web-model";
 
 import type { WebEngine } from "./engine-loader";
+import { readSourcePart } from "./source-part";
 
 /** Points per inch — frame bounds are in points already; `dpi` only
  *  drives a raster escape hatch, defaulted at the page's print
@@ -124,7 +125,12 @@ export async function bakeWebFrame(
     ]);
   }
 
-  const source = sourceFromEnvelope(await host.document.getMetadata(id));
+  // Prefer the portable .paged container part (the uncapped source-of-truth),
+  // falling back to the metadata label for documents written before the part
+  // migration (or a host with no container writer).
+  const source =
+    (await readSourcePart(host, id)) ??
+    sourceFromEnvelope(await host.document.getMetadata(id));
   if (!source) {
     return notRendered([
       {
