@@ -66,6 +66,8 @@ import {
   type WebFrameSource,
 } from "@paged-media/web-model";
 
+import { readSourcePart, writeSourcePart } from "../source-part";
+
 import { createDebouncer } from "./debounce";
 import {
   FallbackCodeEditor,
@@ -256,11 +258,15 @@ function TemplatePicker({
  *  (never by the preview debounce). One call = one undoable metadata
  *  mutation. Returns whether the engine applied it. */
 export async function persistDraft(
-  host: Pick<BundleHost, "document">,
+  host: Pick<BundleHost, "document" | "parts" | "supports">,
   id: ElementId,
   draft: WebFrameSource,
 ): Promise<boolean> {
   const outcome = await host.document.setMetadata(id, envelopeFor(draft));
+  // Write-through to the portable .paged container part (uncapped; the label
+  // above stays the webFrame marker + backward-compat read source). No-op on a
+  // host without a container writer (older editor).
+  await writeSourcePart(host, id, draft);
   return outcome.applied;
 }
 
@@ -350,7 +356,11 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
     // plugin storage (write-through, then the storage entry drops).
     const loadFor = useCallback(
       async (id: ElementId, storageKey: string) => {
-        let src = sourceFromEnvelope(await host.document.getMetadata(id));
+        // Prefer the portable .paged container part, then the metadata label,
+        // then the legacy host.storage entry below.
+        let src =
+          (await readSourcePart(host, id)) ??
+          sourceFromEnvelope(await host.document.getMetadata(id));
         if (!src) {
           const legacy = host.storage.get<WebFrameSource>(storageKey);
           if (legacy) {
