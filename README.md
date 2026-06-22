@@ -105,3 +105,13 @@ read is not yet headless) are tracked under **W-10** in `BREAKAGE_LOG.md`.
 
 `BREAKAGE_LOG.md` records every place the plugin surface fell short
 (W-01…W-10) — together with plugin-draw's log, it is the API-v1 punch list.
+
+## License
+
+Dual-licensed **AGPL-3.0 OR the Paged Media Enterprise License (PMEL)** —
+the same as the paged editor (a plugin is part of the editor app). The engine
+(`paged-media/core`) and the plugin SDK (`paged-media/plugin-sdk`) it builds on
+are MPL-2.0 OR PMEL. See [`LICENSE.md`](./LICENSE.md), [`LICENSE`](./LICENSE),
+and [`CONTRIBUTING.md`](./CONTRIBUTING.md) (contributions under a CLA).
+
+`SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-PMEL`

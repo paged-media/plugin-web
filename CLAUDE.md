@@ -1,8 +1,8 @@
 # CLAUDE.md
 
 Orientation for Claude sessions in **paged-media/plugin-web** — the
-paged.web plugin (private, proprietary, And The Next GmbH; no license
-headers).
+paged.web plugin (public; dual-licensed AGPL-3.0 OR PMEL, And The Next
+GmbH; license headers on every source file).
 
 ## What this is
 

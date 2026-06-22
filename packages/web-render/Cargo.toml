@@ -24,6 +24,7 @@
 
 [package]
 name = "web-render"
+license = "AGPL-3.0-only OR LicenseRef-PMEL"
 version = "0.0.0"
 edition = "2021"
 publish = false
