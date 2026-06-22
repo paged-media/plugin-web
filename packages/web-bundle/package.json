@@ -16,8 +16,8 @@
     "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
-    "@paged-media/plugin-api": "canary",
-    "@paged-media/plugin-sdk": "canary",
+    "@paged-media/plugin-api": "0.2.25-canary.0",
+    "@paged-media/plugin-sdk": "0.2.25-canary.0",
     "@paged-media/web-model": "workspace:*"
   },
   "peerDependencies": {

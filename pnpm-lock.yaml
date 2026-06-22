@@ -18,11 +18,11 @@ importers:
   packages/web-bundle:
     dependencies:
       '@paged-media/plugin-api':
-        specifier: canary
-        version: 0.2.24-canary.0
+        specifier: 0.2.25-canary.0
+        version: 0.2.25-canary.0
       '@paged-media/plugin-sdk':
-        specifier: canary
-        version: 0.2.24-canary.0(react@18.3.1)
+        specifier: 0.2.25-canary.0
+        version: 0.2.25-canary.0(react@18.3.1)
       '@paged-media/web-model':
         specifier: workspace:*
         version: link:../web-model
@@ -361,11 +361,11 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@paged-media/plugin-api@0.2.24-canary.0':
-    resolution: {integrity: sha512-4TXZeTEivmHbfExYT6LW8HpvkDhLw8TFjtiq+4kmf6MCLfmd2362Vvhbi4+TJrTcUAhu19u/Gbr8TFITcPFCgw==}
+  '@paged-media/plugin-api@0.2.25-canary.0':
+    resolution: {integrity: sha512-yPB4aQ+/WWhipsSUdcCZt7Uzox4KG8r2c9WN0GXAUAhC2/+Oa8+li/adp9Ubx8pSdEtNBh13N0IiIPTBhc2eDQ==}
 
-  '@paged-media/plugin-sdk@0.2.24-canary.0':
-    resolution: {integrity: sha512-5aghCi3WhV02rn3ZmrMEN2Hlrt+BxATwD9NfHHL5s+w9+S4Q3aoUZHnPmiH4CEqktOdUbMqQMEZOqCI4JKH/Xg==}
+  '@paged-media/plugin-sdk@0.2.25-canary.0':
+    resolution: {integrity: sha512-CAOG3q39foJCLJrowG//eKD5ORnufiAOmzT1sjOeHjtqHTkVe6MYc4ppFbdXMtPtrwfLddEx4g9YGWRmMclPLA==}
     peerDependencies:
       react: ^18.3.0
     peerDependenciesMeta:
@@ -1062,13 +1062,13 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@paged-media/plugin-api@0.2.24-canary.0':
+  '@paged-media/plugin-api@0.2.25-canary.0':
     dependencies:
       '@types/react': 18.3.31
 
-  '@paged-media/plugin-sdk@0.2.24-canary.0(react@18.3.1)':
+  '@paged-media/plugin-sdk@0.2.25-canary.0(react@18.3.1)':
     dependencies:
-      '@paged-media/plugin-api': 0.2.24-canary.0
+      '@paged-media/plugin-api': 0.2.25-canary.0
     optionalDependencies:
       react: 18.3.1
 
