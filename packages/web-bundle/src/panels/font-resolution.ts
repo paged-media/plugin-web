@@ -36,7 +36,7 @@ import {
   fontFaceDataUrl,
   fontParity,
   type ResolvedFontFace,
-} from "@paged-media/web-model";
+} from "../../../web-model/src";
 
 export interface ResolvedPreviewFonts {
   /** `@font-face` inputs (data-url src) for `composeFontFaces`. */

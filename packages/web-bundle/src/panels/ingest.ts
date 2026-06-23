@@ -31,7 +31,7 @@
 // affordance the panel always offers).
 
 import type { BundleHost } from "@paged-media/plugin-api";
-import { sanitizeHtml, type SanitizeRemoval } from "@paged-media/web-model";
+import { sanitizeHtml, type SanitizeRemoval } from "../../../web-model/src";
 
 export interface IngestResult {
   /** The sanitized HTML to seed into the source. */

@@ -42,7 +42,7 @@
 
 import type { BundleHost } from "@paged-media/plugin-api";
 
-import type { SceneLayer } from "@paged-media/web-model";
+import type { SceneLayer } from "../../web-model/src";
 
 /** The minimal surface of the wasm-bindgen `--target web` glue we use —
  *  declared locally so typecheck never depends on the GENERATED (and

@@ -37,7 +37,7 @@ import {
   envelopeFor,
   sourceFromEnvelope,
   type WebFrameSource,
-} from "@paged-media/web-model";
+} from "../../web-model/src";
 
 type PartsHost = Pick<BundleHost, "parts" | "supports">;
 

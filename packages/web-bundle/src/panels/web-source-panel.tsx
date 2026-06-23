@@ -82,7 +82,7 @@ import {
   type TagOutlineEntry,
   type WebDiagnostic,
   type WebFrameSource,
-} from "@paged-media/web-model";
+} from "../../../web-model/src";
 
 import { readSourcePart, writeSourcePart } from "../source-part";
 

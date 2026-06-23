@@ -29,7 +29,7 @@ import {
   asFrameTarget,
   DEFAULT_SOURCE,
   envelopeFor,
-} from "@paged-media/web-model";
+} from "../../web-model/src";
 
 /** Default frame bounds, page-local pt: [top, left, bottom, right]. */
 const DEFAULT_BOUNDS: [number, number, number, number] = [60, 60, 240, 300];

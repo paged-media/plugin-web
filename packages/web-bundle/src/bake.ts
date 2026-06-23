@@ -52,7 +52,7 @@ import {
   type WebDiagnostic,
   type WebFrameSource,
   type WebRenderResult,
-} from "@paged-media/web-model";
+} from "../../web-model/src";
 
 import type { WebEngine } from "./engine-loader";
 import { readSourcePart } from "./source-part";

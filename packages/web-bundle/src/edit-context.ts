@@ -45,7 +45,7 @@ import type {
 import {
   sourceFromEnvelope,
   type WebSourceEnvelope,
-} from "@paged-media/web-model";
+} from "../../web-model/src";
 
 export const WEB_FRAME_TYPE = "webFrame";
 

@@ -26,7 +26,7 @@
 // Never a fake render — an empty layer is real, a missing engine is said.
 
 import type { BundleHost } from "@paged-media/plugin-api";
-import { sourceKeyFor, asFrameTarget } from "@paged-media/web-model";
+import { sourceKeyFor, asFrameTarget } from "../../web-model/src";
 
 import { bakeWebFrame } from "./bake";
 import { loadWebEngine } from "./engine-loader";
