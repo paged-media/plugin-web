@@ -47,5 +47,10 @@
       },
       "./manifest.json": "./manifest.json"
     }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/paged-media/plugin-web.git",
+    "directory": "packages/web-bundle"
   }
 }
