@@ -23,10 +23,10 @@ importers:
       '@paged-media/plugin-sdk':
         specifier: 0.2.25-canary.0
         version: 0.2.25-canary.0(react@18.3.1)
+    devDependencies:
       '@paged-media/web-model':
         specifier: workspace:*
         version: link:../web-model
-    devDependencies:
       '@types/node':
         specifier: 20.19.39
         version: 20.19.39

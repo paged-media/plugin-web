@@ -1,5 +1,5 @@
 {
-  "name": "@paged-media/web-bundle",
+  "name": "@paged-media/web",
   "private": false,
   "version": "0.1.0-canary.0",
   "type": "module",
@@ -12,13 +12,12 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "build": "tsup src/index.ts --format esm --dts --out-dir dist --clean",
+    "build": "tsup",
     "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
     "@paged-media/plugin-api": "0.2.25-canary.0",
-    "@paged-media/plugin-sdk": "0.2.25-canary.0",
-    "@paged-media/web-model": "workspace:*"
+    "@paged-media/plugin-sdk": "0.2.25-canary.0"
   },
   "peerDependencies": {
     "react": "^18.3.0"
@@ -28,7 +27,8 @@
     "@types/react": "^18.3.12",
     "react": "^18.3.1",
     "typescript": "^5.6.3",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.8",
+    "@paged-media/web-model": "workspace:*"
   },
   "files": [
     "bin",
