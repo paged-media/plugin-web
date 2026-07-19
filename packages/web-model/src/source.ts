@@ -82,6 +82,69 @@ export function normalizeTemplateVars(
   return out;
 }
 
+/** One recipient frame in a flow chain: a {@link FrameTarget} plus an
+ *  optional CSS `flow-into` name (Regions MULTI-flow). Absent `flow` = the
+ *  primary/default flow (the whole body, or the first `flow-into`). A named
+ *  `flow` routes this frame to that named flow's content. */
+export interface WebFlowRecipient extends FrameTarget {
+  flow?: string;
+}
+
+/** A web frame's threaded FLOW chain (ADR-020 rung 2): the ORDERED recipient
+ *  frames the source's content threads into. The source frame is implicit
+ *  order 0 of the PRIMARY flow (it is NOT listed in `recipients`). Recipients
+ *  may carry a `flow` name to route them to a named CSS flow (multi-flow);
+ *  untagged recipients belong to the primary flow. Each recipient is a
+ *  `{ kind, id }` (both strings) — enough to reconstruct the host `ElementId`
+ *  at render time — while web-model stays dependency-free. Absent = a
+ *  single-frame web frame. */
+export interface WebFlowChain {
+  recipients: WebFlowRecipient[];
+}
+
+/** One resolved flow group: a flow name (`""` = primary) + its ordered
+ *  frames (the primary group starts with the source frame). */
+export interface WebFlowGroup {
+  name: string;
+  frames: FrameTarget[];
+}
+
+/** Sanitize a flow chain from UNTRUSTED input (an envelope): a
+ *  `{ recipients: FrameTarget[] }` whose recipients are well-formed
+ *  `{ kind, id }` pairs (both non-empty strings), DE-DUPLICATED by `id`
+ *  in order; anything else (non-object, non-array recipients, malformed
+ *  entries, empty result) reads as "no chain" (undefined). Never throws. */
+export function normalizeFlowChain(value: unknown): WebFlowChain | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const raw = (value as { recipients?: unknown }).recipients;
+  if (!Array.isArray(raw)) return undefined;
+  const seen = new Set<string>();
+  const recipients: WebFlowRecipient[] = [];
+  for (const r of raw) {
+    if (typeof r !== "object" || r === null) continue;
+    const { kind, id, flow } = r as {
+      kind?: unknown;
+      id?: unknown;
+      flow?: unknown;
+    };
+    if (
+      typeof kind === "string" &&
+      kind.length > 0 &&
+      typeof id === "string" &&
+      id.length > 0 &&
+      !seen.has(id)
+    ) {
+      seen.add(id);
+      const rec: WebFlowRecipient = { kind, id };
+      if (typeof flow === "string" && flow.length > 0) rec.flow = flow;
+      recipients.push(rec);
+    }
+  }
+  return recipients.length > 0 ? { recipients } : undefined;
+}
+
 export interface WebFrameSource {
   html: string;
   css: string;
@@ -91,6 +154,11 @@ export interface WebFrameSource {
    *  none; the pass only runs when the map is present). The full
    *  Boa-scripted transform lane is the W2 follow-on (RFI W-08). */
   vars?: TemplateVars;
+  /** ADR-020 rung 2 — the persisted flow region chain (the ordered
+   *  recipient frames this source threads into). ADDITIVE-OPTIONAL within
+   *  envelope v1: legacy/single-frame web frames have none; a malformed
+   *  chain reads as "not threaded" rather than poisoning the source. */
+  flow?: WebFlowChain;
 }
 
 export const DEFAULT_SOURCE: WebFrameSource = {
@@ -174,7 +242,78 @@ export function sourceFromEnvelope(
     const vars = normalizeTemplateVars(d.vars);
     if (vars !== undefined) source.vars = vars;
   }
+  // `flow` is ADDITIVE-OPTIONAL within envelope v1 (ADR-020 rung 2): legacy
+  // / single-frame web frames have none; a malformed chain reads as "not
+  // threaded" rather than poisoning the source.
+  if ("flow" in d) {
+    const flow = normalizeFlowChain(d.flow);
+    if (flow !== undefined) source.flow = flow;
+  }
   return source;
+}
+
+/** The PRIMARY flow chain for a source anchored on `sourceFrame`:
+ *  `[sourceFrame, ...untagged recipients]` (recipients routed to a NAMED flow
+ *  are excluded — see {@link flowGroups}). For a non-threaded source this is
+ *  just `[sourceFrame]`. */
+export function flowChainOf(
+  source: WebFrameSource,
+  sourceFrame: FrameTarget,
+): FrameTarget[] {
+  const primary = (source.flow?.recipients ?? []).filter((r) => !r.flow);
+  return [sourceFrame, ...primary.map((r) => ({ kind: r.kind, id: r.id }))];
+}
+
+/** All flow groups for a source, keyed by flow name (`""` = primary, whose
+ *  frames start with the source frame). Recipients routed to a named CSS flow
+ *  form their own groups. Used by the multi-flow render. */
+export function flowGroups(
+  source: WebFrameSource,
+  sourceFrame: FrameTarget,
+): WebFlowGroup[] {
+  const groups = new Map<string, FrameTarget[]>();
+  groups.set("", [{ kind: sourceFrame.kind, id: sourceFrame.id }]);
+  for (const r of source.flow?.recipients ?? []) {
+    const name = r.flow ?? "";
+    const arr = groups.get(name) ?? [];
+    arr.push({ kind: r.kind, id: r.id });
+    groups.set(name, arr);
+  }
+  return [...groups.entries()].map(([name, frames]) => ({ name, frames }));
+}
+
+/** Return a source with `recipient` appended to its flow chain, optionally
+ *  routed to the named flow `flow` (CSS multi-flow). No-op if it is already a
+ *  recipient (by id) or equals the source frame (a frame never threads into
+ *  itself). Pure — returns a NEW source; the caller persists it. */
+export function withRecipient(
+  source: WebFrameSource,
+  sourceFrame: FrameTarget,
+  recipient: FrameTarget,
+  flow?: string,
+): WebFrameSource {
+  if (recipient.id === sourceFrame.id) return source;
+  const current = source.flow?.recipients ?? [];
+  if (current.some((r) => r.id === recipient.id)) return source;
+  const rec: WebFlowRecipient = { kind: recipient.kind, id: recipient.id };
+  if (flow) rec.flow = flow;
+  return { ...source, flow: { recipients: [...current, rec] } };
+}
+
+/** Return a source with the recipient identified by `recipientId` removed
+ *  from its flow chain (the `flow` field is dropped entirely when the last
+ *  recipient goes). Pure. */
+export function withoutRecipient(
+  source: WebFrameSource,
+  recipientId: string,
+): WebFrameSource {
+  const current = source.flow?.recipients ?? [];
+  if (!current.some((r) => r.id === recipientId)) return source;
+  const recipients = current.filter((r) => r.id !== recipientId);
+  const next: WebFrameSource = { ...source };
+  if (recipients.length > 0) next.flow = { recipients };
+  else delete next.flow;
+  return next;
 }
 
 /**

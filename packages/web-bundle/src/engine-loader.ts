@@ -33,12 +33,22 @@
 // The wasm artifact is wasm-bindgen `--target web` glue (`bin/blitz_web.js`
 // + `bin/blitz_web_bg.wasm`, gitignored generated output). The glue owns
 // the wasm memory + the string marshaling for `render_web_frame(string) ->
-// string`; we resolve it as a bundle-relative asset (`import.meta.url`,
-// the same `/@fs/`-allowed sibling path the worker/asset doors use) so the
-// contract-import lint stays satisfied (a relative path, never a bare
-// specifier) and the bundle can only load a module it ships. The glue is
-// imported LAZILY (on first real render) so the source lane never pays the
-// engine's load cost.
+// string`. We import it two RELATIVE ways — never a computed
+// `new URL(import.meta.url)` — so the contract-import lint stays satisfied
+// AND the load survives Vite's dep-optimizer (below); the bundle can only
+// load a module it ships. The glue is imported LAZILY (on first real
+// render) so the source lane never pays the engine's load cost.
+//
+// WHY relative + `?url` (the fix, matching sheet-bundle's engine.ts): a
+// `new URL("../bin/blitz_web.js", import.meta.url)` + `@vite-ignore` import
+// 404s in the editor the moment Vite pre-bundles this bundle into
+// `node_modules/.vite/deps` — `import.meta.url` moves, so `../bin` points at
+// `.vite/bin/…` which doesn't exist. Instead we `import("../bin/blitz_web.js")`
+// (esbuild bundles the glue as a sibling dist chunk, so its `import.meta.url`
+// stays valid wherever the bundle lands) and hand the `_bg.wasm` bytes in via
+// the bundler's `?url` import (Vite-native — resolves to a real served asset;
+// wasm-bindgen's bare-relative default fetch would hit Vite's SPA fallback and
+// fail with "expected magic word 00 61 73 6d, found 3c …").
 
 import type { BundleHost } from "@paged-media/plugin-api";
 
@@ -57,13 +67,34 @@ interface BlitzGlue {
     widthPx: number,
     heightPx: number,
   ) => string;
+  /** Thread a flow across N frames (ADR-020 rung 2). `framesJson` is
+   *  `[{"widthPx":N,"heightPx":M}, …]` in chain order; `flowRoot` is a CSS
+   *  `flow-into` selector (Regions syntax) or "" for the whole body; returns
+   *  `{ frames: [{ layer, emitted }], overset }` as JSON. */
+  render_web_flow: (html: string, framesJson: string, flowRoot: string) => string;
 }
 
-/** A loaded engine: a single pure-ish render call. `render` returns the
- *  C-1 `SceneLayer` the engine painted (possibly empty), or `null` if the
+/** A rendered flow: one C-1 layer per recipient frame (chain order) plus
+ *  whether content remained past the last frame. */
+export interface WebFlowRender {
+  frames: SceneLayer[];
+  overset: boolean;
+}
+
+/** A loaded engine: pure-ish render calls. Each returns the C-1
+ *  `SceneLayer`(s) the engine painted (possibly empty), or `null` if the
  *  wasm itself threw — the caller then reports the honest failure. */
 export interface WebEngine {
   render(html: string, widthPx: number, heightPx: number): SceneLayer | null;
+  /** Thread one flow across the given frames (content-box CSS px, chain
+   *  order) → one layer per frame + overset, or `null` on a wasm failure.
+   *  `flowRoot` is an optional CSS `flow-into` selector (only that subtree
+   *  flows); omit / "" flows the whole body. */
+  renderFlow(
+    html: string,
+    frames: { widthPx: number; heightPx: number }[],
+    flowRoot?: string,
+  ): WebFlowRender | null;
 }
 
 /** Inject the glue module (tests pass a stub / a disk-loaded module);
@@ -74,13 +105,40 @@ export interface LoadEngineOptions {
   importGlue?: () => Promise<BlitzGlue>;
 }
 
-/** The default glue importer: the bundle-relative wasm-bindgen ESM,
- *  resolved through the bundle's asset base. A bare dynamic `import()` of a
- *  computed URL — `tsc` does not resolve it, so the gitignored generated
- *  file need not exist at typecheck time. */
+/** True when running under Node (vitest / headless conformance), false in
+ *  the browser (the editor). Branches the glue's wasm-instantiation path. */
+function isNode(): boolean {
+  return (
+    typeof process !== "undefined" &&
+    !!(process as { versions?: { node?: string } }).versions?.node
+  );
+}
+
+/** The default glue importer: the bundle-relative wasm-bindgen ESM. The
+ *  relative `import()` lets tsup bundle the glue as a sibling dist chunk (so
+ *  its `import.meta.url` survives Vite dep-optimization) while `tsc` still
+ *  doesn't resolve it (the gitignored artifact need not exist at typecheck).
+ *
+ *  BROWSER: instantiate the wasm here from the bundler's `?url` asset URL
+ *  (the reliable path — see the module header). NODE: leave the glue
+ *  un-instantiated; the real-wasm Node path is the INJECTED `importGlue`
+ *  (tests read the bytes + `initSync`), and the default path stays honestly
+ *  not-loaded — `loadWebEngine`'s `glue.default()` (no args) fetch fails in
+ *  Node, caught as the not-loaded diagnostic (the conformance suite asserts
+ *  this). */
 async function importBundledGlue(): Promise<BlitzGlue> {
-  const url = new URL("../bin/blitz_web.js", import.meta.url).href;
-  return (await import(/* @vite-ignore */ url)) as unknown as BlitzGlue;
+  // @ts-ignore — the artifact (bin/blitz_web.js, the wasm-bindgen glue) is
+  // gitignored generated output, intentionally absent from the source tree;
+  // the dynamic import resolves at runtime once built. Typed via BlitzGlue.
+  const glue = (await import("../bin/blitz_web.js")) as unknown as BlitzGlue;
+  if (isNode()) return glue;
+  // @ts-ignore — `?url` is a bundler affordance (untyped), kept external by
+  // tsup so Vite resolves it to a served asset URL.
+  const wasmUrl = (await import("../bin/blitz_web_bg.wasm?url")) as {
+    default: string;
+  };
+  await glue.default({ module_or_path: wasmUrl.default });
+  return glue;
 }
 
 /** Cache one loaded engine per bundle process — booting the wasm once. */
@@ -102,9 +160,13 @@ export async function loadWebEngine(
   cached = (async (): Promise<WebEngine | null> => {
     try {
       const glue = await (options.importGlue ?? importBundledGlue)();
-      // wasm-bindgen `--target web`: `default` (== `__wbg_init`) fetches +
-      // instantiates `blitz_web_bg.wasm` relative to the glue module. After
-      // it resolves, `render_web_frame` is callable.
+      // Ensure the wasm is instantiated. `default` (== `__wbg_init`) is
+      // idempotent (returns early once `wasm` is set), so this is a no-op
+      // when the glue arrived pre-instantiated — the browser importer
+      // (`?url` bytes) and the injected test glue (`initSync`) both do. In
+      // the Node default path the glue is un-instantiated, so this no-arg
+      // call attempts the bare-relative fetch, fails, and is caught below as
+      // the honest not-loaded diagnostic.
       await glue.default();
       return {
         render(html, widthPx, heightPx): SceneLayer | null {
@@ -114,6 +176,21 @@ export async function loadWebEngine(
           } catch (err) {
             host.log.warn(
               `web engine: render_web_frame threw — ${stringifyErr(err)}`,
+            );
+            return null;
+          }
+        },
+        renderFlow(html, frames, flowRoot): WebFlowRender | null {
+          try {
+            const json = glue.render_web_flow(
+              html,
+              JSON.stringify(frames),
+              flowRoot ?? "",
+            );
+            return parseFlowResult(json);
+          } catch (err) {
+            host.log.warn(
+              `web engine: render_web_flow threw — ${stringifyErr(err)}`,
             );
             return null;
           }
@@ -153,6 +230,37 @@ export function parseSceneLayer(json: string): SceneLayer {
     // fall through to the empty layer
   }
   return { items: [] };
+}
+
+/** Parse the engine's flow JSON (`{ frames: [{ layer, emitted }], overset }`)
+ *  into per-frame {@link SceneLayer}s + `overset`, defensively — a malformed
+ *  payload (or one missing `frames`) reads as an empty, non-overset flow,
+ *  never a throw. Each frame's `layer` is validated to the C-1
+ *  `{ items: [] }` shape (a bad entry reads as an empty layer). */
+export function parseFlowResult(json: string): WebFlowRender {
+  try {
+    const parsed = JSON.parse(json) as unknown;
+    if (parsed && typeof parsed === "object") {
+      const p = parsed as { frames?: unknown; overset?: unknown };
+      if (Array.isArray(p.frames)) {
+        const frames = p.frames.map((entry): SceneLayer => {
+          const layer = (entry as { layer?: unknown })?.layer;
+          if (
+            layer &&
+            typeof layer === "object" &&
+            Array.isArray((layer as { items?: unknown }).items)
+          ) {
+            return layer as SceneLayer;
+          }
+          return { items: [] };
+        });
+        return { frames, overset: p.overset === true };
+      }
+    }
+  } catch {
+    // fall through to the empty flow
+  }
+  return { frames: [], overset: false };
 }
 
 function stringifyErr(err: unknown): string {

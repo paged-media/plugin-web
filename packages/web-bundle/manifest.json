@@ -36,7 +36,12 @@
     ],
     "commands": [
       "media.paged.web.command.insertWebFrame",
-      "media.paged.web.command.renderWebFrame"
+      "media.paged.web.command.renderWebFrame",
+      "media.paged.web.command.renderWebFlow",
+      "media.paged.web.command.threadWebFlow",
+      "media.paged.web.command.unthreadWebFlow",
+      "media.paged.web.command.threadWebFlowNamed",
+      "media.paged.web.command.bakeWebFrame"
     ],
     "editContexts": [
       {

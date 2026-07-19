@@ -30,12 +30,20 @@ export {
   asFrameTarget,
   composeSrcdoc,
   envelopeFor,
+  flowChainOf,
+  flowGroups,
+  normalizeFlowChain,
   normalizeTemplateVars,
   normalizeViewportWidth,
   sourceFromEnvelope,
   sourceKeyFor,
+  withRecipient,
+  withoutRecipient,
   type FrameTarget,
   type TemplateVars,
+  type WebFlowChain,
+  type WebFlowGroup,
+  type WebFlowRecipient,
   type WebFrameOptions,
   type WebFrameSource,
   type WebSourceEnvelope,
@@ -98,17 +106,39 @@ export {
 // axis-aligned raster images).
 export {
   ENGINE_NOT_LOADED_MESSAGE,
+  isFlowRendered,
   isRendered,
+  renderWebFlow,
   renderWebFrame,
+  type FlowId,
   type SceneImageItem,
   type SceneItem,
   type SceneLayer,
   type ScenePaintRgba,
   type ScenePathItem,
+  type ScenePathSeg,
   type SceneTextItem,
+  type WebFlowFrame,
+  type WebFlowFrameResult,
+  type WebRenderFlowRequest,
+  type WebRenderFlowResult,
   type WebRenderRequest,
   type WebRenderResult,
 } from "./render";
+
+// CSS Regions SYNTAX (spec Phase 4) — `flow-into`/`flow-from`, parsed
+// plugin-side (Stylo ignores them). `flowRootSelector` names the flow's
+// content root the engine flows across the chain.
+export {
+  flowRootSelector,
+  flowSelectorFor,
+  flowThreadOptions,
+  namedFlowDiagnostics,
+  parseFlowFrom,
+  parseFlowInto,
+  type FlowThreadOption,
+  type NamedFlowRule,
+} from "./css-flow";
 
 // Engine version PINNING — the determinism record (ADR-011). The pin is
 // forward-declared from the W0 spike's proven stack and stamped into the

@@ -23,10 +23,15 @@ import { describe, expect, it } from "vitest";
 
 import {
   envelopeFor,
+  flowChainOf,
+  flowGroups,
   MAX_VIEWPORT_WIDTH,
+  normalizeFlowChain,
   normalizeViewportWidth,
   SOURCE_METADATA_VERSION,
   sourceFromEnvelope,
+  withRecipient,
+  withoutRecipient,
   type WebFrameSource,
 } from "../src";
 
@@ -158,5 +163,101 @@ describe("normalizeViewportWidth", () => {
     expect(normalizeViewportWidth(-1)).toBeUndefined();
     expect(normalizeViewportWidth(Number.NaN)).toBeUndefined();
     expect(normalizeViewportWidth(-Infinity)).toBeUndefined();
+  });
+});
+
+describe("flow chain — persisted region chain (ADR-020 rung 2)", () => {
+  const base: WebFrameSource = {
+    html: "<article>x</article>",
+    css: "",
+    options: { media: "print", overflow: "clip" },
+  };
+  const A = { kind: "rectangle", id: "uA" };
+  const B = { kind: "rectangle", id: "uB" };
+  const C = { kind: "textFrame", id: "uC" };
+
+  it("round-trips a threaded source through the envelope (additive-optional v1)", () => {
+    const threaded: WebFrameSource = { ...base, flow: { recipients: [B, C] } };
+    expect(sourceFromEnvelope(envelopeFor(threaded))).toEqual(threaded);
+    // Still envelope v1 — the chain is additive-optional, no version bump.
+    expect(envelopeFor(threaded).v).toBe(SOURCE_METADATA_VERSION);
+  });
+
+  it("a legacy (no-flow) envelope reads as a non-threaded source", () => {
+    const back = sourceFromEnvelope(envelopeFor(base));
+    expect(back?.flow).toBeUndefined();
+    expect(flowChainOf(back!, A)).toEqual([A]);
+  });
+
+  it("normalizeFlowChain de-dupes by id and rejects malformed entries", () => {
+    expect(
+      normalizeFlowChain({
+        recipients: [B, { kind: "rectangle", id: "uB" }, C, { id: "noKind" }, 7, "s"],
+      }),
+    ).toEqual({ recipients: [B, C] });
+    expect(normalizeFlowChain({ recipients: [] })).toBeUndefined();
+    expect(normalizeFlowChain({ recipients: "uB" })).toBeUndefined();
+    expect(normalizeFlowChain(null)).toBeUndefined();
+    expect(normalizeFlowChain([B])).toBeUndefined();
+  });
+
+  it("a malformed flow reads as not-threaded, never poisons the source", () => {
+    const env = envelopeFor(base);
+    (env.data as { flow?: unknown }).flow = { recipients: [1, 2] };
+    const back = sourceFromEnvelope(env);
+    expect(back).not.toBeNull();
+    expect(back?.flow).toBeUndefined();
+  });
+
+  it("flowChainOf puts the source frame first", () => {
+    const s: WebFrameSource = { ...base, flow: { recipients: [B, C] } };
+    expect(flowChainOf(s, A)).toEqual([A, B, C]);
+  });
+
+  it("withRecipient appends, de-dupes by id, and never threads into itself", () => {
+    const s1 = withRecipient(base, A, B);
+    expect(s1.flow).toEqual({ recipients: [B] });
+    const s2 = withRecipient(s1, A, { kind: "oval", id: "uB" }); // dup id → no-op
+    expect(s2).toBe(s1);
+    const s3 = withRecipient(s1, A, A); // self → no-op
+    expect(s3).toBe(s1);
+    const s4 = withRecipient(s1, A, C);
+    expect(s4.flow).toEqual({ recipients: [B, C] });
+  });
+
+  it("withoutRecipient removes by id, dropping the flow field when empty", () => {
+    const s = { ...base, flow: { recipients: [B, C] } };
+    expect(withoutRecipient(s, "uB").flow).toEqual({ recipients: [C] });
+    expect(withoutRecipient(withoutRecipient(s, "uB"), "uC").flow).toBeUndefined();
+    expect(withoutRecipient(s, "uZ")).toBe(s); // absent → no-op
+  });
+
+  it("flowGroups splits recipients into named flows + a source-anchored primary", () => {
+    const s: WebFrameSource = {
+      ...base,
+      flow: { recipients: [B, { ...C, flow: "notes" }] },
+    };
+    expect(flowGroups(s, A)).toEqual([
+      { name: "", frames: [A, B] }, // primary = source + untagged B
+      { name: "notes", frames: [C] }, // the named flow
+    ]);
+    // The primary chain excludes named-flow recipients.
+    expect(flowChainOf(s, A)).toEqual([A, B]);
+  });
+
+  it("withRecipient can route a recipient to a named flow", () => {
+    const s = withRecipient(base, A, B, "notes");
+    expect(s.flow?.recipients).toEqual([{ ...B, flow: "notes" }]);
+    // B is in the named flow, so the primary chain is just the source.
+    expect(flowChainOf(s, A)).toEqual([A]);
+    expect(flowGroups(s, A)).toEqual([
+      { name: "", frames: [A] },
+      { name: "notes", frames: [B] },
+    ]);
+  });
+
+  it("a named-flow recipient round-trips through the envelope", () => {
+    const s: WebFrameSource = { ...base, flow: { recipients: [{ ...B, flow: "notes" }] } };
+    expect(sourceFromEnvelope(envelopeFor(s))).toEqual(s);
   });
 });

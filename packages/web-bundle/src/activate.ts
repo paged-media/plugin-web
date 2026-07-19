@@ -33,8 +33,15 @@ import {
 
 import manifest from "../manifest.json";
 
+import { bakeSelectedWebFrame } from "./bake-to-document";
 import { insertWebFrame } from "./insert";
 import { renderSelectedWebFrame } from "./render-command";
+import {
+  renderSelectedWebFlow,
+  threadSelectedIntoFlow,
+  threadSelectedIntoNamedFlow,
+  unthreadSelectedFromFlow,
+} from "./render-flow-command";
 import {
   makeWebFrameEditContext,
   webFrameObjectType,
@@ -70,6 +77,51 @@ export function activate(host: BundleHost): BundleHandle {
     title: "Render web frame to canvas",
     category: "Web",
     handler: () => renderSelectedWebFrame(host),
+  });
+  // ADR-020 rung 2 — "Render web flow": thread ONE web source across the
+  // SELECTED chain of frames (source first, recipients after, in selection
+  // order), submitting one C-1 SceneLayer per frame. Same engine gate + the
+  // same honest not-loaded fallback as "Render to frame".
+  host.contribute.command({
+    id: "media.paged.web.command.renderWebFlow",
+    title: "Render web flow across frames",
+    category: "Web",
+    handler: () => renderSelectedWebFlow(host),
+  });
+  // ADR-020 rung 2 — "Thread web flow into frames": append the selected
+  // target frames to the source web frame's PERSISTED region chain (rides
+  // the source envelope, so the flow survives reopen).
+  host.contribute.command({
+    id: "media.paged.web.command.threadWebFlow",
+    title: "Thread web flow into frames",
+    category: "Web",
+    handler: () => threadSelectedIntoFlow(host),
+  });
+  host.contribute.command({
+    id: "media.paged.web.command.unthreadWebFlow",
+    title: "Unthread web flow from frames",
+    category: "Web",
+    handler: () => unthreadSelectedFromFlow(host),
+  });
+  // CSS multi-flow: route the selected targets into the source's SECONDARY
+  // named flow (the second `flow-into`) — the common article + sidebar case,
+  // picker-free (the host exposes no quick-pick).
+  host.contribute.command({
+    id: "media.paged.web.command.threadWebFlowNamed",
+    title: "Thread web flow into the named flow",
+    category: "Web",
+    handler: () => threadSelectedIntoNamedFlow(host),
+  });
+  // Phase C — "Bake web frame to document": FLATTEN the selected web frame's
+  // render into NATIVE Paged content (swatches + rectangles + text frames), so
+  // it exports to IDML/PDF and a foreign open sees real content with no plugin
+  // engine. Engine-gated + honest: unsupported item kinds are reported, never
+  // faked; the not-loaded path bakes nothing and says so.
+  host.contribute.command({
+    id: "media.paged.web.command.bakeWebFrame",
+    title: "Bake web frame to document",
+    category: "Web",
+    handler: () => bakeSelectedWebFrame(host),
   });
   // W3.2 — register the webFrame OBJECT TYPE + its source EDIT CONTEXT
   // (closes W-03): a webFrame is a rectangle with attached source

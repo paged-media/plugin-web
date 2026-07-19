@@ -31,14 +31,29 @@ import {
   ENGINE_PIN,
   engineStamp,
   envelopeFor,
+  isFlowRendered,
   isRendered,
   pinFromStamp,
   pinMatches,
+  renderWebFlow,
   renderWebFrame,
   sourceFromEnvelope,
   type WebFrameSource,
+  type WebRenderFlowRequest,
   type WebRenderRequest,
 } from "../src";
+
+const FLOW_REQUEST: WebRenderFlowRequest = {
+  flowId: "frame-a",
+  html: "<article>{{title}} — long body that must thread</article>",
+  css: "article { font-size: 12pt; }",
+  vars: { title: "Hi" },
+  // Deliberately out of chain order to prove the lane sorts by `order`.
+  frames: [
+    { frameId: "frame-b", order: 1, frameWidthPt: 320, frameHeightPt: 180 },
+    { frameId: "frame-a", order: 0, frameWidthPt: 240, frameHeightPt: 180 },
+  ],
+};
 
 const REQUEST: WebRenderRequest = {
   html: "<h1>{{title}}</h1>",
@@ -87,6 +102,49 @@ describe("renderWebFrame — the not-loaded path (W-01)", () => {
       frameHeightPt: 1000,
     });
     expect(r.sceneLayer).toBeNull();
+  });
+});
+
+describe("renderWebFlow — the not-loaded path (ADR-020 rung 2)", () => {
+  it("returns one slot per frame, in chain order, all layers null", () => {
+    const r = renderWebFlow(FLOW_REQUEST);
+    expect(r.flowId).toBe("frame-a");
+    // Sorted by `order` regardless of request order.
+    expect(r.frames.map((f) => f.frameId)).toEqual(["frame-a", "frame-b"]);
+    expect(r.frames.every((f) => f.sceneLayer === null)).toBe(true);
+    expect(isFlowRendered(r)).toBe(false);
+    expect(r.overset).toBe(false);
+  });
+
+  it("emits exactly the honest not-loaded diagnostic", () => {
+    const r = renderWebFlow(FLOW_REQUEST);
+    expect(r.diagnostics).toHaveLength(1);
+    expect(r.diagnostics[0]).toMatchObject({
+      severity: "info",
+      source: "render",
+      message: ENGINE_NOT_LOADED_MESSAGE,
+    });
+  });
+
+  it("is pure + total — same request, same result, never throws", () => {
+    const a = renderWebFlow(FLOW_REQUEST);
+    const b = renderWebFlow(FLOW_REQUEST);
+    expect(a).toEqual(b);
+    // Zero frames + garbage geometry must not throw.
+    expect(() =>
+      renderWebFlow({ flowId: "x", html: "", css: "", frames: [] }),
+    ).not.toThrow();
+    expect(renderWebFlow({ flowId: "x", html: "", css: "", frames: [] }).frames).toEqual([]);
+  });
+
+  it("never fakes a render — every frame's layer stays strictly null", () => {
+    const r = renderWebFlow({
+      flowId: "s",
+      html: "<p>lots of threaded content</p>".repeat(50),
+      css: "p { font-size: 99px }",
+      frames: [{ frameId: "s", order: 0, frameWidthPt: 1000, frameHeightPt: 1000 }],
+    });
+    expect(r.frames.every((f) => f.sceneLayer === null)).toBe(true);
   });
 });
 

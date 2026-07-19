@@ -199,4 +199,99 @@ export function isRendered(result: WebRenderResult): boolean {
   return result.sceneLayer !== null;
 }
 
+// ===================================================================
+// Threaded FLOW contract (ADR-020 rung 2 — one flow across N frames)
+// ===================================================================
+// The renderer-neutral flow concept ADR-020 / the engine spec Q#6 name:
+// one HTML/CSS source threaded through an ORDERED chain of recipient
+// frames, re-line-broken at each frame's width, like an IDML story
+// through linked text frames. This is `renderWebFrame` generalised to a
+// chain; the engine entry is `render_web_flow` (web-render). Same honesty
+// rule — never fake a layer; the not-loaded path returns null per frame.
+
+/** A stable identifier for a threaded web flow — shared in SHAPE with an
+ *  IDML story's thread. A flow's SOURCE (the HTML/CSS) lives on its first
+ *  frame; content threads through the chain. The id is the source frame's
+ *  host element id, so a flow is addressable without a separate registry. */
+export type FlowId = string;
+
+/** One recipient frame in a flow's region chain: the host element id, the
+ *  chain position (`order`; 0 = the source/first frame), and the frame's
+ *  content-box size in POINTS (frame-content space — the bundle converts to
+ *  the engine's CSS px, exactly as the single-frame bake path does). */
+export interface WebFlowFrame {
+  frameId: string;
+  order: number;
+  frameWidthPt: number;
+  frameHeightPt: number;
+}
+
+/**
+ * The flow render request — one HTML/CSS source threaded through an ordered
+ * region chain. `frames` is the chain; it need not be pre-sorted (the lane
+ * sorts by `order`). Mirrors {@link WebRenderRequest} but for N frames.
+ */
+export interface WebRenderFlowRequest {
+  flowId: FlowId;
+  html: string;
+  css: string;
+  vars?: TemplateVars;
+  frames: WebFlowFrame[];
+  dpi?: number;
+}
+
+/** One recipient frame's slot in the flow result: the frame id + the C-1
+ *  layer to submit for it (`null` on the not-loaded path / a frame the flow
+ *  left empty). */
+export interface WebFlowFrameResult {
+  frameId: string;
+  sceneLayer: SceneLayer | null;
+}
+
+/**
+ * The flow render result — one layer per recipient frame in chain order,
+ * plus `overset` (content remained past the LAST frame — the CSS-Regions /
+ * IDML-story status the host surfaces) and `diagnostics` (>= the not-loaded
+ * note today).
+ */
+export interface WebRenderFlowResult {
+  flowId: FlowId;
+  frames: WebFlowFrameResult[];
+  overset: boolean;
+  diagnostics: WebDiagnostic[];
+}
+
+/**
+ * Render a threaded web flow to per-frame C-1 scene layers. **The drop-in
+ * seam for the Blitz flow lane** (engine `render_web_flow`, ADR-020 rung 2).
+ * Today the HONEST not-loaded path: no engine wasm is bundled, so every
+ * frame's `sceneLayer` is `null`, `overset` is `false`, and the not-loaded
+ * diagnostic is attached. Pure + total: same request → same result, never
+ * throws, frames returned in chain order. When the engine lands it fills each
+ * `sceneLayer` and the caller (the bundle flow command) is unchanged.
+ */
+export function renderWebFlow(request: WebRenderFlowRequest): WebRenderFlowResult {
+  return {
+    flowId: request.flowId,
+    frames: [...request.frames]
+      .sort((a, b) => a.order - b.order)
+      .map((f) => ({ frameId: f.frameId, sceneLayer: null })),
+    overset: false,
+    diagnostics: [
+      {
+        severity: "info",
+        message: ENGINE_NOT_LOADED_MESSAGE,
+        source: "render",
+      },
+    ],
+  };
+}
+
+/** Whether a flow result carries ANY real scene layer (the engine painted
+ *  at least one frame). False on the not-loaded path — the flow command
+ *  branches on this to keep the honest source-lane preview. */
+export function isFlowRendered(result: WebRenderFlowResult): boolean {
+  return result.frames.some((f) => f.sceneLayer !== null);
+}
+
 export { ENGINE_PIN, type EnginePin };

@@ -62,6 +62,15 @@ use crate::wire::{RectPt, ScenePaint, ScenePathSeg};
 /// CSS px → PostScript points (1 px = 1/96 in, 1 pt = 1/72 in → 72/96).
 const PX_TO_PT: f64 = 72.0 / 96.0;
 
+/// Serialize text shaping across parallel test threads. Cargo runs tests in
+/// parallel, but the parley/fontique shaping stack shares process state, so
+/// concurrent shaping yields non-deterministic geometry (line positions shift
+/// by sub-pixels) which the flow tests' tight per-frame assertions catch. Held
+/// at the shaping entry points (`render_html` + the flow render) in TEST
+/// builds only — production is entirely unaffected (`cfg(test)`).
+#[cfg(test)]
+pub(crate) static SHAPE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Curve-flattening tolerance, in CSS px (kurbo `path_elements`). 0.1 px is
 /// well below a printed dot at any sane DPI; the lowering re-expresses the
 /// flattened cubics as C-1 `cubicTo` segments, so this only bounds the
@@ -787,6 +796,8 @@ struct RecoveredRun {
 /// The output lowers via [`crate::lower::lower`]. A run with no recovered
 /// match keeps empty text (the lowering skips it) — never a faked string.
 pub fn render_html(html: &str, width_px: u32, height_px: u32) -> WebDisplayList {
+    #[cfg(test)]
+    let _shape_guard = SHAPE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let config = DocumentConfig {
         font_ctx: Some(build_font_ctx()),
         ..Default::default()
@@ -794,14 +805,21 @@ pub fn render_html(html: &str, width_px: u32, height_px: u32) -> WebDisplayList 
     let mut doc = HtmlDocument::from_html(html, config);
     doc.set_viewport(Viewport::new(width_px, height_px, 1.0, ColorScheme::Light));
     doc.resolve(0.0);
+    capture_resolved(&mut doc, width_px, height_px)
+}
 
+/// Paint an ALREADY-RESOLVED document into a [`WebDisplayList`] (with each
+/// glyph run's plain text recovered from the DOM), factored out of
+/// [`render_html`] so the W-frag flow spike ([`crate::flow`]) can capture a
+/// frame AFTER its own resolve/mutate cycle. `doc` must already have a
+/// viewport set and be `resolve`d. `HtmlDocument` derefs to `BaseDocument`, so
+/// callers pass either.
+pub fn capture_resolved(doc: &mut BaseDocument, width_px: u32, height_px: u32) -> WebDisplayList {
     let mut scene = CapturingScene::new();
-    paint_scene(&mut scene, &mut doc, 1.0, width_px, height_px, 0, 0);
+    paint_scene(&mut scene, doc, 1.0, width_px, height_px, 0, 0);
     let mut dl = scene.into_display_list();
-
     // Recover run text from the resolved document + attach it by baseline.
-    // `HtmlDocument` derefs to `BaseDocument`.
-    let recovered = recover_run_texts(&doc);
+    let recovered = recover_run_texts(doc);
     attach_run_texts(&mut dl, &recovered);
     dl
 }

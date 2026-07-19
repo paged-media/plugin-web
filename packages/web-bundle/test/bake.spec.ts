@@ -33,9 +33,11 @@ import {
   DEFAULT_SOURCE,
   ENGINE_NOT_LOADED_MESSAGE,
   envelopeFor,
+  withRecipient,
+  type WebFrameSource,
 } from "@paged-media/web-model";
 
-import { bakeWebFrame } from "../src/bake";
+import { bakeWebFlow, bakeWebFlows, bakeWebFrame } from "../src/bake";
 import type { WebEngine } from "../src/engine-loader";
 import { renderSelectedWebFrame } from "../src/render-command";
 
@@ -117,10 +119,197 @@ describe("bakeWebFrame — the not-loaded path (W-01)", () => {
   });
 });
 
+// ADR-020 rung 2 — bakeWebFlow: one source threaded across a chain of
+// frames, one C-1 SceneLayer submitted per frame. Same honesty rule.
+describe("bakeWebFlow — the threaded-flow bake (ADR-020 rung 2)", () => {
+  const CHAIN: ElementId[] = [
+    { kind: "rectangle", id: "uF0" } as ElementId,
+    { kind: "rectangle", id: "uF1" } as ElementId,
+    { kind: "rectangle", id: "uF2" } as ElementId,
+  ];
+
+  /** A multi-frame host: `getMetadata` returns `metadata` (the source
+   *  frame's), `elementGeometry` returns a box per requested id. */
+  function makeFlowHost(
+    chain: ElementId[],
+    opts: { metadata: unknown; supportsSceneLayer?: boolean },
+  ) {
+    const submit = vi.fn(async (_id: string, _layer: unknown) => {});
+    const sceneLayer = vi.fn(() => ({
+      submit,
+      clear: async () => {},
+      dispose: vi.fn(),
+    }));
+    const host = {
+      log: silent,
+      selection: { get: () => chain },
+      document: {
+        getMetadata: async () => opts.metadata,
+        elementGeometry: async (ids: ElementId[]) =>
+          ids.map((id, i) => ({
+            id,
+            pageId: "p1",
+            // vary height per frame so the chain is genuinely variable
+            bounds: [0, 0, 180 + i * 40, 240],
+          })),
+      },
+      diagnostics: { set: () => {} },
+      contribute: { sceneLayer },
+      supports: (f: string) =>
+        f === "rendering.sceneLayer@1" ? !!opts.supportsSceneLayer : false,
+    } as unknown as BundleHost;
+    return { host, sceneLayer, submit };
+  }
+
+  /** An engine that paints one solid fill per frame + reports overset. */
+  function flowEngine(): WebEngine {
+    return {
+      render: () => null,
+      renderFlow: (_html, frames) => ({
+        frames: frames.map(() => ({
+          items: [
+            {
+              kind: "fillPath",
+              path: [
+                { op: "moveTo", x: 0, y: 0 },
+                { op: "lineTo", x: 10, y: 0 },
+                { op: "close" },
+              ],
+              paint: { r: 0, g: 0, b: 0, a: 1 },
+            },
+          ],
+        })),
+        overset: true,
+      }),
+    };
+  }
+
+  it("not-loaded (no engine): rendered:false, submits nothing, honest note", async () => {
+    const { host, sceneLayer, submit } = makeFlowHost(CHAIN, {
+      metadata: envelopeFor(DEFAULT_SOURCE),
+      supportsSceneLayer: true,
+    });
+    const out = await bakeWebFlow(host, CHAIN);
+    expect(out.rendered).toBe(false);
+    expect(out.submittedCount).toBe(0);
+    expect(out.layers).toEqual([null, null, null]);
+    expect(out.diagnostics[0].message).toBe(ENGINE_NOT_LOADED_MESSAGE);
+    expect(sceneLayer).not.toHaveBeenCalled();
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("a short chain (<2 frames): a guiding diagnostic, never a throw", async () => {
+    const { host } = makeFlowHost([CHAIN[0]], {
+      metadata: envelopeFor(DEFAULT_SOURCE),
+    });
+    const out = await bakeWebFlow(host, [CHAIN[0]]);
+    expect(out.rendered).toBe(false);
+    expect(out.diagnostics[0].message).toContain("target frames");
+  });
+
+  it("a non-web-frame source: reports, never throws", async () => {
+    const { host } = makeFlowHost(CHAIN, { metadata: null });
+    const out = await bakeWebFlow(host, CHAIN);
+    expect(out.rendered).toBe(false);
+    expect(out.diagnostics[0].message).toContain("not a web frame");
+  });
+
+  it("loaded engine: submits ONE layer per frame, by frame id, overset propagated", async () => {
+    const { host, submit } = makeFlowHost(CHAIN, {
+      metadata: envelopeFor(DEFAULT_SOURCE),
+      supportsSceneLayer: true,
+    });
+    const out = await bakeWebFlow(host, CHAIN, flowEngine());
+    expect(out.rendered).toBe(true);
+    expect(out.submittedCount).toBe(3);
+    expect(out.overset).toBe(true);
+    // Overset is surfaced as an honest warning diagnostic.
+    expect(
+      out.diagnostics.some(
+        (d) => d.severity === "warning" && d.message.includes("overset"),
+      ),
+    ).toBe(true);
+    expect(out.layers.every((l) => l !== null)).toBe(true);
+    // Each frame's layer submitted under its STRING id, in chain order.
+    expect(submit).toHaveBeenCalledTimes(3);
+    expect(submit.mock.calls.map((c) => c[0])).toEqual(["uF0", "uF1", "uF2"]);
+  });
+
+  it("loaded engine but no scene channel: rendered:true, submits nothing (honest no-op)", async () => {
+    const { host, submit } = makeFlowHost(CHAIN, {
+      metadata: envelopeFor(DEFAULT_SOURCE),
+      supportsSceneLayer: false,
+    });
+    const out = await bakeWebFlow(host, CHAIN, flowEngine());
+    expect(out.rendered).toBe(true);
+    expect(out.submittedCount).toBe(0);
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("bakeWebFlows renders each named flow with its OWN flow-into selector", async () => {
+    const S = { kind: "rectangle", id: "S" } as ElementId;
+    // #story → the primary ("main") flow; #notes → the "side" flow. F1 is the
+    // primary's recipient; F2 is routed to "side".
+    const multi: WebFrameSource = {
+      html: "<section id=\"story\"><p>x</p></section><aside id=\"notes\"><p>y</p></aside>",
+      css: "#story{flow-into:main} #notes{flow-into:side}",
+      options: { media: "print", overflow: "clip" },
+    };
+    const src0 = withRecipient(multi, { kind: "rectangle", id: "S" }, { kind: "rectangle", id: "F1" });
+    const src = withRecipient(src0, { kind: "rectangle", id: "S" }, { kind: "rectangle", id: "F2" }, "side");
+
+    // An engine that records (flowRoot, frame count) per group + paints one item/frame.
+    const calls: { flowRoot?: string; n: number }[] = [];
+    const engine: WebEngine = {
+      render: () => null,
+      renderFlow: (_html, frames, flowRoot) => {
+        calls.push({ flowRoot, n: frames.length });
+        return {
+          frames: frames.map(() => ({
+            items: [
+              {
+                kind: "fillPath",
+                path: [{ op: "moveTo", x: 0, y: 0 }, { op: "close" }],
+                paint: { r: 0, g: 0, b: 0, a: 1 },
+              },
+            ],
+          })),
+          overset: false,
+        };
+      },
+    };
+
+    const submit = vi.fn(async (_id: string, _layer: unknown) => {});
+    const host = {
+      log: silent,
+      selection: { get: () => [S] },
+      document: {
+        getMetadata: async () => envelopeFor(src),
+        elementGeometry: async (ids: ElementId[]) =>
+          ids.map((id) => ({ id, pageId: "p1", bounds: [0, 0, 180, 240] })),
+      },
+      contribute: { sceneLayer: () => ({ submit, clear: async () => {}, dispose: vi.fn() }) },
+      supports: (f: string) => f === "rendering.sceneLayer@1",
+    } as unknown as BundleHost;
+
+    const out = await bakeWebFlows(host, S, engine);
+    expect(out.rendered).toBe(true);
+    // Primary group [S, F1] with #story; the "side" group [F2] with #notes.
+    expect(calls).toEqual([
+      { flowRoot: "#story", n: 2 },
+      { flowRoot: "#notes", n: 1 },
+    ]);
+    // All three frames received a layer, by id.
+    expect(out.submittedCount).toBe(3);
+    expect(submit.mock.calls.map((c) => c[0])).toEqual(["S", "F1", "F2"]);
+  });
+});
+
 describe("bakeWebFrame — the engine-LOADED submit path", () => {
   /** An engine that paints one solid fill — a real (non-null) C-1 layer. */
   function solidEngine(): WebEngine {
     return {
+      renderFlow: () => null,
       render() {
         return {
           items: [

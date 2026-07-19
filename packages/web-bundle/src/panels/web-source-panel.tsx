@@ -67,6 +67,7 @@ import {
   diagnoseFonts,
   diagnoseHtml,
   envelopeFor,
+  flowThreadOptions,
   fontParity,
   MAX_VIEWPORT_WIDTH,
   normalizeViewportWidth,
@@ -80,10 +81,15 @@ import {
   WEB_TEMPLATES,
   type ResolvedFontFace,
   type TagOutlineEntry,
+  type FlowThreadOption,
   type WebDiagnostic,
   type WebFrameSource,
 } from "../../../web-model/src";
 
+import {
+  threadSelectedIntoFlow,
+  unthreadSelectedFromFlow,
+} from "../render-flow-command";
 import { readSourcePart, writeSourcePart } from "../source-part";
 
 import { createDebouncer } from "./debounce";
@@ -303,6 +309,79 @@ function useDebouncedValue<T>(value: T, ms: number): T {
   return debounced;
 }
 
+// -------------------------------------------------------------- flow picker
+
+/**
+ * Phase D — the arbitrary named-flow picker. Shown when a web SOURCE frame
+ * plus one or more target frames are multi-selected: one button per flow the
+ * source declares (`flowThreadOptions` — the primary plus EVERY secondary), so
+ * an arbitrary named flow (the 3rd, 4th, …) is reachable — the commands only
+ * reach the primary (`threadWebFlow`) and the 2nd (`threadWebFlowNamed`).
+ * Clicking threads the OTHER selected frames into the chosen flow; "Unthread"
+ * removes them from whichever flow they are in. The picker is thin over the
+ * pure `flowThreadOptions` + the existing thread/unthread commands.
+ */
+function FlowPicker({
+  options,
+  targetCount,
+  onThread,
+  onUnthread,
+}: {
+  options: FlowThreadOption[];
+  targetCount: number;
+  onThread: (flowName: string | undefined) => void;
+  onUnthread: () => void;
+}): ReactElement {
+  const chip = {
+    font: "500 12px var(--font-sans, sans-serif)",
+    color: "var(--primary-fg, #fff)",
+    background: "var(--pg-primary)",
+    border: "none",
+    borderRadius: "var(--radius-md, 6px)",
+    padding: "6px 12px",
+    cursor: "pointer",
+  } as const;
+  return (
+    <div
+      data-web-flow-picker
+      style={{ padding: "var(--space-3, 12px)", font: "12px var(--font-sans, sans-serif)" }}
+    >
+      <p style={{ margin: "0 0 var(--space-2, 8px)", color: "var(--pg-muted-fg)" }}>
+        Thread {targetCount} selected frame{targetCount === 1 ? "" : "s"} into a
+        flow:
+      </p>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-1, 4px)" }}>
+        {options.map((o) => (
+          <button
+            key={o.name}
+            type="button"
+            data-web-flow-thread={o.name}
+            onClick={() => onThread(o.flowName)}
+            style={chip}
+          >
+            {o.name}
+            {o.primary ? " (primary)" : ""}
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        data-web-flow-unthread
+        onClick={onUnthread}
+        style={{
+          ...chip,
+          marginTop: "var(--space-2, 8px)",
+          color: "var(--pg-fg)",
+          background: "transparent",
+          border: "1px solid var(--pg-border, #ccc)",
+        }}
+      >
+        Unthread selected
+      </button>
+    </div>
+  );
+}
+
 // ----------------------------------------------------------------- panel
 
 export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
@@ -322,6 +401,10 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
     // web-model for parity checks + the substitution badge. Loaded
     // once on mount and refreshed on document change.
     const [fontFamilies, setFontFamilies] = useState<string[]>([]);
+    // Phase D — the source of selection[0] when a source frame + targets are
+    // MULTI-selected, so the flow picker can offer its named flows (the
+    // single-select `source` above is null then).
+    const [flowSource, setFlowSource] = useState<WebFrameSource | null>(null);
     const sourceRef = useRef<WebFrameSource | null>(source);
     sourceRef.current = source;
 
@@ -339,6 +422,26 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
       const sub = host.selection.onDidChange((ids) => setSelection(ids));
       return () => sub.dispose();
     }, []);
+    // Phase D — MULTI-select: load selection[0]'s source so the flow picker
+    // can offer its named flows (single-select `source` is null then). Skips
+    // for a single/empty selection.
+    useEffect(() => {
+      if (selection.length < 2 || !asFrameTarget(selection[0])) {
+        setFlowSource(null);
+        return;
+      }
+      let stale = false;
+      const first = selection[0];
+      void (async () => {
+        const src =
+          (await readSourcePart(host, first)) ??
+          sourceFromEnvelope(await host.document.getMetadata(first));
+        if (!stale) setFlowSource(src);
+      })();
+      return () => {
+        stale = true;
+      };
+    }, [selection]);
     // Document font registry → the parity check + badge. The `fonts`
     // collection crosses family NAMES (FontSummary; no bytes). Refresh
     // on any document change: registering/removing a document font
@@ -433,6 +536,22 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
 
     // ---------------------------------------------------- empty states
     if (!target || !key) {
+      // Phase D — a web SOURCE frame + target frames multi-selected: offer the
+      // flow picker (every declared named flow reachable) instead of the empty
+      // note. `flowSource` is selection[0]'s source (loaded above).
+      const flowOptions = flowSource ? flowThreadOptions(flowSource.css) : [];
+      if (selection.length >= 2 && flowOptions.length > 0) {
+        return (
+          <FlowPicker
+            options={flowOptions}
+            targetCount={selection.length - 1}
+            onThread={(flowName) =>
+              void threadSelectedIntoFlow(host, flowName, selection)
+            }
+            onUnthread={() => void unthreadSelectedFromFlow(host, selection)}
+          />
+        );
+      }
       return (
         <div data-web-panel="empty" style={{ padding: "var(--space-3, 12px)", color: "var(--pg-muted-fg)", font: "12px var(--font-sans, sans-serif)" }}>
           Select a single frame to edit it as a web frame, or insert one via

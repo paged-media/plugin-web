@@ -77,6 +77,11 @@ pub mod capture;
 #[cfg(feature = "blitz")]
 pub mod fonts;
 
+// W-frag spike (feasibility PoC, not shipped) — fragment one flow across
+// frames. Behind `blitz`; see thoughts .../plugin-web/w-frag-spike-brief.md.
+#[cfg(feature = "blitz")]
+pub mod flow;
+
 pub use display_list::{
     LocalKey, UnsupportedKind, WebBlendMode, WebDisplayList, WebDrawCmd, WebGlyphRun, WebGradient,
     WebGradientStop, WebImage,
@@ -101,4 +106,17 @@ pub use wire::{
 pub fn render_web_frame(html: &str, width_px: u32, height_px: u32) -> String {
     let lowered = capture::render_and_lower(html, width_px, height_px);
     serde_json::to_string(&lowered.layer).unwrap_or_else(|_| "{\"items\":[]}".to_string())
+}
+
+/// The wasm entry for a THREADED web flow (ADR-020 scoped extension, rung 2).
+/// `frames_json` is `[{"widthPx":N,"heightPx":M}, …]` in chain order; returns
+/// `flow::FlowWire` as JSON — one lowered C-1 `SceneLayer` per frame plus the
+/// flow `overset`. The bundle submits each layer to its frame via
+/// `host.contribute.sceneLayer().submit(frameId, layer)`.
+#[cfg(all(feature = "blitz", target_arch = "wasm32"))]
+#[wasm_bindgen::prelude::wasm_bindgen]
+pub fn render_web_flow(html: &str, frames_json: &str, flow_root: &str) -> String {
+    // `flow_root` is a CSS `flow-into` selector (Regions syntax) or "" for the
+    // whole body.
+    flow::render_web_flow_json(html, frames_json, flow_root)
 }

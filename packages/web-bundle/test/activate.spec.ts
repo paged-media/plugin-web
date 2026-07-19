@@ -129,10 +129,16 @@ describe("webBundle.activate", () => {
     });
     expect(fake.panels.ids()).toEqual(["media.paged.web.panel.source"]);
     // W-01 — the bake-path "Render web frame to canvas" command joins the
-    // insert command (the honest not-loaded affordance).
+    // insert command (the honest not-loaded affordance); ADR-020 rung 2 adds
+    // the flow commands (thread a source across frames + render the flow).
     expect(fake.commands.ids()).toEqual([
       "media.paged.web.command.insertWebFrame",
       "media.paged.web.command.renderWebFrame",
+      "media.paged.web.command.renderWebFlow",
+      "media.paged.web.command.threadWebFlow",
+      "media.paged.web.command.unthreadWebFlow",
+      "media.paged.web.command.threadWebFlowNamed",
+      "media.paged.web.command.bakeWebFrame",
     ]);
   });
 

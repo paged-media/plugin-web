@@ -62,6 +62,19 @@ export async function writeSourcePart(
   await host.parts.write(path, bytes);
 }
 
+/** Persist a source to BOTH homes — the metadata LABEL (`setMetadata`, the
+ *  webFrame marker + backward-compat read) and the portable container PART —
+ *  matching the panel's `persistDraft`. The single write path for a source
+ *  mutation OUTSIDE the panel (e.g. the flow-chain thread command). */
+export async function persistSource(
+  host: Pick<BundleHost, "document" | "parts" | "supports">,
+  id: ElementId,
+  source: WebFrameSource,
+): Promise<void> {
+  await host.document.setMetadata(id, envelopeFor(source));
+  await writeSourcePart(host, id, source);
+}
+
 /** Read the web source from the container part, or `null` when absent / no
  *  container writer — the caller then falls back to the metadata label. */
 export async function readSourcePart(

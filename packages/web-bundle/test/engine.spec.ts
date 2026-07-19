@@ -43,9 +43,10 @@ import {
   type SceneLayer,
 } from "@paged-media/web-model";
 
-import { bakeWebFrame } from "../src/bake";
+import { bakeWebFlow, bakeWebFrame } from "../src/bake";
 import {
   loadWebEngine,
+  parseFlowResult,
   parseSceneLayer,
   _resetWebEngineCache,
   type WebEngine,
@@ -128,6 +129,7 @@ describe("bakeWebFrame with the engine — parse + submit (injected fixture)", (
   // A WebEngine backed by the captured real-engine fixture.
   const fixtureEngine: WebEngine = {
     render: () => engineFixture as SceneLayer,
+    renderFlow: () => null,
   };
 
   it("submits the engine's real C-1 layer to host.contribute.sceneLayer", async () => {
@@ -155,7 +157,7 @@ describe("bakeWebFrame with the engine — parse + submit (injected fixture)", (
   });
 
   it("falls back to the honest not-loaded result when the engine render throws", async () => {
-    const throwing: WebEngine = { render: () => null };
+    const throwing: WebEngine = { render: () => null, renderFlow: () => null };
     const { host, submit } = makeHost({ supportsSceneLayer: true });
     const out = await bakeWebFrame(host, WEB_ID, throwing);
     expect(out.rendered).toBe(false);
@@ -190,6 +192,7 @@ describe.skipIf(!artifactPresent)(
       glue.initSync({ module: readFileSync(wasmPath) });
       const engine: WebEngine = {
         render: (html, w, h) => parseSceneLayer(glue.render_web_frame(html, w, h)),
+        renderFlow: () => null,
       };
 
       const out = await bakeWebFrame(host, WEB_ID, engine);
@@ -204,6 +207,310 @@ describe.skipIf(!artifactPresent)(
       expect(texts.length).toBeGreaterThan(0);
       expect(texts.join(" ").trim().length).toBeGreaterThan(0);
       expect(submit).toHaveBeenCalledTimes(1);
+    });
+
+    it("threads a real MIXED-tag flow across 3 frames — a real C-1 layer per frame (render_web_flow)", async () => {
+      // The ADR-020 rung-2 END-TO-END proof at the WASM boundary: load the
+      // real engine, thread a multi-block (h2/p/div) source across three
+      // frames, and assert each frame carries real, DISTINCT recovered text —
+      // i.e. the flow actually fragmented mixed content across frames in wasm.
+      const glue = (await import(new URL("../bin/blitz_web.js", import.meta.url).href)) as {
+        initSync: (m: { module: Uint8Array }) => unknown;
+        render_web_flow: (html: string, framesJson: string, flowRoot: string) => string;
+      };
+      glue.initSync({ module: readFileSync(wasmPath) });
+      const engine: WebEngine = {
+        render: () => null,
+        renderFlow: (html, frames, flowRoot) =>
+          parseFlowResult(glue.render_web_flow(html, JSON.stringify(frames), flowRoot ?? "")),
+      };
+
+      // A 12-block MIXED-tag source (h2/p/div — the flow now recognises any
+      // block child of <body>, not just <p>), each a unique MARKnn token so we
+      // can see document order per frame.
+      const flowSource = {
+        html: Array.from({ length: 12 }, (_v, i) => {
+          const tag = ["h2", "p", "div"][i % 3];
+          return `<${tag}>MARK${String(i).padStart(2, "0")}</${tag}>`;
+        }).join(""),
+        css: "body{margin:0}h2,p,div{margin:0;font-size:16px;line-height:24px}",
+        options: { media: "print", overflow: "clip" } as const,
+      };
+      const chain = [
+        { kind: "rectangle", id: "f0" },
+        { kind: "rectangle", id: "f1" },
+        { kind: "rectangle", id: "f2" },
+      ] as unknown as ElementId[];
+      const submit = vi.fn(async (_id: string, _layer: unknown) => {});
+      const host = {
+        log: silent,
+        document: {
+          // No parts → readSourcePart falls back to this label source.
+          getMetadata: async () => envelopeFor(flowSource),
+          elementGeometry: async (ids: ElementId[]) =>
+            ids.map((id) => ({ id, pageId: "p1", bounds: [0, 0, 120, 240] })),
+        },
+        contribute: {
+          sceneLayer: () => ({ submit, clear: async () => {}, dispose() {} }),
+        },
+        supports: (f: string) => f === "rendering.sceneLayer@1",
+      } as unknown as BundleHost;
+
+      const out = await bakeWebFlow(host, chain, engine);
+      expect(out.rendered).toBe(true);
+      // Every frame received a (real) layer; three 120px frames over ~288px
+      // of content thread the whole flow.
+      expect(out.submittedCount).toBe(3);
+      expect(submit).toHaveBeenCalledTimes(3);
+
+      // Per-frame recovered text; at least two frames must carry text (the
+      // content genuinely spread across the chain), in forward document order.
+      const markersPerFrame = out.layers.map((l) =>
+        (l?.items ?? [])
+          .filter((i) => (i as { kind: string }).kind === "text")
+          .map((i) => (i as { text: string }).text)
+          .join(" "),
+      );
+      const framesWithText = markersPerFrame.filter((t) => t.includes("MARK")).length;
+      expect(framesWithText).toBeGreaterThanOrEqual(2);
+      // Frame 0 holds the top of the flow.
+      expect(markersPerFrame[0]).toContain("MARK00");
+    });
+
+    it("splits ONE tall paragraph MID-BLOCK across two frames (rung 3, real wasm)", async () => {
+      // The rung-3 end-to-end proof in real wasm: a single long paragraph
+      // taller than frame A is split at a LINE boundary — head in A, tail
+      // re-wrapped in B, no whole-paragraph duplication.
+      const glue = (await import(new URL("../bin/blitz_web.js", import.meta.url).href)) as {
+        initSync: (m: { module: Uint8Array }) => unknown;
+        render_web_flow: (html: string, framesJson: string, flowRoot: string) => string;
+      };
+      glue.initSync({ module: readFileSync(wasmPath) });
+      const engine: WebEngine = {
+        render: () => null,
+        renderFlow: (html, frames, flowRoot) =>
+          parseFlowResult(glue.render_web_flow(html, JSON.stringify(frames), flowRoot ?? "")),
+      };
+
+      const words = Array.from({ length: 40 }, (_v, i) => `w${i}`).join(" ");
+      const source = {
+        html: `<p>${words}</p>`,
+        css: "body{margin:0}p{margin:0;font-size:16px;line-height:24px}",
+        options: { media: "print", overflow: "clip" } as const,
+      };
+      const chain = [
+        { kind: "rectangle", id: "a" },
+        { kind: "rectangle", id: "b" },
+      ] as unknown as ElementId[];
+      const submit = vi.fn(async (_id: string, _layer: unknown) => {});
+      const host = {
+        log: silent,
+        document: {
+          getMetadata: async () => envelopeFor(source),
+          elementGeometry: async (ids: ElementId[]) =>
+            ids.map((id, i) => ({
+              id,
+              pageId: "p1",
+              // Frame A narrow + short (~2 lines); frame B tall.
+              bounds: i === 0 ? [0, 0, 48, 200] : [0, 0, 4096, 200],
+            })),
+        },
+        contribute: {
+          sceneLayer: () => ({ submit, clear: async () => {}, dispose() {} }),
+        },
+        supports: (f: string) => f === "rendering.sceneLayer@1",
+      } as unknown as BundleHost;
+
+      const out = await bakeWebFlow(host, chain, engine);
+      expect(out.rendered).toBe(true);
+      const textOf = (i: number) =>
+        (out.layers[i]?.items ?? [])
+          .filter((it) => (it as { kind: string }).kind === "text")
+          .map((it) => (it as { text: string }).text)
+          .join(" ");
+      const a = textOf(0);
+      const b = textOf(1);
+      expect(a).toContain("w0");
+      expect(b).toContain("w39");
+      // The cut is MID-paragraph: A lacks the tail, B lacks the head.
+      expect(a).not.toContain("w39");
+      expect(b).not.toContain("w0");
+    });
+
+    it("fragments a tall LIST between its items across frames (Phase B, real wasm)", async () => {
+      // Phase B end-to-end in real wasm: a <ul> taller than frame A is a
+      // CONTAINER (no inline text of its own), so it fragments BETWEEN its
+      // <li> children — fitting items in A, the rest in B, no whole-list move.
+      const glue = (await import(new URL("../bin/blitz_web.js", import.meta.url).href)) as {
+        initSync: (m: { module: Uint8Array }) => unknown;
+        render_web_flow: (html: string, framesJson: string, flowRoot: string) => string;
+      };
+      glue.initSync({ module: readFileSync(wasmPath) });
+      const engine: WebEngine = {
+        render: () => null,
+        renderFlow: (html, frames, flowRoot) =>
+          parseFlowResult(glue.render_web_flow(html, JSON.stringify(frames), flowRoot ?? "")),
+      };
+
+      const items = Array.from(
+        { length: 10 },
+        (_v, i) => `<li>MARK${String(i).padStart(2, "0")}</li>`,
+      ).join("");
+      const source = {
+        html: `<ul>${items}</ul>`,
+        css: "body{margin:0}ul{margin:0;padding:0;list-style:none}li{margin:0;font-size:16px;line-height:24px}",
+        options: { media: "print", overflow: "clip" } as const,
+      };
+      const chain = [
+        { kind: "rectangle", id: "a" },
+        { kind: "rectangle", id: "b" },
+      ] as unknown as ElementId[];
+      const submit = vi.fn(async (_id: string, _layer: unknown) => {});
+      const host = {
+        log: silent,
+        document: {
+          getMetadata: async () => envelopeFor(source),
+          elementGeometry: async (ids: ElementId[]) =>
+            ids.map((id, i) => ({
+              id,
+              pageId: "p1",
+              // Frame A ~72px holds ~3 items; frame B (tall) holds the rest.
+              bounds: i === 0 ? [0, 0, 72, 200] : [0, 0, 4096, 200],
+            })),
+        },
+        contribute: {
+          sceneLayer: () => ({ submit, clear: async () => {}, dispose() {} }),
+        },
+        supports: (f: string) => f === "rendering.sceneLayer@1",
+      } as unknown as BundleHost;
+
+      const out = await bakeWebFlow(host, chain, engine);
+      expect(out.rendered).toBe(true);
+      const textOf = (i: number) =>
+        (out.layers[i]?.items ?? [])
+          .filter((it) => (it as { kind: string }).kind === "text")
+          .map((it) => (it as { text: string }).text)
+          .join(" ");
+      const a = textOf(0);
+      const b = textOf(1);
+      expect(a).toContain("MARK00"); // first item in A
+      expect(a).not.toContain("MARK09"); // A lacks the last → a genuine split, not a whole-list move
+      expect(b).toContain("MARK09"); // remainder flows to B
+    });
+
+    it("fragments a tall TABLE between rows, repeating the header (Phase B, real wasm)", async () => {
+      // Phase B end-to-end in real wasm: a <table> taller than frame A splits
+      // between its <tbody> rows; the <thead> is never consumed, so it repeats
+      // at the top of frame B. Row bands come from the cells (Taffy lays out no
+      // <tr> box) — this proves that path through the real artifact.
+      const glue = (await import(new URL("../bin/blitz_web.js", import.meta.url).href)) as {
+        initSync: (m: { module: Uint8Array }) => unknown;
+        render_web_flow: (html: string, framesJson: string, flowRoot: string) => string;
+      };
+      glue.initSync({ module: readFileSync(wasmPath) });
+      const engine: WebEngine = {
+        render: () => null,
+        renderFlow: (html, frames, flowRoot) =>
+          parseFlowResult(glue.render_web_flow(html, JSON.stringify(frames), flowRoot ?? "")),
+      };
+
+      const rows = Array.from(
+        { length: 10 },
+        (_v, i) => `<tr><td>MARK${String(i).padStart(2, "0")}</td></tr>`,
+      ).join("");
+      const source = {
+        html: `<table><thead><tr><th>HEADER</th></tr></thead><tbody>${rows}</tbody></table>`,
+        css: "body{margin:0}table{margin:0}th,td{padding:0;font-size:16px;line-height:24px}",
+        options: { media: "print", overflow: "clip" } as const,
+      };
+      const chain = [
+        { kind: "rectangle", id: "a" },
+        { kind: "rectangle", id: "b" },
+      ] as unknown as ElementId[];
+      const submit = vi.fn(async (_id: string, _layer: unknown) => {});
+      const host = {
+        log: silent,
+        document: {
+          getMetadata: async () => envelopeFor(source),
+          elementGeometry: async (ids: ElementId[]) =>
+            ids.map((id, i) => ({
+              id,
+              pageId: "p1",
+              bounds: i === 0 ? [0, 0, 96, 200] : [0, 0, 4096, 200],
+            })),
+        },
+        contribute: {
+          sceneLayer: () => ({ submit, clear: async () => {}, dispose() {} }),
+        },
+        supports: (f: string) => f === "rendering.sceneLayer@1",
+      } as unknown as BundleHost;
+
+      const out = await bakeWebFlow(host, chain, engine);
+      expect(out.rendered).toBe(true);
+      const textOf = (i: number) =>
+        (out.layers[i]?.items ?? [])
+          .filter((it) => (it as { kind: string }).kind === "text")
+          .map((it) => (it as { text: string }).text)
+          .join(" ");
+      const a = textOf(0);
+      const b = textOf(1);
+      expect(a).toContain("MARK00"); // first body row in A
+      expect(a).not.toContain("MARK09"); // A lacks the last row → a genuine split
+      expect(b).toContain("MARK09"); // remainder flows to B
+      expect(a).toContain("HEADER"); // header on A
+      expect(b).toContain("HEADER"); // header REPEATS on B (thead never consumed)
+    });
+
+    it("CSS Regions flow-into: only the named subtree flows (real wasm)", async () => {
+      // End-to-end CSS Regions syntax: the source CSS names `#story` as the
+      // flow root, so the sibling <nav> does NOT flow — bakeWebFlow parses
+      // flow-into and passes the selector to the real engine.
+      const glue = (await import(new URL("../bin/blitz_web.js", import.meta.url).href)) as {
+        initSync: (m: { module: Uint8Array }) => unknown;
+        render_web_flow: (html: string, framesJson: string, flowRoot: string) => string;
+      };
+      glue.initSync({ module: readFileSync(wasmPath) });
+      const engine: WebEngine = {
+        render: () => null,
+        renderFlow: (html, frames, flowRoot) =>
+          parseFlowResult(glue.render_web_flow(html, JSON.stringify(frames), flowRoot ?? "")),
+      };
+
+      const story = Array.from({ length: 10 }, (_v, i) => `<p>MARK${i}</p>`).join("");
+      const source = {
+        html: `<nav><p>NAVLINK</p></nav><section id="story">${story}</section>`,
+        css: "body{margin:0}*{margin:0}p{font-size:16px;line-height:24px} #story{flow-into:main}",
+        options: { media: "print", overflow: "clip" } as const,
+      };
+      const chain = [
+        { kind: "rectangle", id: "a" },
+        { kind: "rectangle", id: "b" },
+      ] as unknown as ElementId[];
+      const submit = vi.fn(async (_id: string, _layer: unknown) => {});
+      const host = {
+        log: silent,
+        document: {
+          getMetadata: async () => envelopeFor(source),
+          elementGeometry: async (ids: ElementId[]) =>
+            ids.map((id) => ({ id, pageId: "p1", bounds: [0, 0, 96, 200] })),
+        },
+        contribute: { sceneLayer: () => ({ submit, clear: async () => {}, dispose() {} }) },
+        supports: (f: string) => f === "rendering.sceneLayer@1",
+      } as unknown as BundleHost;
+
+      const out = await bakeWebFlow(host, chain, engine);
+      expect(out.rendered).toBe(true);
+      const all = out.layers
+        .flatMap((l) => l?.items ?? [])
+        .filter((it) => (it as { kind: string }).kind === "text")
+        .map((it) => (it as { text: string }).text)
+        .join(" ");
+      expect(all).toContain("MARK0");
+      expect(all).not.toContain("NAVLINK");
+      // The flow-into note is surfaced honestly.
+      expect(
+        out.diagnostics.some((d) => d.message.includes("flows into") || d.message.includes("main")),
+      ).toBe(true);
     });
   },
 );
