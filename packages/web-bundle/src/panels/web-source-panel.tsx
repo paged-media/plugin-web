@@ -48,6 +48,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
   type CSSProperties,
@@ -70,6 +71,7 @@ import {
   flowThreadOptions,
   fontParity,
   MAX_VIEWPORT_WIDTH,
+  namedFlowDiagnostics,
   normalizeViewportWidth,
   renderWebFrameSource,
   sourceFromEnvelope,
@@ -90,6 +92,11 @@ import {
   threadSelectedIntoFlow,
   unthreadSelectedFromFlow,
 } from "../render-flow-command";
+import {
+  formatDeferred,
+  lastRenderReport,
+  subscribeRenderReport,
+} from "../render-report";
 import { readSourcePart, writeSourcePart } from "../source-part";
 
 import { createDebouncer } from "./debounce";
@@ -391,6 +398,10 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
     const [selection, setSelection] = useState<ElementId[]>(() =>
       host.selection.get(),
     );
+    // ADR-020 readout — re-render when a render/flow/bake command lands a
+    // new outcome (the report itself is read at render time).
+    const [, bumpReport] = useReducer((n: number) => n + 1, 0);
+    useEffect(() => subscribeRenderReport(bumpReport), []);
     // The PERSISTED source for the selected target (document metadata
     // truth). The editing draft lives in <SourceEditor>, which remounts
     // per target + per undo/redo revert (the `generation` key).
@@ -710,6 +721,9 @@ function SourceEditor({
       ...rendered.diagnostics,
       ...diagnoseHtml(rendered.html),
       ...diagnoseFonts(rendered.css, fontFamilies, shownFamilies),
+      // Named-flow lint (flow-from without flow-into etc.) — built in
+      // web-model, wired here so it rides the same debounced cadence.
+      ...namedFlowDiagnostics(rendered.css),
     ],
     [rendered, fontFamilies, shownFamilies],
   );
@@ -1358,6 +1372,61 @@ function SourceEditor({
           </ul>
         </>
       )}
+      {(() => {
+        // ADR-020 readout — the last render/flow/bake outcome, previously
+        // visible only in the log + Problems lane. Honest numbers straight
+        // from the command outcome: frames submitted, the flow's overset
+        // flag, the bake's deferred-kind counts.
+        const report = lastRenderReport();
+        if (!report) return null;
+        const OP_LABEL: Record<string, string> = {
+          renderFrame: "Render frame",
+          renderFlow: "Render flow",
+          bake: "Bake to document",
+        };
+        const deferredLine = formatDeferred(report.deferred);
+        return (
+          <>
+            <div style={kicker}>Flow &amp; render</div>
+            <div
+              data-web-render-report={report.op}
+              style={{
+                font: "11px/1.6 var(--font-mono, monospace)",
+                color: "var(--pg-fg)",
+              }}
+            >
+              <div>
+                {OP_LABEL[report.op] ?? report.op} #{report.seq} —{" "}
+                {report.rendered
+                  ? `${report.submitted} ${
+                      report.op === "bake" ? "native item(s)" : "frame(s)"
+                    }`
+                  : "engine not loaded"}
+                {report.overset === true && (
+                  <span
+                    data-web-overset
+                    style={{ color: "var(--status-warning, #f5a524)" }}
+                  >
+                    {" "}
+                    · overset
+                  </span>
+                )}
+                {report.overset === false && " · fits"}
+              </div>
+              {deferredLine && (
+                <div data-web-deferred style={{ color: "var(--pg-muted-fg)" }}>
+                  deferred: {deferredLine}
+                </div>
+              )}
+              {report.messages.map((m, i) => (
+                <div key={i} style={{ color: "var(--pg-muted-fg)" }}>
+                  {m}
+                </div>
+              ))}
+            </div>
+          </>
+        );
+      })()}
     </div>
   );
 }

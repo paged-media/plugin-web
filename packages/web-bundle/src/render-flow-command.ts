@@ -45,6 +45,7 @@ import {
 
 import { bakeWebFlow, bakeWebFlows, type FlowBakeOutcome } from "./bake";
 import { loadWebEngine } from "./engine-loader";
+import { publishRenderReport } from "./render-report";
 import { persistSource, readSourcePart } from "./source-part";
 
 /** Diagnostics key suffix for the flow render lane — distinct from the
@@ -129,6 +130,15 @@ export async function renderSelectedWebFlow(host: BundleHost): Promise<void> {
       outcome.diagnostics,
     );
   }
+
+  publishRenderReport({
+    op: "renderFlow",
+    rendered: outcome.rendered,
+    submitted: outcome.submittedCount,
+    overset: outcome.overset,
+    deferred: {},
+    messages: outcome.diagnostics.map((d) => d.message),
+  });
 
   if (outcome.submittedCount > 0) {
     host.log.info(

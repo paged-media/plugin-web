@@ -48,6 +48,7 @@ import {
 import { bakeWebFlow } from "./bake";
 import { sceneLayerToBakePlan, type BakePlan, type BakeText } from "./bake-plan";
 import { loadWebEngine, type WebEngine } from "./engine-loader";
+import { publishRenderReport } from "./render-report";
 import { resolveFlowChain } from "./render-flow-command";
 import { readSourcePart } from "./source-part";
 
@@ -357,6 +358,14 @@ export async function bakeSelectedWebFrame(host: BundleHost): Promise<void> {
     chain && chain.length >= 2
       ? await bakeWebFlowToDocument(host, chain)
       : await bakeWebFrameToDocument(host, selection[0]);
+  publishRenderReport({
+    op: "bake",
+    rendered: outcome.baked,
+    submitted: outcome.createdCount,
+    overset: null,
+    deferred: outcome.deferred,
+    messages: outcome.diagnostics.map((d) => d.message),
+  });
   if (outcome.baked) {
     host.log.info(
       `bakeWebFrame: baked ${outcome.createdCount} native item(s)` +

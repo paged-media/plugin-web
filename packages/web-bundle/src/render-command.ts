@@ -29,6 +29,7 @@ import type { BundleHost } from "@paged-media/plugin-api";
 import { sourceKeyFor, asFrameTarget } from "../../web-model/src";
 
 import { bakeWebFrame } from "./bake";
+import { publishRenderReport } from "./render-report";
 import { loadWebEngine } from "./engine-loader";
 
 /** Diagnostics key for the render lane — distinct from the source
@@ -58,6 +59,15 @@ export async function renderSelectedWebFrame(host: BundleHost): Promise<void> {
       outcome.diagnostics,
     );
   }
+
+  publishRenderReport({
+    op: "renderFrame",
+    rendered: outcome.rendered,
+    submitted: outcome.submitted ? 1 : 0,
+    overset: null,
+    deferred: {},
+    messages: outcome.diagnostics.map((d) => d.message),
+  });
 
   if (outcome.submitted) {
     host.log.info("renderWebFrame: scene layer submitted to canvas");
