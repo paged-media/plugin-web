@@ -10,7 +10,6 @@
       "write": "scoped"
     },
     "rendering": [
-      "hitTest",
       "sceneLayer"
     ],
     "editContext": [
@@ -28,7 +27,7 @@
       }
     ],
     "network": false,
-    "clipboard": "none"
+    "clipboard": "full"
   },
   "contributes": {
     "panels": [
