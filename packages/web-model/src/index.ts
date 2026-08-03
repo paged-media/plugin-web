@@ -60,6 +60,9 @@ export {
   type SanitizeRemoval,
   type SanitizeResult,
 } from "./sanitize";
+// `.html` FILE intake → the panel's two lanes + the sanitize pass (the
+// File▸Open / drag-drop importer's model half).
+export { sourceFromHtmlFile, type HtmlFileImport } from "./import-html";
 
 // Vetted, offline, dependency-free starter templates the insert/source
 // panel seeds from — an empty frame is a poor first run. Each one's HTML

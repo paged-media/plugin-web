@@ -29,6 +29,7 @@ import {
   asFrameTarget,
   DEFAULT_SOURCE,
   envelopeFor,
+  type WebFrameSource,
 } from "../../web-model/src";
 
 /** Default frame bounds, page-local pt: [top, left, bottom, right]. */
@@ -53,6 +54,9 @@ async function activePageId(host: BundleHost): Promise<PageId | null> {
 export async function insertWebFrame(
   host: BundleHost,
   panelId: string,
+  // The importer hands in a file-derived source; the command keeps the
+  // starter default.
+  source: WebFrameSource = DEFAULT_SOURCE,
 ): Promise<void> {
   const pageId = await activePageId(host);
   if (!pageId) {
@@ -72,7 +76,7 @@ export async function insertWebFrame(
             // key is this plugin's own namespace.
             elementId: { kind: "rectangle", id: "$created" },
             key: METADATA_KEY,
-            value: JSON.stringify(envelopeFor(DEFAULT_SOURCE)),
+            value: JSON.stringify(envelopeFor(source)),
           },
         },
       ],
