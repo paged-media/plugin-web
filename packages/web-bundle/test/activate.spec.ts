@@ -219,7 +219,19 @@ describe("webBundle.activate", () => {
     expect(ec.panelIds).toEqual(["media.paged.web.panel.source"]);
   });
 
-  it("the webFrame edit context onEnter raises the source panel", () => {
+  it("the webFrame context DECLARES its panel rather than raising it by hand", () => {
+    // CHANGED 2026-08-07 (ADR 024). This used to assert that `onEnter`
+    // called `host.shell.openPanel`. That call was removed because it
+    // was actively harmful, not merely redundant: the SDK's door takes
+    // no options and therefore always RAISES, bypassing the ADR-023
+    // rule where the host WITHHOLDS a raise that would displace a panel
+    // this context's own binding providers serve. Harmless while
+    // paged.web registers no providers; a live defect the day it does.
+    //
+    // The declaration already opens the panel — the controller calls
+    // `openPanel(id, { activate: !serving })` for each declared id — and
+    // it is the only path that can withhold. So the assertion moves to
+    // the declaration, which is now the whole contract.
     const fake = makeFakeEditor();
     const openPanel = vi.fn();
     loadBundle(() => fake.editor, webBundle, {
@@ -229,9 +241,24 @@ describe("webBundle.activate", () => {
     });
     const ec = fake.editContexts.get("webFrame") as unknown as {
       onEnter?: (ctx: { type: string; id: unknown }) => void;
+      panelIds?: string[];
+      toolIds?: string[];
     };
+
+    expect(ec.panelIds, "the panel is DECLARED").toContain(
+      "media.paged.web.panel.source",
+    );
     ec.onEnter?.({ type: "webFrame", id: { kind: "rectangle", id: "uWEB1" } });
-    expect(openPanel).toHaveBeenCalledWith("media.paged.web.panel.source");
+    expect(
+      openPanel,
+      "and NOT raised by hand, which would bypass the withhold rule",
+    ).not.toHaveBeenCalled();
+
+    // ADR 024 — no canvas tool edits a web frame. Declared EMPTY, which
+    // is a different fact from omitted: omitted reads as "unrestricted"
+    // and left the whole rail lit inside a web frame.
+    expect(ec.toolIds, "toolIds is DECLARED").toBeDefined();
+    expect(ec.toolIds).toEqual([]);
   });
 
   it("dispose leaves the shell exactly as found (honesty smoke test)", () => {

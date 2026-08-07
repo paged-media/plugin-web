@@ -129,7 +129,7 @@ export function activate(host: BundleHost): BundleHandle {
   // metadata; double-clicking one now enters the source context (and
   // raises the source panel) instead of descending into a group.
   contributeObjectType(host, webFrameObjectType);
-  contributeEditContext(host, makeWebFrameEditContext(host, PANEL_ID));
+  contributeEditContext(host, makeWebFrameEditContext(PANEL_ID));
   // `.html` FILE intake (editor-ui-coverage S): File▸Open + drag-drop of
   // an .html file inserts a web frame with that file as its source —
   // <style> blocks land in the css lane, sanitize runs ON INGEST (§6.1:

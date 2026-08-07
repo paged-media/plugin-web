@@ -38,7 +38,6 @@
 // "has a loadable source" — no second predicate to drift.
 
 import type {
-  BundleHost,
   EditContextContribution,
   ObjectTypeContribution,
 } from "@paged-media/plugin-api";
@@ -70,7 +69,6 @@ export const webFrameObjectType: ObjectTypeContribution = {
  *  panel (the host also emphasizes declared `panelIds`, but the hook
  *  makes the open explicit + survives a cockpit that ignores emphasis). */
 export function makeWebFrameEditContext(
-  host: BundleHost,
   panelId: string,
 ): EditContextContribution {
   return {
@@ -80,10 +78,26 @@ export function makeWebFrameEditContext(
     // to this context (path 1 of resolveDoubleClick). A bare-kind match
     // would be wrong — every rectangle is not a webFrame. The context is
     // reachable ONLY through the objectType claim.
+    // ADR 024 — NO CANVAS TOOL EDITS A WEB FRAME. Its content is
+    // HTML/CSS, authored in the source panel and laid out by the engine;
+    // a brush or a pen has nothing to act on here. Declared EMPTY rather
+    // than omitted, which are different facts: omitted reads as
+    // "unrestricted" and left the entire tool rail lit inside a web
+    // frame. The rail treats an out-of-set pick as an exit, so reaching
+    // for the pointer walks you out.
+    toolIds: [],
     panelIds: [panelId],
-    onEnter: () => {
-      // Open / raise the source panel so double-click opens editing.
-      host.shell.openPanel(panelId);
-    },
+    // NO `onEnter` openPanel. It used to call `host.shell.openPanel`
+    // here IN ADDITION to declaring `panelIds`, and the extra call was
+    // actively harmful: the SDK's door takes no options, so it always
+    // RAISES — bypassing the ADR-023 rule where the host withholds a
+    // raise that would displace a panel this context's own binding
+    // providers serve. Harmless today only because paged.web registers
+    // no providers; it becomes a live defect the day it does.
+    //
+    // The declaration already opens the panel (the controller calls
+    // `openPanel(id, { activate: !serving })` for each declared id), and
+    // it is the only path that CAN withhold. So the declaration is the
+    // door and the hook is gone.
   };
 }
