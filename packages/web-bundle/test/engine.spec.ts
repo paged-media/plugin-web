@@ -169,14 +169,30 @@ describe("bakeWebFrame with the engine — parse + submit (injected fixture)", (
 
 // ----------------------------------------------------------------------
 // Real-wasm SMOKE lane — loads the ACTUAL built engine artifact in Node.
-// Gated on the artifact being present (it's gitignored generated output;
-// build it with `bash scripts/build-wasm.sh --engine`). When absent, the
-// suite skips with a clear note rather than failing the default gate.
+// DUAL-GATED on the artifact being present (it's gitignored generated
+// output; build it with `bash scripts/build-wasm.sh --engine`): locally a
+// missing artifact SKIPS with a clear note rather than failing the default
+// gate, but in CI the vitest workflow builds the artifact and sets
+// REQUIRE_REAL_ENGINE=1, under which a missing artifact FAILS instead of
+// skipping — so the real-engine smoke can never silently fall out of CI.
 
 const binDir = fileURLToPath(new URL("../bin/", import.meta.url));
 const gluePath = binDir + "blitz_web.js";
 const wasmPath = binDir + "blitz_web_bg.wasm";
 const artifactPresent = existsSync(gluePath) && existsSync(wasmPath);
+
+// The CI half of the dual gate: fail-not-skip when the artifact is absent.
+if (process.env.REQUIRE_REAL_ENGINE === "1" && !artifactPresent) {
+  describe("real Blitz engine wasm — REQUIRED", () => {
+    it("FAILS: REQUIRE_REAL_ENGINE=1 but the engine artifact is missing", () => {
+      throw new Error(
+        `REQUIRE_REAL_ENGINE=1 but ${wasmPath} (or its glue) is missing — ` +
+          "build it with `bash scripts/build-wasm.sh --engine` (CI must " +
+          "build the artifact before running vitest; skipping is not allowed here)",
+      );
+    });
+  });
+}
 
 describe.skipIf(!artifactPresent)(
   "real Blitz engine wasm — end-to-end smoke (artifact present)",

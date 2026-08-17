@@ -47,6 +47,23 @@ const gluePath = binDir + "blitz_web.js";
 const wasmPath = binDir + "blitz_web_bg.wasm";
 const artifactPresent = existsSync(gluePath) && existsSync(wasmPath);
 
+// DUAL GATE (mirrors engine.spec.ts): locally a missing engine artifact
+// SKIPS this conformance suite; in CI the vitest workflow builds the
+// artifact and sets REQUIRE_REAL_ENGINE=1, under which a missing artifact
+// FAILS instead of skipping — the bake conformance can never silently
+// fall out of CI on a skip gate.
+if (process.env.REQUIRE_REAL_ENGINE === "1" && !artifactPresent) {
+  describe("web conformance — bake to native content — REQUIRED", () => {
+    it("FAILS: REQUIRE_REAL_ENGINE=1 but the engine artifact is missing", () => {
+      throw new Error(
+        `REQUIRE_REAL_ENGINE=1 but ${wasmPath} (or its glue) is missing — ` +
+          "build it with `bash scripts/build-wasm.sh --engine` (CI must " +
+          "build the artifact before running vitest; skipping is not allowed here)",
+      );
+    });
+  });
+}
+
 /** A source with a solid-fill box + a text run → exercises both bake lanes. */
 const SOURCE: WebFrameSource = {
   ...DEFAULT_SOURCE,

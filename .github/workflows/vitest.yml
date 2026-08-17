@@ -40,9 +40,51 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # ------------------------------------------------------------------
+      # REAL-ENGINE artifact. This lane used to run vitest with no Blitz
+      # wasm artifact, so web-bundle's engine.spec.ts + conformance/
+      # bake.spec.ts skipIf gates skipped the real-engine suites on EVERY
+      # CI run — no other workflow builds the artifact either. Build the
+      # ENGINE artifact here (scripts/build-wasm.sh --engine — the full
+      # Blitz/Stylo/Taffy/Parley stack exposing render_web_frame), with the
+      # plugin-sheets rust.yml pin recipe: pinned toolchain, wasm-bindgen-cli
+      # matched to the crate's own Cargo.lock, pinned binaryen (old apt
+      # binaryen breaks wasm-bindgen externref table grow).
+      # REQUIRE_REAL_ENGINE=1 below makes a missing artifact FAIL, not skip.
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.93.0
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: plugin-web/packages/web-render
+      - name: install pinned wasm-bindgen-cli (web-render Cargo.lock version)
+        run: |
+          V=$(grep -A1 '^name = "wasm-bindgen"$' plugin-web/packages/web-render/Cargo.lock | grep version | head -1 | cut -d'"' -f2)
+          cargo install wasm-bindgen-cli --version "$V" --locked
+      - name: install pinned binaryen (reftypes-safe; old apt binaryen breaks externref table grow)
+        run: |
+          curl -sL https://github.com/WebAssembly/binaryen/releases/download/version_119/binaryen-version_119-x86_64-linux.tar.gz | tar xz
+          echo "$PWD/binaryen-version_119/bin" >> "$GITHUB_PATH"
+      - name: build the Blitz ENGINE wasm artifact (64 MiB budget gate)
+        run: bash plugin-web/scripts/build-wasm.sh --engine
+      # Fail-not-skip belt at the JOB level too: the vitest step below keeps
+      # its deliberate `|| true` (red results still publish to state), so a
+      # missing artifact must redden the job HERE, before vitest can skip.
+      - name: real-engine artifact guard (fail, never skip)
+        run: |
+          test -f plugin-web/packages/web-bundle/bin/blitz_web_bg.wasm
+          test -f plugin-web/packages/web-bundle/bin/blitz_web.js
+      # ------------------------------------------------------------------
       - name: install (sdk sibling satisfies the link chain)
         run: pnpm install --frozen-lockfile --dir plugin-web
       - name: vitest (junit per package; red results still publish)
+        env:
+          # The spec-level half of the dual gate (engine.spec.ts +
+          # conformance/bake.spec.ts): under this env a missing artifact
+          # FAILS the suites instead of letting the skipIf gates silently
+          # pass a vacuous run.
+          REQUIRE_REAL_ENGINE: "1"
         run: |
           pnpm -r --no-bail --dir plugin-web exec \
             vitest run --reporter=junit --outputFile=junit.xml || true
