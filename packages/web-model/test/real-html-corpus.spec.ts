@@ -105,7 +105,14 @@ const styles = filesMatching(/\.(css|scss)$/i);
 // they are the nastiest ones available: 38 carry a `<script` tag inside
 // their own source and 26 carry a literal `</script>`, which is exactly
 // what makes script-stripping non-trivial.
-const scripts = filesMatching(/\.js$/i);
+//
+// `.jsx` is included with `.js` — 100 more files, every one of them
+// JavaScript that is dense with markup (`<Header />`, `<div>`), which is
+// the shape a script-stripper is most likely to mis-end on. Note what
+// they are not: not one of the 100 carries a `<script` tag or a
+// `javascript:` URL, so the two counts above are unchanged by them. They
+// widen the payload population; they do not add new nasty cases.
+const scripts = filesMatching(/\.(js|jsx)$/i);
 const gated = files.length > 0;
 const short = (p: string) => p.split("/").slice(-2).join("/");
 
