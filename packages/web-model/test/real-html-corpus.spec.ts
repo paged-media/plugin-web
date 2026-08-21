@@ -406,3 +406,168 @@ describe.skipIf(scripts.length === 0)("real JavaScript corpus", () => {
     ).toEqual([]);
   });
 });
+
+/*
+ * The webfonts — the corpus's last unread population.
+ *
+ * 313 font binaries (84 woff, 81 woff2, 74 ttf, 70 eot, 4 otf) ship
+ * inside these templates, and until this block nothing anywhere opened
+ * one. The corpus catalogue credited them to `PAGED_HTML_CORPUS`,
+ * because lanes were declared per DIRECTORY — but this spec matched
+ * html/css/scss/js/jsx and no font at all. That is the exact shape of
+ * "an asset no lane reads is weight, not coverage", hiding behind a
+ * lane string that looked like coverage.
+ *
+ * What is asserted is the seam plugin-web actually owns: a template
+ * DECLARES faces in CSS and SHIPS them as files, and those two halves
+ * must agree. So every `@font-face` rule is parsed with the shipped
+ * `familiesUsed`, and every locally-declared face is resolved to the
+ * binary the pack carries and read — its magic must be the format the
+ * URL promises.
+ *
+ * Resolution is BY BASENAME inside the pack, not by the relative path
+ * the CSS writes. The extraction flattens a pack into `assets/font`,
+ * `assets/web`, `assets/image`, so `url(../fonts/x.woff2)` resolves to
+ * nothing on disk: all 334 local face URLs miss when followed literally.
+ * That is a property of the corpus's own layout, not of the templates,
+ * and the basename is what survives it.
+ */
+const FONT_MAGIC: { ext: string; head: (b: Buffer) => boolean }[] = [
+  { ext: "woff2", head: (b) => b.subarray(0, 4).toString("latin1") === "wOF2" },
+  { ext: "woff", head: (b) => b.subarray(0, 4).toString("latin1") === "wOFF" },
+  { ext: "otf", head: (b) => b.subarray(0, 4).toString("latin1") === "OTTO" },
+  {
+    ext: "ttf",
+    head: (b) =>
+      b.subarray(0, 4).toString("latin1") === "true" ||
+      (b[0] === 0x00 && b[1] === 0x01 && b[2] === 0x00 && b[3] === 0x00),
+  },
+  // EOT carries no leading magic — it opens with three length fields.
+  // Its signature is `LP` at offset 34, which all 70 in the corpus have.
+  { ext: "eot", head: (b) => b[34] === 0x4c && b[35] === 0x50 },
+];
+
+/** `@font-face { … }` bodies, and the `url()` targets inside one. */
+const FONT_FACE = /@font-face\s*\{([^}]*)\}/gi;
+const CSS_URL = /url\(\s*['"]?([^'")]+)/gi;
+
+/** Every font binary in the corpus, indexed by pack and lower-cased name. */
+function fontsByPack(): Map<string, string> {
+  const root = corpusRoot();
+  const out = new Map<string, string>();
+  if (!root) return out;
+  const packs = join(root, "html", "packs");
+  let names: string[];
+  try {
+    names = readdirSync(packs);
+  } catch {
+    return out;
+  }
+  for (const pack of names) {
+    const dir = join(packs, pack, "assets", "font");
+    let files: string[];
+    try {
+      files = readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const f of files) out.set(`${pack}/${f.toLowerCase()}`, join(dir, f));
+  }
+  return out;
+}
+
+const fontFiles = fontsByPack();
+
+describe.skipIf(fontFiles.size === 0)("real webfont corpus", () => {
+  it("every declared @font-face parses, and the faces the pack ships are the format they claim", () => {
+    const declaredFamilies = new Set<string>();
+    const wrongMagic: string[] = [];
+    const blindToFaces: string[] = [];
+    const readFiles = new Set<string>();
+    let rules = 0;
+    let localUrls = 0;
+    const notShipped: string[] = [];
+
+    for (const { path, text } of styles) {
+      // `<corpus>/html/packs/<pack>/…` — the pack owns its fonts.
+      const after = path.split("/html/packs/")[1];
+      if (!after) continue;
+      const pack = after.split("/")[0];
+
+      const seenHere = familiesUsed(text);
+      let declaresAFace = false;
+      for (const [, body] of text.matchAll(FONT_FACE)) {
+        rules += 1;
+        declaresAFace = true;
+        for (const [, rawUrl] of body.matchAll(CSS_URL)) {
+          const url = rawUrl.split("?")[0].split("#")[0];
+          if (/^(data:|https?:|\/\/)/i.test(url)) continue;
+          localUrls += 1;
+          const base = url.split("/").pop()!.toLowerCase();
+          const file = fontFiles.get(`${pack}/${base}`);
+          if (!file) {
+            notShipped.push(`${pack}/${base}`);
+            continue;
+          }
+          readFiles.add(file);
+          const ext = base.split(".").pop()!;
+          const rule = FONT_MAGIC.find((m) => m.ext === ext);
+          if (!rule) continue;
+          const bytes = readFileSync(file);
+          if (!rule.head(bytes)) {
+            wrongMagic.push(
+              `${pack}/${base}: declared .${ext}, starts ${bytes.subarray(0, 4).toString("hex")}`,
+            );
+          }
+        }
+      }
+      // A stylesheet that declares faces must show families to the rest
+      // of plugin-web — the panel's font list is built from exactly this
+      // call, so a parser that steps over `@font-face` would render the
+      // template with substitutes and never say why.
+      if (declaresAFace) {
+        if (seenHere.length === 0) blindToFaces.push(short(path));
+        for (const f of seenHere) declaredFamilies.add(f);
+      }
+    }
+
+    console.log(
+      `real webfont corpus: ${rules} @font-face rule(s), ${localUrls} local face URL(s), ` +
+        `${readFiles.size} binary/binaries opened of ${fontFiles.size} shipped, ` +
+        `${notShipped.length} declared-but-absent`,
+    );
+
+    expect(rules, "the corpus templates declare @font-face rules").toBeGreaterThan(0);
+    expect(declaredFamilies.size, "familiesUsed reads the families out of them").toBeGreaterThan(0);
+    expect(
+      blindToFaces,
+      `these stylesheets declare @font-face and familiesUsed returned nothing ` +
+        `for them:\n  ${blindToFaces.join("\n  ")}`,
+    ).toEqual([]);
+    expect(
+      wrongMagic,
+      `a shipped face is not the format its name promises — the pack would serve ` +
+        `bytes no browser can use:\n  ${wrongMagic.join("\n  ")}`,
+    ).toEqual([]);
+    // Templates that declare a face they do not ship are REAL and common
+    // (icon kits pruned before sale, `.svg` faces the corpus files under
+    // assets/vector). The number is pinned rather than forbidden, so a
+    // jump means the extraction changed, not that a template is odd.
+    expect(notShipped.length).toBeLessThanOrEqual(64);
+  });
+
+  it("every font binary in the corpus is a font, whatever its name says", () => {
+    const notAFont: string[] = [];
+    for (const [key, file] of fontFiles) {
+      const bytes = readFileSync(file);
+      const ok = FONT_MAGIC.some((m) => m.head(bytes));
+      if (!ok) notAFont.push(`${key} (${bytes.subarray(0, 4).toString("hex")})`);
+    }
+    console.log(`  ${fontFiles.size} font binary/binaries, ${notAFont.length} unrecognised`);
+    expect(
+      notAFont,
+      `these are filed as fonts but carry no font signature — a template that ` +
+        `serves one would hand the browser garbage:\n  ${notAFont.join("\n  ")}`,
+    ).toEqual([]);
+  });
+});
