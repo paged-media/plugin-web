@@ -100,6 +100,12 @@ const files = filesMatching(/\.html?$/i);
 // also the cheapest check that a preprocessor source handed to a CSS
 // reader degrades rather than crashes.
 const styles = filesMatching(/\.(css|scss)$/i);
+// The template JS. These are never PARSED — plugin-web strips script
+// rather than running it — so they are here as sanitizer payloads, and
+// they are the nastiest ones available: 38 carry a `<script` tag inside
+// their own source and 26 carry a literal `</script>`, which is exactly
+// what makes script-stripping non-trivial.
+const scripts = filesMatching(/\.js$/i);
 const gated = files.length > 0;
 const short = (p: string) => p.split("/").slice(-2).join("/");
 
@@ -276,5 +282,120 @@ describe.skipIf(styles.length === 0)("real CSS corpus", () => {
         `familiesUsed drives font parity, so this means it cannot read what real ` +
         `stylesheets declare`,
     ).toBeGreaterThan(0);
+  });
+});
+
+describe.skipIf(scripts.length === 0)("real JavaScript corpus", () => {
+  it("leaves no executable surface when a real script payload is embedded", () => {
+    // plugin-web never executes or parses JS — `sanitizeHtml` exists to
+    // take it out. So the honest way to point the corpus's 245 real
+    // template scripts at this package is to put each one where a
+    // template author puts it, inside a <script> block, and require
+    // that nothing executable survives.
+    //
+    // These are a much harsher payload than the spec's hand-written
+    // one-liners: minified jQuery plugins, bundler output and React
+    // sources whose own text contains `<script>` and `</script>`.
+    const threw: string[] = [];
+    const leftScript: string[] = [];
+    const leftHandler: string[] = [];
+    const leftJsUrl: string[] = [];
+
+    for (const { path, text } of scripts) {
+      const doc = `<div class="wrap"><script>${text}</script><p>after</p></div>`;
+      let out;
+      try {
+        out = sanitizeHtml(doc).html;
+      } catch (e) {
+        threw.push(`${short(path)}: ${(e as Error).message}`);
+        continue;
+      }
+      if (SCRIPT_TAG.test(out)) leftScript.push(short(path));
+      if (EVENT_ATTR.test(out)) leftHandler.push(short(path));
+      if (JS_URL.test(out)) leftJsUrl.push(short(path));
+    }
+
+    console.log(`real JS corpus: ${scripts.length} script payload(s)`);
+
+    expect(threw, `sanitizeHtml THREW on a real script payload:\n  ${threw.join("\n  ")}`).toEqual(
+      [],
+    );
+    expect(
+      leftScript,
+      `a <script> tag survived for ${leftScript.length} payload(s):\n  ` +
+        leftScript.join("\n  "),
+    ).toEqual([]);
+    expect(
+      leftHandler,
+      `an event handler survived for ${leftHandler.length} payload(s):\n  ` +
+        leftHandler.join("\n  "),
+    ).toEqual([]);
+    expect(
+      leftJsUrl,
+      `a javascript: URL survived for ${leftJsUrl.length} payload(s):\n  ` +
+        leftJsUrl.join("\n  "),
+    ).toEqual([]);
+  });
+
+  it("ends a script element where a browser would, and sanitizes what follows", () => {
+    // This pins a behaviour that LOOKS like a bug and is not, so nobody
+    // "fixes" it later.
+    //
+    // 26 of these files contain a literal `</script>` in their own text
+    // (React sources that render <script> tags). Embed one and the
+    // sanitizer's non-greedy match ends the element at that first
+    // `</script>` — leaving the rest of the file behind as MARKUP rather
+    // than as script body. That is not a leak: HTML says a script
+    // element ends at the first `</script>`, so a browser ends it in
+    // exactly the same place. Our stripper and the parser agree.
+    //
+    // What matters is what happens to the remainder, and this is where
+    // the layered passes earn their keep: whatever survives as markup is
+    // then run through the handler and `javascript:` passes in its own
+    // right. Four of these files carry a `javascript:` URL, so that is a
+    // real assertion and not a vacuous one.
+    const withCloseTag = scripts.filter(({ text }) => /<\s*\/\s*script\s*>/i.test(text));
+    const withJsUrl = scripts.filter(({ text }) => /javascript\s*:/i.test(text));
+
+    expect(
+      withCloseTag.length,
+      "no corpus script contains a literal </script> — this test is about that " +
+        "case, so it would be asserting nothing",
+    ).toBeGreaterThan(0);
+
+    const unsafe: string[] = [];
+    for (const { path, text } of [...withCloseTag, ...withJsUrl]) {
+      const out = sanitizeHtml(`<div><script>${text}</script></div>`).html;
+      if (SCRIPT_TAG.test(out) || EVENT_ATTR.test(out) || JS_URL.test(out)) {
+        unsafe.push(short(path));
+      }
+    }
+
+    console.log(
+      `  ${withCloseTag.length} payload(s) contain a literal </script>, ` +
+        `${withJsUrl.length} contain a javascript: URL — all neutralised`,
+    );
+    expect(
+      unsafe,
+      `the remainder left behind after a script element ended early was NOT ` +
+        `sanitized for ${unsafe.length} payload(s) — the layered handler and ` +
+        `javascript: passes are what must catch this:\n  ${unsafe.join("\n  ")}`,
+    ).toEqual([]);
+  });
+
+  it("is idempotent on every real script payload", () => {
+    const notIdempotent: string[] = [];
+    for (const { path, text } of scripts) {
+      const once = sanitizeHtml(`<div><script>${text}</script></div>`);
+      const twice = sanitizeHtml(once.html);
+      if (twice.html !== once.html || twice.removed.length > 0) {
+        notIdempotent.push(`${short(path)} (second pass: ${JSON.stringify(twice.removed)})`);
+      }
+    }
+    expect(
+      notIdempotent,
+      `sanitizeHtml is documented idempotent but a second pass changed ` +
+        `${notIdempotent.length} script payload(s):\n  ${notIdempotent.join("\n  ")}`,
+    ).toEqual([]);
   });
 });
