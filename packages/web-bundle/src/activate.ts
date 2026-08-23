@@ -25,6 +25,7 @@
 // is forward-complete (both reserved host-side).
 
 import type { BundleHandle, BundleHost } from "@paged-media/plugin-api";
+import { contributeMenu } from "./menu";
 import {
   contributeEditContext,
   contributeObjectType,
@@ -153,7 +154,15 @@ export function activate(host: BundleHost): BundleHandle {
     });
   }
   host.log.info(`activated (apiVersion ${manifest.apiVersion})`);
-  return { dispose() {} };
+
+  // F1 — the menu bar. Before plugin-api 0.2.33 there was no menu door,
+  // so every command in this bundle lived behind Cmd+K and nowhere else.
+  const menuSub = contributeMenu(host);
+  return {
+    dispose() {
+      menuSub.dispose();
+    },
+  };
 }
 
 export { manifest, PANEL_ID };
