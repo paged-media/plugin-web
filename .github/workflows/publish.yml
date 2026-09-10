@@ -19,10 +19,25 @@ jobs:
       - uses: actions/checkout@v4
       - run: rustup target add wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      - name: wasm-bindgen 0.2.122 (prebuilt, must match Cargo.lock)
+      # The version is READ FROM the lockfile, not written here. It was
+      # hardcoded as 0.2.122 with a comment saying it "must match
+      # Cargo.lock", which is a rule a comment cannot keep — and had
+      # not: `packages/web-render/Cargo.lock` says 0.2.125, so this step
+      # has been binding a 0.2.125-compiled module with a 0.2.122 CLI.
+      # Unlike the sibling plugins, `build-wasm.sh` here has no pin
+      # check, so nothing said so.
+      #
+      # NOTE the path: this repo's Rust lives under `packages/web-render`
+      # and there is no lockfile at the root.
+      - name: wasm-bindgen (prebuilt; version from the web-render lockfile)
         run: |
-          curl -fsSL https://github.com/rustwasm/wasm-bindgen/releases/download/0.2.122/wasm-bindgen-0.2.122-x86_64-unknown-linux-musl.tar.gz | tar xz
-          echo "$PWD/wasm-bindgen-0.2.122-x86_64-unknown-linux-musl" >> "$GITHUB_PATH"
+          set -euo pipefail
+          LOCK=packages/web-render/Cargo.lock
+          WB=$(grep -A1 '^name = "wasm-bindgen"$' "$LOCK" | grep version | head -1 | cut -d'"' -f2)
+          test -n "$WB" || { echo "could not read wasm-bindgen from $LOCK"; exit 1; }
+          echo "wasm-bindgen $WB (from Cargo.lock)"
+          curl -fsSL "https://github.com/rustwasm/wasm-bindgen/releases/download/$WB/wasm-bindgen-$WB-x86_64-unknown-linux-musl.tar.gz" | tar xz
+          echo "$PWD/wasm-bindgen-$WB-x86_64-unknown-linux-musl" >> "$GITHUB_PATH"
       - name: binaryen (prebuilt wasm-opt; pinned — old apt binaryen breaks externref)
         run: |
           curl -fsSL https://github.com/WebAssembly/binaryen/releases/download/version_119/binaryen-version_119-x86_64-linux.tar.gz | tar xz
