@@ -1,10 +1,23 @@
 # paged-media/plugin-web
 
 **paged.web** — HTML/CSS as a first-class content type for the Paged editor.
-Concept: `thoughts/docs/paged/plugin-web/base-idea.md` ("InDesign can't speak
+Concept: [`docs/concept.md`](./docs/concept.md) ("InDesign can't speak
 web. Webflow can't speak print."). Where paged.draw proves the platform hosts
 a *tool*, paged.web proves it hosts a *foreign document model* — the second
 half of the plugin platform's existential test.
+
+## Documentation
+
+Everything about how the plugin is designed and built is in [`docs/`](./docs/README.md):
+
+- [`docs/concept.md`](./docs/concept.md): why the plugin exists and what it is for.
+- [`docs/architecture.md`](./docs/architecture.md): packages, the render path, host doors.
+- [`docs/status.md`](./docs/status.md): what ships today and what does not.
+- [`docs/adr/`](./docs/adr/README.md): the architecture decisions, one per file.
+
+`docs/status.md` is the current record of what ships. The scope section below
+describes the first slice (the source lane) and is older: on-canvas rendering,
+flow across frames and baking to native page items have shipped since.
 
 ## v0 scope — the source lane
 

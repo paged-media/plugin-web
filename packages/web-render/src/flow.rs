@@ -20,7 +20,7 @@
 //! MULTIPLE frames. This is a FEASIBILITY PROTOTYPE, not shipped product: it
 //! answers ADR-020's open question ("can Blitz be driven to thread a flow
 //! across frames without a deep fork?") empirically. Scope + the 4-rung
-//! ladder: `thoughts/docs/paged/plugin-web/w-frag-spike-brief.md`.
+//! ladder: an internal spike log; as built: `docs/design/flow-fragmentation.md`.
 //!
 //! Gated behind `blitz` so it never touches the default build or the bundle
 //! CI gate. Two rungs are built here:

@@ -78,7 +78,7 @@ pub mod capture;
 pub mod fonts;
 
 // W-frag spike (feasibility PoC, not shipped) — fragment one flow across
-// frames. Behind `blitz`; see thoughts .../plugin-web/w-frag-spike-brief.md.
+// frames. Behind `blitz`; see docs/design/flow-fragmentation.md.
 #[cfg(feature = "blitz")]
 pub mod flow;
 

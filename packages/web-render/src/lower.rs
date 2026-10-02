@@ -82,7 +82,7 @@
 //!     reaches the blend stack from real HTML. Contract-correct + unit-tested;
 //!     it lights up the moment the alpha emits a non-Normal layer.
 //! CSS fragmentation across linked frames is out of this slice (Tier-B);
-//! see the base-idea lowering-lane status.
+//! see docs/concept.md §4.3 (lowering-lane status).
 
 use crate::display_list::{
     WebBlendMode, WebDisplayList, WebDrawCmd, WebGlyphRun, WebGradient, WebImage,

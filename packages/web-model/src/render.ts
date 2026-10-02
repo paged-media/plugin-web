@@ -18,7 +18,7 @@
 
 // The web RENDER CONTRACT — the engine-agnostic seam ADR-011 ratifies:
 // "HTML/CSS in, scene layer out." This is the drop-in point for the
-// Blitz/WASM rendering lane (base-idea §4; the W0 spike proved the
+// Blitz/WASM rendering lane (docs/concept.md §4; the W0 spike proved the
 // Blitz/Stylo/Taffy/Parley stack compiles to wasm32 — ~2.2 MB brotli —
 // and paints in core's exact vello/wgpu versions). It is NOT that lane:
 // compiling Blitz to wasm is a multi-week fork, and this module never
@@ -158,7 +158,7 @@ export interface WebRenderRequest {
  * on a future hard engine failure). `diagnostics` always carries at
  * least the not-loaded note today; the engine lane adds layout/paint
  * findings (unsupported-property warnings from the pinned compatibility
- * table — base-idea §9) alongside.
+ * table — docs/concept.md §9) alongside.
  */
 export interface WebRenderResult {
   sceneLayer: SceneLayer | null;

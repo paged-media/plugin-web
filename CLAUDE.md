@@ -7,8 +7,8 @@ GmbH; license headers on every source file).
 ## What this is
 
 HTML/CSS as a content type for the Paged editor (concept:
-`thoughts/docs/paged/plugin-web/base-idea.md`; v0 = the source lane, see
-README). Two packages: `web-model` (pure source model + diagnostics
+`docs/concept.md`; architecture, status and decisions are in `docs/`; v0 = the
+source lane, see README). Two packages: `web-model` (pure source model + diagnostics
 linter) and `web-bundle` (manifest + `activate(host)` + the source
 panel).
 
@@ -27,9 +27,8 @@ panel).
   the linter. Don't soften either. (The journey + e2e suites see the
   browser log "Blocked script execution in 'about:srcdoc'" — that is
   this rule working, not a failure.)
-- **Honest seams.** The remaining gaps are tracked in the RFI
-  (`thoughts/docs/paged/plugin-platform/rfi-core-sdk-gaps.md`, W-01 in
-  §6) — never fake them. Landed since: the `codeEditor` widget IS
+- **Honest seams.** The remaining gaps are tracked in the internal gap
+  register (W-01) and summarised in `docs/status.md` — never fake them. Landed since: the `codeEditor` widget IS
   consumed (probe `widgets.codeEditor@1`, bundle-owned textarea
   fallback), objectType/edit-context registered (W-03), metadata
   round-trips in-session (W-02), font bytes via the capability-gated
