@@ -1,0 +1,135 @@
+/*
+ * This file is part of paged (https://paged.media).
+ *
+ * paged is free software: you may redistribute it and/or modify it under the
+ * terms of the GNU Affero General Public License, version 3, as published by
+ * the Free Software Foundation, OR under the Paged Media Enterprise License
+ * (PMEL), a commercial license available from And The Next GmbH. Full
+ * copyright and license information is available in LICENSE.md, distributed
+ * with this source code.
+ *
+ * paged is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ * FOR A PARTICULAR PURPOSE. See the licenses for details.
+ *
+ *  @copyright  Copyright (c) And The Next GmbH
+ *  @license    AGPL-3.0-only OR Paged Media Enterprise License (PMEL)
+ */
+
+// The source-part collector's choices (ADR 410) on a modelled host with a
+// delete door: what the opened file carried and no label names goes on
+// save; what a label names, what this session wrote, and anything that is
+// not a source part stays; without the delete door nothing goes.
+
+import { describe, expect, it } from "vitest";
+
+import type { BundleHost, ElementId } from "@paged-media/plugin-api";
+import { DEFAULT_SOURCE, storeSource, type WebFrameSource } from "@paged-media/web-model";
+
+import { startPartsCollector } from "../src/parts-gc";
+import { writeWebSource } from "../src/source-part";
+
+const big = (tag: string): WebFrameSource => ({
+  ...DEFAULT_SOURCE,
+  html: `<p>${tag}</p>` + "<p>lorem ipsum dolor</p>".repeat(5000),
+});
+
+function modelHost(opts: { canDelete?: boolean } = {}) {
+  const parts = new Map<string, Uint8Array>();
+  const labels = new Map<string, unknown>();
+  const items = new Set<string>(["uA", "uB"]);
+  let willSave: (() => Promise<void>) | null = null;
+  const loaded: ((m: { kind: string }) => void)[] = [];
+  const host = {
+    supports: (f: string) =>
+      f === "storage.parts@1" || (f === "storage.parts@2" && opts.canDelete !== false),
+    document: {
+      tree: async () =>
+        [...items].map((id) => ({ id: { kind: "rectangle", id }, kind: "Rectangle", label: id, children: [] })),
+      getMetadata: async (id: ElementId) => labels.get((id as { id: string }).id) ?? null,
+      setMetadata: async (id: ElementId, env: unknown) => {
+        labels.set((id as { id: string }).id, env);
+        return { applied: true };
+      },
+      onWillSave: (l: () => Promise<void>) => {
+        willSave = l;
+        return { dispose() {} };
+      },
+    },
+    parts: {
+      read: async (p: string) => parts.get(p) ?? null,
+      write: async (p: string, b: Uint8Array) => void parts.set(p, b),
+      list: async (prefix = "") => [...parts.keys()].filter((p) => p.startsWith(prefix)),
+      delete: async (p: string) => parts.delete(p),
+    },
+    editor: { client: { subscribe: (l: (m: { kind: string }) => void) => (loaded.push(l), () => {}) } },
+    log: { debug() {}, info() {}, warn() {}, error() {} },
+  } as unknown as BundleHost;
+  return {
+    host,
+    parts,
+    labels,
+    items,
+    open: async () => {
+      loaded.forEach((l) => l({ kind: "documentLoaded" }));
+      await new Promise((r) => setTimeout(r, 0));
+    },
+    save: () => willSave!(),
+  };
+}
+
+const enc = (s: string) => new TextEncoder().encode(s);
+
+describe("source-part collector (modelled host)", () => {
+  it("drops the opened file's unnamed parts on save and keeps the rest", async () => {
+    const m = modelHost();
+    const named = storeSource(big("named"));
+    if (named.kind !== "part") throw new Error("expected a part");
+    m.parts.set(`sources/${named.ref.hash}.json`, enc(named.partText));
+    m.labels.set("uA", named.label);
+    m.parts.set("sources/00000000deadbeef.json", enc("{}"));
+    m.parts.set("uGONE/source.json", enc("{}"));
+    m.parts.set("uB/source.json", enc("{}"));
+    m.parts.set("other/thing.bin", enc("x"));
+    startPartsCollector(m.host);
+    await m.open();
+    await m.save();
+    expect([...m.parts.keys()].sort()).toEqual(
+      [`sources/${named.ref.hash}.json`, "other/thing.bin", "uB/source.json"].sort(),
+    );
+  });
+
+  it("never drops a part written this session, even once no label names it", async () => {
+    const m = modelHost();
+    startPartsCollector(m.host);
+    await m.open();
+    const a = { kind: "rectangle", id: "uA" } as ElementId;
+    await writeWebSource(m.host, a, big("one"));
+    await writeWebSource(m.host, a, big("two"));
+    await m.open(); // a reopen marks again; the session's writes still count
+    await m.save();
+    expect([...m.parts.keys()].filter((p) => p.startsWith("sources/"))).toHaveLength(2);
+  });
+
+  it("keeps a marked part that a label names again by the time of the save", async () => {
+    const m = modelHost();
+    const later = storeSource(big("later"));
+    if (later.kind !== "part") throw new Error("expected a part");
+    const path = `sources/${later.ref.hash}.json`;
+    m.parts.set(path, enc(later.partText));
+    startPartsCollector(m.host);
+    await m.open();
+    m.labels.set("uB", later.label);
+    await m.save();
+    expect(m.parts.has(path)).toBe(true);
+  });
+
+  it("without the delete door nothing is dropped", async () => {
+    const m = modelHost({ canDelete: false });
+    m.parts.set("sources/00000000deadbeef.json", enc("{}"));
+    startPartsCollector(m.host);
+    await m.open();
+    await m.save();
+    expect(m.parts.has("sources/00000000deadbeef.json")).toBe(true);
+  });
+});

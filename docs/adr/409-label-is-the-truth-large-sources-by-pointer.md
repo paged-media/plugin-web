@@ -79,3 +79,9 @@ The label is the truth, because it is what undo restores.
 
 - [ADR 406](406-web-frame-and-source-storage.md) — the earlier storage decision
 - [ADR 405](405-flow-chain-is-plugin-data.md) — the flow chain rides the same envelope
+
+## Amendment 2026-10-05
+
+The accumulation in Consequences is answered by [ADR 410](410-unreachable-source-parts-dropped-on-save.md):
+parts unreachable both when the document opened and at a save, and not written in that
+session, are dropped on save.

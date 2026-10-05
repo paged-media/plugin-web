@@ -24,6 +24,7 @@ the code as it stood, for decisions made earlier; their status says so.
 | [407](407-baking-flattens-to-native-items.md) | Baking flattens a web frame into native page items; the plugin contributes no exporter | Accepted, recorded retroactively 2026-10-02 |
 | [408](408-no-page-javascript.md) | Page JavaScript never executes; templating is a closed pass | Accepted, recorded retroactively 2026-10-02 |
 | [409](409-label-is-the-truth-large-sources-by-pointer.md) | The label names the live source; a large source is a content-addressed part behind a pointer | Accepted 2026-10-05 |
+| [410](410-unreachable-source-parts-dropped-on-save.md) | Source parts no label or undo step can reach are dropped on save | Accepted 2026-10-05 |
 
 Decisions made in other repositories that this plugin's code rests on are listed in
 [`../README.md`](../README.md).

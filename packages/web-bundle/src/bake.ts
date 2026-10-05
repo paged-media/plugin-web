@@ -56,7 +56,8 @@ import {
 
 import { engineDocument } from "./engine-document";
 import type { WebEngine } from "./engine-loader";
-import { loadWebSource } from "./source-part";
+import { renderWithPolicy } from "./overflow";
+import { describeRefusal, loadWebSource } from "./source-part";
 
 /** Points per inch — frame bounds are in points already; `dpi` only
  *  drives a raster escape hatch, defaulted at the page's print
@@ -84,14 +85,45 @@ const PX_PER_PT = 96 / 72;
  *  session caches `sceneSurface`) keeps the submitted layer alive. */
 const sceneSurfaces = new WeakMap<BundleHost, SceneLayerSurface>();
 
+/** The frame ids that hold a layer this bundle submitted, per host — so
+ *  the auto renderer (auto-render.ts) can clear a frame that left a flow
+ *  or was deleted. */
+const submittedFrames = new WeakMap<BundleHost, Set<string>>();
+
+/** The frames currently holding a layer this bundle submitted. */
+export function framesWithLayers(host: BundleHost): Set<string> {
+  let set = submittedFrames.get(host);
+  if (!set) {
+    set = new Set();
+    submittedFrames.set(host, set);
+  }
+  return set;
+}
+
 /** Get (or lazily create) the host's persistent scene-layer surface, or
  *  `null` when the host wires no scene channel. Never disposed here — it
- *  lives for the host's lifetime so the submitted layer persists. */
-function persistentSceneSurface(host: BundleHost): SceneLayerSurface | null {
+ *  lives for the host's lifetime so the submitted layer persists. Submits
+ *  and clears are recorded in {@link framesWithLayers}. */
+export function persistentSceneSurface(host: BundleHost): SceneLayerSurface | null {
   if (!host.supports("rendering.sceneLayer@1")) return null;
   let surface = sceneSurfaces.get(host);
   if (!surface) {
-    surface = host.contribute.sceneLayer();
+    const inner = host.contribute.sceneLayer();
+    const held = framesWithLayers(host);
+    surface = Object.assign(Object.create(inner) as SceneLayerSurface, {
+      submit: async (id: string, layer: Parameters<SceneLayerSurface["submit"]>[1]) => {
+        await inner.submit(id, layer);
+        held.add(id);
+      },
+      clear: async (id: string) => {
+        await inner.clear(id);
+        held.delete(id);
+      },
+      dispose: () => {
+        held.clear();
+        inner.dispose();
+      },
+    });
     sceneSurfaces.set(host, surface);
   }
   return surface;
@@ -107,24 +139,25 @@ export interface BakeOutcome {
    *  capability wired + submit applied). False on the not-loaded path
    *  and when the host has no scene channel. */
   submitted: boolean;
-  /** The render contract's diagnostics — at minimum the not-loaded note
-   *  today; engine layout/paint findings once the lane lands. */
+  /** The render contract's diagnostics — the not-loaded note when the
+   *  engine is absent; template and overflow findings otherwise. */
   diagnostics: WebDiagnostic[];
   /** The scene layer, when one was produced (else null) — exposed for
    *  the B2 IDML-bake step (engine-gated) and for tests. */
   sceneLayer: SceneLayer | null;
 }
 
-/** Read the selected frame's source + geometry and run the render
- *  contract. Pure-ish: the only side effect (a `sceneLayer.submit`) is
- *  reached ONLY when the engine produced a real layer — i.e. never
- *  today. Returns the honest outcome either way; never throws (a missing
- *  target / non-web-frame selection reports `rendered:false` with a
- *  diagnostic, not an error). */
+/** Read a frame's source + geometry and render it under its overflow
+ *  policy. Side effects: a `sceneLayer.submit` when the engine produced a
+ *  layer, and — for `grow`, when `opts.allowGrow` is not false — one
+ *  undoable `resizeFrame`. Returns the honest outcome either way; never
+ *  throws (a missing target / non-web-frame selection reports
+ *  `rendered:false` with a diagnostic, not an error). */
 export async function bakeWebFrame(
   host: BundleHost,
   id: ElementId,
   engine?: WebEngine | null,
+  opts?: { allowGrow?: boolean },
 ): Promise<BakeOutcome> {
   const notRendered = (diagnostics: WebDiagnostic[]): BakeOutcome => ({
     rendered: false,
@@ -171,7 +204,7 @@ export async function bakeWebFrame(
   // size in CSS px, and take the REAL C-1 layer the engine painted. With
   // the engine NOT loaded (or it threw): the honest not-loaded path.
   const result: WebRenderResult = engine
-    ? renderWithEngine(engine, source, frameWidthPt, frameHeightPt)
+    ? await renderWithEngine(host, id, engine, source, bounds ?? null, opts?.allowGrow ?? true)
     : renderWebFrame({
         html: source.html,
         css: source.css,
@@ -220,49 +253,81 @@ export async function bakeWebFrame(
   };
 }
 
-/** Run the loaded engine over a frame's source → a {@link WebRenderResult}.
- *  Composes the document the engine lays out (template vars applied first,
- *  then html+css → one document, exactly the preview's `composeSrcdoc`),
- *  feeds the content size in CSS px, and returns the REAL C-1 layer. On a
- *  wasm-side failure (`engine.render` → null) it falls back to the honest
- *  not-loaded result so the command never crashes. */
-function renderWithEngine(
+/** Run the loaded engine over a frame's source → a {@link WebRenderResult},
+ *  under the source's overflow policy (overflow.ts). Composes the document
+ *  the engine lays out (template vars applied first, then html+css → one
+ *  document, exactly the preview's `composeSrcdoc`) and feeds the content
+ *  size in CSS px. `grow` resizes the frame to the content (one undoable
+ *  `resizeFrame`) when `allowGrow`; the auto renderer withholds it after an
+ *  undo so undoing a grow sticks. On a wasm-side failure it falls back to
+ *  the honest not-loaded result so the command never crashes. */
+async function renderWithEngine(
+  host: BundleHost,
+  id: ElementId,
   engine: WebEngine,
   source: WebFrameSource,
-  frameWidthPt: number,
-  frameHeightPt: number,
-): WebRenderResult {
+  bounds: [number, number, number, number] | null,
+  allowGrow: boolean,
+): Promise<WebRenderResult> {
+  const notLoaded: WebRenderResult = {
+    sceneLayer: null,
+    diagnostics: [
+      { severity: "info", message: ENGINE_NOT_LOADED_MESSAGE, source: "render" },
+    ],
+  };
+  const frameWidthPt = bounds ? Math.max(0, bounds[3] - bounds[1]) : 0;
+  const frameHeightPt = bounds ? Math.max(0, bounds[2] - bounds[0]) : 0;
   // Apply the §6.2 deterministic template pass, then compose the document.
   const rendered = renderWebFrameSource(source);
-  const composed: WebFrameSource = {
-    ...source,
-    html: rendered.html,
-    css: rendered.css,
-  };
-  const html = composeSrcdoc(composed);
+  const html = composeSrcdoc({ ...source, html: rendered.html, css: rendered.css });
   const widthPx = Math.round(frameWidthPt * PX_PER_PT);
   const heightPx = Math.round(frameHeightPt * PX_PER_PT);
+  const policy = source.options.overflow;
+  // A threaded source's policy is its flow (render-flow-command.ts); a
+  // single-frame render of it shows its own frame, clipped.
+  const fit = renderWithPolicy(engine, html, widthPx, heightPx, policy);
+  // The engine loaded but the render threw — honest not-loaded result (no
+  // fake layer). The loader already logged the wasm error.
+  if (fit === null) return notLoaded;
+  const diagnostics: WebDiagnostic[] = [...rendered.diagnostics];
 
-  const layer = engine.render(html, widthPx, heightPx);
-  if (layer === null) {
-    // The engine loaded but the render threw — honest not-loaded result
-    // (no fake layer). The loader already logged the wasm error.
-    return {
-      sceneLayer: null,
-      diagnostics: [
-        {
-          severity: "info",
-          message: ENGINE_NOT_LOADED_MESSAGE,
+  if (policy === "grow" && fit.contentHeightPx !== null && bounds) {
+    const contentPt = fit.contentHeightPx / PX_PER_PT;
+    if (allowGrow && Math.abs(contentPt - frameHeightPt) > GROW_TOLERANCE_PT) {
+      const target = asFrameTarget(id);
+      const out = target
+        ? await host.document.mutate({
+            op: "resizeFrame",
+            args: { frameId: target.id, bounds: [bounds[0], bounds[1], bounds[0] + contentPt, bounds[3]] },
+          })
+        : { applied: false, error: "not a page item" };
+      if (!out.applied) {
+        diagnostics.push({
+          severity: "warning",
+          message: `overflow grow: the frame could not be resized (${describeRefusal(out.error)})`,
           source: "render",
-        },
-      ],
-    };
+        });
+      }
+    }
   }
-  return {
-    sceneLayer: layer,
-    diagnostics: [...rendered.diagnostics],
-  };
+  if (fit.overset) {
+    diagnostics.push({
+      severity: "warning",
+      message:
+        policy === "thread" && !source.flow
+          ? "content continues past the frame — thread it into more frames (Thread web flow into frames)"
+          : policy === "shrink"
+            ? "content does not fit even at 5 % — it is clipped"
+            : "content does not fit the frame — it is clipped",
+      source: "render",
+    });
+  }
+  return { sceneLayer: fit.layer, diagnostics };
 }
+
+/** grow leaves a frame alone when it is within this of the content height
+ *  (points) — a re-render after the resize must not resize again. */
+const GROW_TOLERANCE_PT = 0.5;
 
 // ===================================================================
 // The FLOW bake path — one source threaded across a chain of frames
@@ -280,7 +345,7 @@ export interface FlowBakeOutcome {
   submittedCount: number;
   /** Whether content remained past the last frame (the flow overset). */
   overset: boolean;
-  /** The render diagnostics — at minimum the not-loaded note today. */
+  /** The render diagnostics — the not-loaded note when the engine is absent. */
   diagnostics: WebDiagnostic[];
   /** The per-frame layers (chain order), for the B2 IDML-bake step +
    *  tests; `null` where a frame got no layer or on the not-loaded path. */
@@ -496,13 +561,16 @@ export async function bakeWebFlows(
   // Every group's frame geometry in ONE read (was one read per group).
   const allFrames = groups.flatMap((g) => g.frames as unknown as ElementId[]);
   const allGeos = await host.document.elementGeometry(allFrames);
-  let offset = 0;
+  const geoById = new Map(allGeos.map((g) => [(g.id as { id?: unknown }).id, g]));
 
   for (const group of groups) {
-    const groupFrames = group.frames as unknown as ElementId[];
-    const geos = allGeos.slice(offset, offset + groupFrames.length);
-    offset += groupFrames.length;
-    const framesPx = group.frames.map((_, i) => {
+    // A frame of the chain that no longer exists (deleted; undo can bring
+    // it back, so the chain keeps naming it) is skipped, not laid out as a
+    // 0×0 region. Geometry is matched by id, never by reply position.
+    const present = group.frames.filter((f) => geoById.has(f.id));
+    const groupFrames = present as unknown as ElementId[];
+    const geos = present.map((f) => geoById.get(f.id));
+    const framesPx = present.map((_, i) => {
       const b = geos[i]?.bounds;
       const widthPt = b ? Math.max(0, b[3] - b[1]) : 0;
       const heightPt = b ? Math.max(0, b[2] - b[0]) : 0;
@@ -516,10 +584,10 @@ export async function bakeWebFlows(
     const flowRoot = flowSelectorFor(doc.css, group.name);
     const flow = engine.renderFlow(doc.html, framesPx, flowRoot);
     if (flow === null) {
-      group.frames.forEach(() => layers.push(null));
+      present.forEach(() => layers.push(null));
       continue;
     }
-    for (let i = 0; i < group.frames.length; i += 1) {
+    for (let i = 0; i < present.length; i += 1) {
       const layer = flow.frames[i] ?? null;
       layers.push(layer);
       const target = asFrameTarget(groupFrames[i]);

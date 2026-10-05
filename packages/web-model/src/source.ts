@@ -32,16 +32,31 @@ import { engineStamp } from "./engine";
 export interface WebFrameOptions {
   /** CSS media the frame renders under (§9: a DTP-native switch). */
   media: "print" | "screen";
-  /** Overflow policy — content past the frame is clipped (the only
-   *  policy implemented; the others are not built yet). */
-  overflow: "clip";
-  /** Layout viewport width in CSS px. Absent = natural width (the
-   *  frame/panel decides). In the source panel this is honestly real:
-   *  the preview IFRAME takes this width, and an iframe's element size
-   *  IS the CSS viewport its content lays out (and media-queries)
-   *  against. The canvas render does NOT use it yet: it lays out at the
-   *  frame's own width. */
+  /** Overflow policy — what happens to content taller than the frame:
+   *  `clip` cuts it at the frame edge; `shrink` scales the content down
+   *  until it fits; `grow` resizes the frame's height to the content;
+   *  `thread` continues it into the frames the source is threaded into
+   *  (the flow chain — clipped at the last frame, reported as overset). */
+  overflow: OverflowPolicy;
+  /** Layout viewport width in CSS px, from older documents. Read and
+   *  kept, but nothing lays out at it any more: the canvas and the panel
+   *  preview both lay out at the frame's own content width. */
   viewportWidth?: number;
+}
+
+/** The overflow policies, in the order the panel offers them. */
+export const OVERFLOW_POLICIES = ["clip", "shrink", "grow", "thread"] as const;
+
+/** One overflow policy (see {@link WebFrameOptions.overflow}). */
+export type OverflowPolicy = (typeof OVERFLOW_POLICIES)[number];
+
+/** Sanitize an overflow policy from UNTRUSTED input: a known policy
+ *  passes, anything else (missing, misspelt, non-string) reads as `clip`
+ *  — the behaviour every document had before the other policies. */
+export function normalizeOverflow(value: unknown): OverflowPolicy {
+  return (OVERFLOW_POLICIES as readonly unknown[]).includes(value)
+    ? (value as OverflowPolicy)
+    : "clip";
 }
 
 /** Upper bound a viewport width is clamped to — guards malformed
@@ -360,7 +375,10 @@ export function sourceFromEnvelope(
   const d = envelope.data as Partial<WebFrameSource>;
   if (typeof d.html !== "string" || typeof d.css !== "string") return null;
   const media = d.options?.media === "screen" ? "screen" : "print";
-  const options: WebFrameOptions = { media, overflow: "clip" };
+  const options: WebFrameOptions = {
+    media,
+    overflow: normalizeOverflow(d.options?.overflow),
+  };
   // `viewportWidth` is ADDITIVE-OPTIONAL within envelope v1: legacy
   // envelopes simply have none, and an invalid value reads as "no
   // override" rather than poisoning the whole source.

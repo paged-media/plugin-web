@@ -33,6 +33,8 @@ import {
 
 import manifest from "../manifest.json";
 
+import { startAutoRender } from "./auto-render";
+import { startPartsCollector } from "./parts-gc";
 import { bakeSelectedWebFrame } from "./bake-to-document";
 import { insertWebFrame } from "./insert";
 import { renderSelectedWebFrame } from "./render-command";
@@ -47,16 +49,20 @@ import {
   webFrameObjectType,
 } from "./edit-context";
 import { sourceFromHtmlFile } from "../../web-model/src";
+import { createDraftSession } from "./panels/draft-store";
 import { makeWebSourcePanel } from "./panels/web-source-panel";
 
 const PANEL_ID = "media.paged.web.panel.source";
 
 export function activate(host: BundleHost): BundleHandle {
+  // The panel's drafts and their undo history, shared with the edit context
+  // so the host's Cmd+Z reaches source edits (ADR 012).
+  const drafts = createDraftSession();
   contributePanel(host, {
     id: PANEL_ID,
     title: "Web frame",
     icon: "panel-canvas",
-    component: makeWebSourcePanel(host),
+    component: makeWebSourcePanel(host, drafts),
     defaultDock: "right",
   });
   host.contribute.command({
@@ -129,7 +135,7 @@ export function activate(host: BundleHost): BundleHandle {
   // metadata; double-clicking one now enters the source context (and
   // raises the source panel) instead of descending into a group.
   contributeObjectType(host, webFrameObjectType);
-  contributeEditContext(host, makeWebFrameEditContext(PANEL_ID));
+  contributeEditContext(host, makeWebFrameEditContext(PANEL_ID, drafts));
   // `.html` FILE intake (editor-ui-coverage S): File▸Open + drag-drop of
   // an .html file inserts a web frame with that file as its source —
   // <style> blocks land in the css lane, sanitize runs ON INGEST (§6.1:
@@ -157,8 +163,15 @@ export function activate(host: BundleHost): BundleHandle {
   // F1 — the menu bar. Before plugin-api 0.2.33 there was no menu door,
   // so every command in this bundle lived behind Cmd+K and nowhere else.
   const menuSub = contributeMenu(host);
+  // The canvas follows the document: web frames render on activation, on
+  // document open and after changes (auto-render.ts).
+  const auto = startAutoRender(host);
+  // Source parts no label or undo step can reach are dropped on save.
+  const collector = startPartsCollector(host);
   return {
     dispose() {
+      collector.dispose();
+      auto.dispose();
       menuSub.dispose();
     },
   };

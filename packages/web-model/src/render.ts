@@ -119,7 +119,7 @@ export interface SceneLayer {
 }
 
 /**
- * The render request — everything the (future) engine needs to lay out
+ * The render request — everything the engine needs to lay out
  * and paint one web frame, and nothing host-specific. `vars` carries the
  * §6.2 deterministic template map (applied BEFORE layout, exactly as the
  * source-lane preview applies it); `dpi` lets the engine rasterize any
@@ -142,10 +142,8 @@ export interface WebRenderRequest {
 /**
  * The render result — the engine-agnostic output. `sceneLayer` is the
  * C-1 IR when the engine painted, or `null` on the not-loaded path (and
- * on a future hard engine failure). `diagnostics` always carries at
- * least the not-loaded note today; the engine lane adds layout/paint
- * findings (unsupported-property warnings from the pinned compatibility
- * table — docs/concept.md §9) alongside.
+ * when the engine threw). `diagnostics` carries the not-loaded note on
+ * that path, and the template and overflow findings otherwise.
  */
 export interface WebRenderResult {
   sceneLayer: SceneLayer | null;
@@ -237,8 +235,8 @@ export interface WebFlowFrameResult {
 /**
  * The flow render result — one layer per recipient frame in chain order,
  * plus `overset` (content remained past the LAST frame — the CSS-Regions /
- * IDML-story status the host surfaces) and `diagnostics` (>= the not-loaded
- * note today).
+ * IDML-story status the host surfaces) and `diagnostics` (the not-loaded
+ * note on that path).
  */
 export interface WebRenderFlowResult {
   flowId: FlowId;
@@ -279,3 +277,43 @@ export function isFlowRendered(result: WebRenderFlowResult): boolean {
 }
 
 export { ENGINE_PIN, type EnginePin };
+
+/** Scene-layer keys that carry frame-content geometry (points). Colours,
+ *  gradient-stop offsets, blend modes and an image's PIXEL size are not
+ *  geometry and are never in this set. */
+const GEOMETRY_KEYS = new Set([
+  "x", "y", "w", "h",
+  "cx1", "cy1", "cx2", "cy2",
+  "x0", "y0", "x1", "y1", "cx", "cy", "radius",
+  "size", "offset_x", "offset_y", "blur_radius",
+]);
+
+/** Item kinds whose `width` is a stroke width (an `image`'s `width` is its
+ *  pixel width and stays). */
+const STROKE_KINDS = new Set(["strokePath", "strokePathGradient"]);
+
+function scaleNode(node: unknown, s: number): unknown {
+  if (Array.isArray(node)) return node.map((n) => scaleNode(n, s));
+  if (node === null || typeof node !== "object") return node;
+  const obj = node as Record<string, unknown>;
+  const isStroke = STROKE_KINDS.has(obj.kind as string);
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (k === "rgba") out[k] = v;
+    else if (typeof v === "number" && (GEOMETRY_KEYS.has(k) || (k === "width" && isStroke))) {
+      out[k] = v * s;
+    } else out[k] = scaleNode(v, s);
+  }
+  return out;
+}
+
+/** Scale a scene layer about the frame-content origin by `factor` — the
+ *  shrink-to-fit overflow policy lays the content out in a larger box and
+ *  scales the painted result down into the frame. Every geometry field of
+ *  every C-1 item kind scales (path points, text origin and size, image
+ *  boxes, stroke widths, gradient geometry, shadow offsets and blur);
+ *  colours and image pixels do not. Pure; factor 1 returns the layer. */
+export function scaleSceneLayer(layer: SceneLayer, factor: number): SceneLayer {
+  if (factor === 1) return layer;
+  return scaleNode(layer, factor) as SceneLayer;
+}

@@ -69,9 +69,10 @@ import {
   diagnoseHtml,
   flowThreadOptions,
   fontParity,
-  MAX_VIEWPORT_WIDTH,
   namedFlowDiagnostics,
-  normalizeViewportWidth,
+  normalizeOverflow,
+  OVERFLOW_POLICIES,
+  type OverflowPolicy,
   renderWebFrameSource,
   sourceFromTemplate,
   sourceKeyFor,
@@ -96,7 +97,7 @@ import {
   subscribeRenderReport,
 } from "../render-report";
 import { loadWebSource, writeWebSource } from "../source-part";
-import { createDraftStore, type DraftStore } from "./draft-store";
+import { createDraftSession, type DraftSession, type DraftStore } from "./draft-store";
 
 import { createDebouncer } from "./debounce";
 import {
@@ -374,11 +375,29 @@ function FlowPicker({
   );
 }
 
+/** Overflow policy labels and what each one does, in the panel's words. */
+const OVERFLOW_LABEL: Record<OverflowPolicy, string> = {
+  clip: "clip",
+  shrink: "shrink to fit",
+  grow: "grow frame",
+  thread: "continue into thread",
+};
+const OVERFLOW_NOTE: Record<OverflowPolicy, string> = {
+  clip: "content past the frame is cut off",
+  shrink: "the content is scaled down until it fits the frame",
+  grow: "the frame's height follows the content (an undoable resize)",
+  thread: "content continues into the threaded frames (Thread web flow into frames)",
+};
+
 // ----------------------------------------------------------------- panel
 
-export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
-  // Unsaved drafts per frame — they outlive the editor's remounts.
-  const drafts = createDraftStore();
+export function makeWebSourcePanel(
+  host: BundleHost,
+  // Unsaved drafts per frame (they outlive the editor's remounts) and their
+  // undo history, shared with the web frame's edit context (ADR 012).
+  session: DraftSession = createDraftSession(),
+): () => ReactElement {
+  const drafts = session.drafts;
   // The lane is stable for the host's lifetime — probe once.
   const lane = resolveEditorLane(host);
   return function WebSourcePanel(): ReactElement {
@@ -585,11 +604,49 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
         sourceKey={key}
         initial={source}
         drafts={drafts}
+        session={session}
         fontFamilies={fontFamilies}
         onPersisted={setSource}
       />
     );
   };
+}
+
+/** CSS px per point (1 pt = 1/72 in, 1 px = 1/96 in). */
+const PX_PER_PT = 96 / 72;
+
+/** The frame's content size in CSS px, or `null` when the host answers no
+ *  geometry. Follows resizes (reflow events) and undo/redo. */
+function useFrameSizePx(host: BundleHost, id: ElementId): { width: number; height: number } | null {
+  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
+  const frameId = (id as { id?: unknown }).id;
+  useEffect(() => {
+    let stale = false;
+    const read = (): void => {
+      const doc = host.document as Partial<BundleHost["document"]>;
+      if (typeof doc.elementGeometry !== "function") return;
+      void doc
+        .elementGeometry([id])
+        .then(([g]) => {
+          if (stale || !g?.bounds) return;
+          const [top, left, bottom, right] = g.bounds;
+          setSize({
+            width: Math.round(Math.max(0, right - left) * PX_PER_PT),
+            height: Math.round(Math.max(0, bottom - top) * PX_PER_PT),
+          });
+        })
+        .catch(() => {});
+    };
+    read();
+    const sub = host.document.onDidChange((e) => {
+      if (e.reflow?.frameId === frameId || e.kind !== "mutationApplied") read();
+    });
+    return () => {
+      stale = true;
+      sub.dispose();
+    };
+  }, [frameId]);
+  return size;
 }
 
 // ---------------------------------------------------------- the editor
@@ -603,6 +660,9 @@ interface SourceEditorProps {
   initial: WebFrameSource;
   /** Unsaved drafts per frame — the editor starts from a kept one. */
   drafts: DraftStore;
+  /** The draft history the host's undo steps while the frame's edit
+   *  context is active. */
+  session: DraftSession;
   fontFamilies: string[];
   /** Reports a successful save so the owner's persisted state tracks. */
   onPersisted(next: WebFrameSource): void;
@@ -615,6 +675,7 @@ function SourceEditor({
   sourceKey,
   initial,
   drafts,
+  session,
   fontFamilies,
   onPersisted,
 }: SourceEditorProps): ReactElement {
@@ -629,9 +690,25 @@ function SourceEditor({
   useEffect(() => {
     drafts.track(sourceKey, draft, persisted);
   }, [draft, persisted, sourceKey]);
+  // Every draft state goes into the frame's history (quick edits coalesce);
+  // a step the host's undo/redo takes comes back as the draft.
+  useEffect(() => {
+    session.record(sourceKey, draft);
+  }, [draft, sourceKey]);
+  useEffect(
+    () =>
+      session.onApply((key, next) => {
+        if (key === sourceKey) setDraft(next);
+      }),
+    [sourceKey],
+  );
   // Why the last save was refused (shown beside the save button).
   const [saveError, setSaveError] = useState<string | null>(null);
   const preview = useDebouncedValue(draft, PREVIEW_DEBOUNCE_MS);
+  // Preview = canvas: the preview lays out at the frame's content size,
+  // the box the engine lays out in. Re-read when the frame is resized (the
+  // reflow event) and after undo/redo (which can resize it back).
+  const frameSize = useFrameSizePx(host, id);
   // The bundle-owned HTML <textarea> (fallback lane only) — the target
   // the "Find in source" affordance drives the caret in. The host
   // widget lane has no selection prop, so this stays null there and the
@@ -851,11 +928,11 @@ function SourceEditor({
   );
 
   const CodeEditor = lane.CodeEditor;
-  // The honest viewport: the preview IFRAME takes the declared width,
-  // and an iframe's element size IS the CSS viewport its content lays
-  // out (and media-queries) against. Applied from the DEBOUNCED draft
-  // so the whole preview moves on one cadence.
-  const viewportWidth = preview.options.viewportWidth;
+  // The preview IFRAME takes the frame's content size — an iframe's element
+  // size IS the CSS viewport its content lays out (and media-queries)
+  // against, so the preview breaks lines where the canvas does. Without
+  // geometry (a host that answers none) it falls back to the panel width.
+  const viewportWidth = frameSize?.width;
 
   return (
     <div
@@ -961,9 +1038,9 @@ function SourceEditor({
       </div>
       {/* Find in source — the W-01 source-side subset of click-to-inspect.
           Lists the markup's opening tags (the pure `tagOutline` scan);
-          clicking one selects its source range in the editor. Full live
-          element inspection (hovering a rendered box) awaits the engine
-          render lane. */}
+          clicking one selects its source range in the editor. Inspecting
+          a rendered box (clicking the canvas to reach its source) needs
+          the engine's run-to-node map in the panel and is not built. */}
       {outline.length > 0 && (
         <details data-web-outline style={{ margin: "var(--space-1, 4px) 0 0" }}>
           <summary
@@ -1019,9 +1096,8 @@ function SourceEditor({
           </ul>
           {lane.native && (
             <p style={{ margin: "var(--space-1, 4px) 0 0", ...mutedNote }}>
-              The host code editor has no selection channel yet — these
-              show the line; full element inspection ships with the engine
-              render lane.
+              The host code editor has no selection channel — these show
+              the line only.
             </p>
           )}
         </details>
@@ -1073,51 +1149,43 @@ function SourceEditor({
           <option value="print">print</option>
           <option value="screen">screen</option>
         </select>
-      </label>
-      <label style={optionRow}>
-        Viewport width
-        <input
-          data-web-viewport
-          type="number"
-          min={1}
-          max={MAX_VIEWPORT_WIDTH}
-          placeholder="auto"
-          value={draft.options.viewportWidth ?? ""}
-          onChange={(e) => {
-            const raw = e.target.value;
-            const next = { ...draft.options };
-            const w =
-              raw === ""
-                ? undefined
-                : normalizeViewportWidth(Number(raw));
-            if (w === undefined) delete next.viewportWidth;
-            else next.viewportWidth = w;
-            setDraft({ ...draft, options: next });
-          }}
-          style={{ ...field, width: 72 }}
-        />
-        <span style={mutedNote}>px — empty = panel width</span>
+        <span data-web-media-note style={mutedNote}>
+          sets the body class media-{draft.options.media}; @media queries evaluate as screen in
+          the preview and on the canvas alike
+        </span>
       </label>
       <label style={optionRow}>
         Overflow
-        {/* Declared but FIXED: "clip" is the only policy implemented
-            (content past the last frame of a flow is reported as overset).
-            A disabled single-option control is the visible seam — never
-            a fake choice. */}
-        <select data-web-overflow value="clip" disabled style={{ ...field, opacity: 0.6 }}>
-          <option value="clip">clip</option>
+        {/* What the canvas does with content taller than the frame —
+            overflow.ts; the canvas re-renders on save. */}
+        <select
+          data-web-overflow
+          value={draft.options.overflow}
+          onChange={(e) =>
+            setDraft({
+              ...draft,
+              options: { ...draft.options, overflow: normalizeOverflow(e.target.value) },
+            })
+          }
+          style={field}
+        >
+          {OVERFLOW_POLICIES.map((p) => (
+            <option key={p} value={p}>
+              {OVERFLOW_LABEL[p]}
+            </option>
+          ))}
         </select>
-        <span style={mutedNote}>
-          content past the frame is clipped; to continue it, thread the frame into more frames
+        <span data-web-overflow-note style={mutedNote}>
+          {OVERFLOW_NOTE[draft.options.overflow]}
         </span>
       </label>
       <div style={kicker}>Variables</div>
       {/* §6.2 — the DETERMINISTIC template slice: {{name}} substitution
           plus a closed whitelist of pure filters, applied between the
-          source and the preview (and, via the persisted vars map, any
-          future render lane). NOT a scripting surface: the Boa-powered
-          transform lane (ADR-001 engine, W-08) is the W2 follow-on, and
-          this panel never pretends otherwise. */}
+          source and the preview, and before every canvas render (the
+          persisted vars map). NOT a scripting surface: a Boa-powered
+          transform lane (W-08) is not built, and this panel never
+          pretends otherwise. */}
       {varEntries.map(([name, value], i) => (
         <div key={i} data-web-var-row style={optionRow}>
           <input
@@ -1191,7 +1259,7 @@ function SourceEditor({
         </button>
         <span style={mutedNote}>
           {"{{name}}"} substitution + {TEMPLATE_FILTERS.join(" · ")} —
-          deterministic; scripted (Boa) transforms ship with the W2 lane
+          deterministic; scripted transforms are not available
         </span>
       </div>
       {/* Persistence is EXPLICIT: one undoable metadata mutation per
@@ -1305,7 +1373,7 @@ function SourceEditor({
           panel. */}
       <div
         data-web-preview-stage
-        style={{ overflowX: viewportWidth ? "auto" : "visible" }}
+        style={{ overflow: viewportWidth ? "auto" : "visible", maxHeight: 420 }}
       >
         <iframe
           data-web-preview
@@ -1314,19 +1382,20 @@ function SourceEditor({
           srcDoc={srcdoc}
           style={{
             width: viewportWidth ? `${viewportWidth}px` : "100%",
-            height: 180,
+            height: frameSize ? `${frameSize.height}px` : 180,
             background: "#ffffff",
             border: "1px solid var(--pg-border)",
             borderRadius: "var(--radius-sm, 4px)",
           }}
         />
       </div>
-      {/* The preview is the browser's rendering; the canvas is the
-          engine's, refreshed by the render commands — saying so beats
-          pretending they are the same. */}
-      <p style={{ margin: "var(--space-1, 4px) 0 0", font: "10px var(--font-sans, sans-serif)", color: "var(--pg-muted-fg)" }}>
-        Browser preview — the canvas updates when you run “Render web frame
-        to canvas” (or the flow render).
+      {/* The preview is the browser's rendering at the frame's size; the
+          canvas is the engine's, re-rendered when the saved source or the
+          frame's size changes (auto-render.ts). What still differs is said. */}
+      <p data-web-preview-note style={{ margin: "var(--space-1, 4px) 0 0", font: "10px var(--font-sans, sans-serif)", color: "var(--pg-muted-fg)" }}>
+        Browser preview at the frame’s size. The canvas shows the saved source and
+        re-renders when you save; it lays text out in its bundled typeface, and
+        “shrink to fit” scales only on the canvas.
       </p>
       {diagnostics.length > 0 && (
         <>

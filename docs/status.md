@@ -12,16 +12,29 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
   one of four starter templates. The source is saved in the frame's metadata label when it
   fits, otherwise in a content-addressed container part the label points to; undo of a save
   restores the previous source everywhere. A double-click enters the `webFrame` edit context.
-- **Source panel.** HTML and CSS editors, a sandboxed browser preview refreshed 300 ms after
-  typing stops, an HTML linter, font diagnostics, template variables (`{{name}}` plus four
+  On save, container parts that no label names and that no undo step of the session can
+  reach are dropped ([ADR 410](adr/410-unreachable-source-parts-dropped-on-save.md); needs the
+  engine's delete door, protocol 66).
+- **Source panel.** HTML and CSS editors, a sandboxed browser preview at the frame's content
+  size (following resizes and undo) refreshed 300 ms after typing stops, an HTML linter, font diagnostics, template variables (`{{name}}` plus four
   filters), a tag outline, sanitised clipboard paste, an explicit "Save to document", and a
   readout of the last render, flow render or flatten. Unsaved edits are kept per frame while
   the panel is open and come back, still marked unsaved, when the frame is selected again.
+  While the frame's edit context is active, the host's Undo/Redo step the frame's draft edits
+  (quick edits are one step); leaving the frame hands Undo back to the document.
 - **Import.** A `.html` or `.htm` file opens as a new web frame: `<style>` blocks become the
   CSS, the content of `<body>` becomes the HTML, and the sanitiser runs on it.
-- **Render to canvas.** One command renders the selected frame through the wasm engine to a
-  scene layer: solid fills and strokes, text runs, linear,
-  radial and sweep gradient fills, outset and inset box shadows.
+- **Render to canvas.** Web frames render through the wasm engine to a scene layer by
+  themselves: on activation, when a document opens, and after a save, an undo or redo, a
+  resize, a thread or unthread (`auto-render.ts`). A source re-renders only when its label or
+  the size of a frame it renders into changed; a move renders nothing. A frame that leaves a
+  flow or is deleted is cleared. The "Render web frame to canvas" command renders now. Layers
+  carry solid fills and strokes, text runs, linear, radial and sweep gradient fills, outset
+  and inset box shadows.
+- **Overflow policies.** clip; shrink to fit (laid out in a larger box and scaled into the
+  frame); grow frame (the frame's height follows the content, one undoable resize, never
+  redone after an undo); continue into thread (the flow; on an unthreaded frame it clips and
+  says to thread it).
 - **Flow.** Frames can be threaded to and unthreaded from a web frame, and the chain is
   saved. The flow render lays the remainder out again at each frame's width and cuts between
   blocks, lines of a paragraph, children of a container and table body rows (a `<thead>`
@@ -32,8 +45,11 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
 
 ## Limits of what is shipped
 
-- **Rendering is on command.** Nothing renders on open, on save, or when a frame is resized.
-  The layer is not stored in the document.
+- **Rendering is not stored.** The layer is not in the document; every open renders again.
+  Discovery reads the scene tree once per change burst; on an engine before protocol 65 (no
+  plugin labels on tree rows) it reads each page item's label instead. Shrink to fit searches
+  with about ten layouts and grow measures with one, because the engine has no content-height
+  export. Flatten ("Bake") lays out at the frame's size and ignores the overflow policy.
 - **Fonts on the canvas.** Layout is shaped with one bundled face, Inter Regular, with
   system fonts off. A scene text item carries position, size, colour and the string, no
   weight or style; per `packages/web-render/src/wire.rs` the host draws it in the document's
@@ -47,15 +63,20 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
   hand-built brushes, but no test shows an image reaching the layer from HTML, and the
   engine is built without a network provider. Pixels would cross the wasm boundary as a
   JSON array of byte values.
-- **Frame options.** `media` only sets a class on `<body>`; `viewportWidth` applies to the
-  panel preview; `overflow` has the single value `clip`.
+- **Frame options.** `media` only sets a class on `<body>`: `@media print` never matches, in
+  the preview or on the canvas (the engine supports a print media type; the render exports
+  take no media argument yet). `viewportWidth` from older documents is kept and unused. The
+  preview draws document fonts and the canvas does not (see Fonts); shrink to fit scales only
+  on the canvas.
 - **Fragmentation cannot split** a table row, an image or other replaced element, a form
   control, or a block whose one line is taller than the frame; such a block moves whole to
   the next frame. There is no `break-*`, orphan or widow handling. Table columns are
   resolved again in each frame and may shift.
-- **A flow does not update itself.** The chain stores frame ids. Nothing re-flows when the
-  content or a frame changes, overset is a warning only, and no frame or page is created.
-  DOM `flow-from` regions are ignored.
+- **A flow** re-renders when its source or a frame's size changes; a deleted recipient is
+  skipped (the chain keeps its id, so undo of the delete brings it back). Overset is a warning
+  only, no frame or page is created, and DOM `flow-from` regions are ignored. The engine's
+  flow reports overset for every last frame, because it counts the transparent canvas
+  background (pinned as a defect spec); the "overset" readout is therefore unreliable.
 - **The flatten does not carry** images, strokes, gradients, shadows, blended fills or fills
   with more than one subpath. Partial transparency is lost, because swatches are opaque RGB.
   Each text run becomes its own text frame with only size and colour set. Items are created
@@ -64,8 +85,8 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
   flattened. Nothing is removed: the web frame, its source and earlier flatten items stay.
 - **Storage.** The engine caps a metadata label at 64 KiB; a larger source needs a host with
   container parts, and without one the save is refused with a visible message. Every saved
-  version of a large source stays as a part (that is what lets undo return to it); nothing
-  removes unreachable ones yet. The engine versions stamped into each envelope match the
+  version of a large source written in a session stays as a part until a later session's
+  save (that is what lets undo return to it). The engine versions stamped into each envelope match the
   lockfile (a spec checks it) but nothing reads them back.
 - **Import** reads the one file. Linked stylesheets, images and fonts are not brought in.
 
@@ -75,7 +96,7 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
   expressions ([ADR 408](adr/408-no-page-javascript.md)).
 - An exporter: the manifest contributes none ([ADR 407](adr/407-baking-flattens-to-native-items.md)).
 - A raster fallback: the `dpi` field of the render request feeds only a stub.
-- Document fonts in the layout engine, and automatic re-rendering or re-flowing (see above).
+- Document fonts in the layout engine (see Fonts).
 - A flow the host knows about: the chain is plugin data ([ADR 405](adr/405-flow-chain-is-plugin-data.md)).
 - Inspection of rendered boxes, and a CSS compatibility table: the outline and the linter
   work on the source text.

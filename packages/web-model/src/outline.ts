@@ -21,8 +21,9 @@
 // ===================== HONEST SEAM — READ THIS =====================
 // Full live element inspection (hover a rendered box → highlight its
 // source, read computed layout/box metrics) needs the element to be
-// LAID OUT, which needs the Blitz/WASM render lane (RFI §6 W-01). That
-// lane is not built. What IS honest today, with only the static source
+// LAID OUT and mapped back to the source; the Blitz/WASM render lane lays
+// it out on the canvas but hands back no box-to-node map. What IS honest,
+// with only the static source
 // and a `sandbox=""` preview that runs no JS, is the SOURCE side: scan
 // the markup for its element tags and expose, per tag, the exact
 // character range of its OPEN tag in the source. The panel lists those
