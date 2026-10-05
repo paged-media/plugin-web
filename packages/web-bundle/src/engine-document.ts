@@ -31,6 +31,7 @@ import {
   composeSrcdoc,
   contentHash,
   renderWebFrameSource,
+  type TemplateVars,
   type WebDiagnostic,
   type WebFrameSource,
 } from "../../web-model/src";
@@ -58,8 +59,8 @@ const copy = (d: EngineDocument): EngineDocument => ({
   diagnostics: d.diagnostics.map((x) => ({ ...x })),
 });
 
-function compose(source: WebFrameSource): EngineDocument {
-  const rendered = renderWebFrameSource(source);
+function compose(source: WebFrameSource, bound?: TemplateVars): EngineDocument {
+  const rendered = renderWebFrameSource(source, bound);
   return {
     html: composeSrcdoc({ ...source, html: rendered.html, css: rendered.css }),
     css: rendered.css,
@@ -67,10 +68,14 @@ function compose(source: WebFrameSource): EngineDocument {
   };
 }
 
-/** The engine document for `source` (see the module note). */
-export function engineDocument(source: WebFrameSource): EngineDocument {
-  if (source.vars === undefined) return compose(source);
-  const key = contentHash(JSON.stringify([source.html, source.css, source.vars, source.options]));
+/** The engine document for `source` (see the module note); `bound` are the
+ *  values of its bound names (bindings.ts), when it uses any. */
+export function engineDocument(source: WebFrameSource, bound?: TemplateVars): EngineDocument {
+  const hasBound = !!bound && Object.keys(bound).length > 0;
+  if (source.vars === undefined && !hasBound) return compose(source);
+  const key = contentHash(
+    JSON.stringify([source.html, source.css, source.vars, source.options, hasBound ? bound : null]),
+  );
   const hit = cache.get(key);
   if (hit) {
     // Refresh recency.
@@ -79,7 +84,7 @@ export function engineDocument(source: WebFrameSource): EngineDocument {
     return copy(hit);
   }
   engineDocumentStats.templatePasses += 1;
-  const doc = compose(source);
+  const doc = compose(source, bound);
   cache.set(key, doc);
   if (cache.size > CACHE_SIZE) cache.delete(cache.keys().next().value as string);
   return copy(doc);

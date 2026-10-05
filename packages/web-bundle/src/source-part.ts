@@ -191,3 +191,47 @@ export async function writeWebSource(
     ? { applied: true }
     : { applied: false, reason: describeRefusal(outcome.error) };
 }
+
+// ------------------------------------------------- document values
+
+/** The document's own value map for templates (`{{doc.<key>}}`) — one JSON
+ *  object of strings in a container part. Parts are not undoable; the map is
+ *  data the author sets beside the sources, not a source itself. */
+export const DOCUMENT_VALUES_PART = "web/document-values.json";
+
+/** Read the document value map (empty when absent, unreadable or the host
+ *  has no container parts). */
+export async function readDocumentValues(host: PersistHost): Promise<Record<string, string>> {
+  const text = await readPartText(host, DOCUMENT_VALUES_PART).catch(() => null);
+  if (!text) return {};
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (/^[A-Za-z_][A-Za-z0-9_.-]*$/.test(k) && (typeof v === "string" || typeof v === "number")) {
+        out[k] = String(v);
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/** Write the document value map. Refused (with the reason) on a host
+ *  without container parts. */
+export async function writeDocumentValues(
+  host: PersistHost,
+  values: Record<string, string>,
+): Promise<WriteOutcome> {
+  if (!host.supports("storage.parts@1")) {
+    return { applied: false, reason: "this host has no container parts to keep document values in" };
+  }
+  try {
+    await host.parts.write(DOCUMENT_VALUES_PART, new TextEncoder().encode(JSON.stringify(values)));
+    return { applied: true };
+  } catch (err) {
+    return { applied: false, reason: describeRefusal(err) };
+  }
+}

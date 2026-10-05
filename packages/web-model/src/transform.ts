@@ -246,8 +246,12 @@ export interface RenderedWebFrame {
  * document that never opted in is untouched, and literal `{{` in plain
  * content never warns.
  */
-export function renderWebFrameSource(source: WebFrameSource): RenderedWebFrame {
-  if (source.vars === undefined) {
+export function renderWebFrameSource(
+  source: WebFrameSource,
+  bound?: TemplateVars,
+): RenderedWebFrame {
+  const hasBound = !!bound && Object.keys(bound).length > 0 && referencesBoundData(source);
+  if (source.vars === undefined && !hasBound) {
     return {
       html: source.html,
       css: source.css,
@@ -255,8 +259,19 @@ export function renderWebFrameSource(source: WebFrameSource): RenderedWebFrame {
       applied: false,
     };
   }
-  const html = applyTemplate(source.html, source.vars);
-  const css = applyTemplate(source.css, source.vars);
+  // Bound data (document, frame, data provider) under its reserved
+  // namespaces; an author variable of the same name wins. Bound values come
+  // from outside the source, so the HTML lane gets them escaped as text.
+  const authored = source.vars ?? {};
+  const raw: TemplateVars = { ...(hasBound ? bound : {}), ...authored };
+  const escaped: TemplateVars = { ...raw };
+  if (hasBound && bound) {
+    for (const k of Object.keys(bound)) {
+      if (!Object.prototype.hasOwnProperty.call(authored, k)) escaped[k] = escapeHtmlText(bound[k]);
+    }
+  }
+  const html = applyTemplate(source.html, escaped);
+  const css = applyTemplate(source.css, raw);
   return {
     html: html.output,
     css: css.output,
@@ -270,4 +285,35 @@ export function renderWebFrameSource(source: WebFrameSource): RenderedWebFrame {
     ],
     applied: true,
   };
+}
+
+/** The reserved namespaces of BOUND data — values the bundle resolves from
+ *  the document, the frame and a data provider rather than from the
+ *  source's own variables: `{{doc.title}}`, `{{doc.pages}}`, `{{doc.<key>}}`
+ *  (the document's value map), `{{frame.page}}`, `{{data.<field>}}` /
+ *  `{{data.<provider>.<field>}}`. */
+export const BOUND_NAMESPACES = ["doc", "frame", "data"] as const;
+
+const BOUND_REF = /\{\{\s*(?:doc|frame|data)\.[A-Za-z0-9_.-]+\s*(?:\|[^{}]*)?\}\}/;
+
+/** Whether a source names any bound value — only then does a render need to
+ *  resolve them (a source without such placeholders costs nothing extra). */
+export function referencesBoundData(source: Pick<WebFrameSource, "html" | "css">): boolean {
+  return BOUND_REF.test(source.html) || BOUND_REF.test(source.css);
+}
+
+/** The bound names a source uses, in first-use order (the panel lists them). */
+export function boundNamesIn(source: Pick<WebFrameSource, "html" | "css">): string[] {
+  const out: string[] = [];
+  const re = /\{\{\s*((?:doc|frame|data)\.[A-Za-z0-9_.-]+)\s*(?:\|[^{}]*)?\}\}/g;
+  for (const text of [source.html, source.css]) {
+    re.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text)) !== null) if (!out.includes(m[1])) out.push(m[1]);
+  }
+  return out;
+}
+
+function escapeHtmlText(v: unknown): string {
+  return String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }

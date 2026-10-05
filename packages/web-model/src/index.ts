@@ -109,6 +109,9 @@ export {
 // W2 follow-on (RFI W-08); see transform.ts's seam comment.
 export {
   applyTemplate,
+  BOUND_NAMESPACES,
+  boundNamesIn,
+  referencesBoundData,
   renderWebFrameSource,
   TEMPLATE_FILTERS,
   type RenderedWebFrame,
@@ -168,3 +171,4 @@ export {
   pinMatches,
   type EnginePin,
 } from "./engine";
+
