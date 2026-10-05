@@ -27,6 +27,7 @@
     "@paged-media/web-model": "workspace:*",
     "@types/node": "20.19.39",
     "@types/react": "^18.3.31",
+    "fast-check": "4.10.2",
     "react": "^18.3.1",
     "typescript": "^5.9.3",
     "vitest": "^2.1.9"

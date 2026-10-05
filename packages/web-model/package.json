@@ -15,6 +15,7 @@
     "prepublishOnly": "pnpm run build"
   },
   "devDependencies": {
+    "fast-check": "4.10.2",
     "typescript": "^5.9.3",
     "vitest": "^2.1.9"
   },
