@@ -33,9 +33,15 @@
 // through `loadWebSource`.
 //
 // Legacy documents wrote the source to BOTH homes, the part at
-// `<frame-id>/source.json`. That part is read only when it cannot have been
+// `<frame-id>/source.json`. That part is read only for a label the earlier
+// writer wrote (one without the single writer's `legacyPart: false` marker,
+// web-model `NO_LEGACY_PART`), and wins only when it cannot have been
 // mirrored by the label (its envelope is over the label cap, so the label
-// write was refused), or when there is no label source at all.
+// write was refused), or when there is no label source at all. A label this
+// writer wrote costs no part read. (Mixed versions: an older plugin saving a
+// source over 64 KiB onto a marked label writes only the legacy part — its
+// label write is refused — and that edit stays invisible here, as it was
+// "unsaved" for the older plugin itself.)
 //
 // Content-addressed parts accumulate: one per saved version of a large
 // source. Removing the ones no label and no undo step can reach is a
@@ -47,6 +53,7 @@ import {
   sourceFromEnvelope,
   sourceFromPartText,
   sourcePartPath,
+  hasNoLegacyPart,
   sourceRefOf,
   storeSource,
   utf8Length,
@@ -84,6 +91,7 @@ export async function loadWebSource(
     return text === null ? null : sourceFromPartText(text, ref);
   }
   const inline = sourceFromEnvelope(label);
+  if (inline && hasNoLegacyPart(label)) return inline;
   const legacyPath = legacyPartPath(id);
   const legacyText = legacyPath ? await readPartText(host, legacyPath) : null;
   if (legacyText !== null && (!inline || utf8Length(legacyText) > LABEL_INLINE_MAX_BYTES)) {

@@ -31,6 +31,8 @@ export {
   composeSrcdoc,
   contentHash,
   envelopeFor,
+  hasNoLegacyPart,
+  NO_LEGACY_PART,
   isWebFrameEnvelope,
   sourceFromPartText,
   sourcePartPath,

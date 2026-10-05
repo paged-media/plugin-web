@@ -315,16 +315,20 @@ describe.skipIf(!bundledPresent)("web perf budgets (real host + real Blitz)", ()
 // --- the pins (measured 2026-10-05) ----------------------------------------
 
 const BUDGET = {
-  renderFrame: { doorCalls: 8, reads: 2, bytesIn: 8936, bytesOut: 12788 },
-  // 9 / 1 before the single source reader (ADR 409): it also reads the
-  // pre-pointer part of a frame, so an old document's larger source wins.
-  renderFlow: { doorCalls: 11, reads: 3, bytesIn: 9309, bytesOut: 78153 },
+  // Was 8: the single reader also read the pre-pointer part (+ its
+  // `supports` probe) for every inline label. A label the single writer
+  // wrote is marked `legacyPart: false` and costs no part read.
+  renderFrame: { doorCalls: 6, reads: 2, bytesIn: 8936, bytesOut: 12788 },
+  // 9 before the single source reader (ADR 409), 11 with its legacy-part
+  // read (two source loads: the chain resolve and the render), 7 now.
+  renderFlow: { doorCalls: 7, reads: 3, bytesIn: 9309, bytesOut: 78153 },
   // Was 1410 / 801 / 400 / 400 / 40000 (one story-diffing mutate chain per
   // run, 801 undo steps). Now ONE batch of 5 ops per run + 1 swatch, story
   // ids through `bindCreated` handles; the one collection read is the
   // swatches (an existing swatch is not re-created).
   bake: {
-    doorCalls: 211,
+    // 211 in the one-batch commit; 207 without the legacy-part reads.
+    doorCalls: 207,
     mutates: 1,
     batchOps: 1001,
     collections: 1,

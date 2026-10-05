@@ -209,14 +209,29 @@ export interface WebSourceEnvelope {
   engine?: Record<string, string>;
 }
 
+/** The marker the single writer (ADR 409) puts in every envelope's `data`:
+ *  no `<frame-id>/source.json` part was written beside it. A label without
+ *  it may come from the earlier writer, which wrote the source to the label
+ *  AND that legacy part — so only for such a label does the reader also
+ *  look at the legacy part. Within envelope v1 the field is additive; a
+ *  reader that does not know it ignores it. */
+export const NO_LEGACY_PART = "legacyPart" as const;
+
+/** Whether an envelope was written by the single writer, i.e. no legacy
+ *  part accompanies it (see {@link NO_LEGACY_PART}). */
+export function hasNoLegacyPart(envelope: WebSourceEnvelope | null): boolean {
+  return envelope?.data?.[NO_LEGACY_PART] === false;
+}
+
 /** Wrap a source for `host.document.setMetadata`. Stamps the pinned
  *  web-engine stack into the envelope's `engine` record (ADR-011
  *  determinism — a re-render can detect when the document was last
- *  rendered under an older stack). */
+ *  rendered under an older stack), and marks it as written without a
+ *  legacy part ({@link NO_LEGACY_PART}). */
 export function envelopeFor(source: WebFrameSource): WebSourceEnvelope {
   return {
     v: SOURCE_METADATA_VERSION,
-    data: { ...source },
+    data: { ...source, [NO_LEGACY_PART]: false },
     engine: engineStamp(),
   };
 }
@@ -297,7 +312,11 @@ export function storeSource(source: WebFrameSource): StoredSource {
   const ref: WebSourceRef = { hash: contentHash(text), bytes };
   return {
     kind: "part",
-    label: { v: SOURCE_METADATA_VERSION, data: { ref }, engine: envelope.engine },
+    label: {
+      v: SOURCE_METADATA_VERSION,
+      data: { ref, [NO_LEGACY_PART]: false },
+      engine: envelope.engine,
+    },
     ref,
     partText: text,
   };

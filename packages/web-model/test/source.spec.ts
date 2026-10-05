@@ -25,6 +25,7 @@ import {
   contentHash,
   DEFAULT_SOURCE,
   envelopeFor,
+  hasNoLegacyPart,
   isWebFrameEnvelope,
   LABEL_INLINE_MAX_BYTES,
   LABEL_MAX_BYTES,
@@ -322,5 +323,22 @@ describe("large sources: label pointer + content-addressed part", () => {
     expect(sourceRefOf({ v: 1, data: { ref: "x" } })).toBeNull();
     expect(sourceRefOf({ v: 2, data: { ref: { hash: "0123456789abcdef", bytes: 1 } } })).toBeNull();
     expect(isWebFrameEnvelope(null)).toBe(false);
+  });
+});
+
+describe("the single writer's no-legacy-part marker", () => {
+  it("every envelope the writer produces carries it — inline and pointer", () => {
+    expect(hasNoLegacyPart(envelopeFor(DEFAULT_SOURCE))).toBe(true);
+    const large = { ...DEFAULT_SOURCE, html: "<p>x</p>".repeat(20_000) };
+    const stored = storeSource(large);
+    expect(stored.kind).toBe("part");
+    expect(hasNoLegacyPart(stored.label)).toBe(true);
+    expect(sourceRefOf(stored.label)).not.toBeNull();
+  });
+
+  it("an envelope from the earlier writer has none, and the marker is not part of the source", () => {
+    expect(hasNoLegacyPart({ v: 1, data: { html: "<p>x</p>", css: "" } })).toBe(false);
+    expect(hasNoLegacyPart(null)).toBe(false);
+    expect(sourceFromEnvelope(envelopeFor(DEFAULT_SOURCE))).toEqual(DEFAULT_SOURCE);
   });
 });

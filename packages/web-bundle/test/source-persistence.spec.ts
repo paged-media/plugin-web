@@ -236,3 +236,46 @@ describe("sources over the 64 KiB label cap", () => {
     expect(all.some((d) => d.severity === "error" && /64 KiB/.test(d.message))).toBe(true);
   });
 });
+
+describe("documents from the earlier writer (label + `<id>/source.json`)", () => {
+  /** What the earlier writer stored: the envelope with no single-writer
+   *  marker, as a label (when it fit) and as the legacy part. */
+  const legacyEnvelope = (s: WebFrameSource) => ({ v: 1, data: { ...s }, engine: {} });
+  const legacyPart = (s: WebFrameSource) =>
+    new TextEncoder().encode(JSON.stringify(legacyEnvelope(s)));
+  const countParts = (host: BundleHost) => {
+    let reads = 0;
+    const read = host.parts.read.bind(host.parts);
+    (host.parts as { read: typeof read }).read = (p: string) => {
+      reads += 1;
+      return read(p);
+    };
+    return () => reads;
+  };
+
+  it("a legacy part over the label cap still wins over the older label it outgrew", async () => {
+    const e = fakeEngine();
+    await e.host.document.setMetadata(frame, legacyEnvelope(src("<p>small</p>")) as never);
+    await e.host.parts.write("uF1/source.json", legacyPart(big("legacy")));
+    expect((await loadWebSource(e.host, frame))?.html.startsWith("<p>legacy</p>")).toBe(true);
+  });
+
+  it("a label the single writer wrote reads with NO part read", async () => {
+    const e = fakeEngine();
+    await e.host.parts.write("uF1/source.json", legacyPart(big("stale")));
+    await writeWebSource(e.host, frame, src("<p>current</p>"));
+    const reads = countParts(e.host);
+    expect((await loadWebSource(e.host, frame))?.html).toBe("<p>current</p>");
+    expect(reads()).toBe(0);
+  });
+
+  it("undo back to an earlier-writer label reads the legacy part again", async () => {
+    const e = fakeEngine();
+    await e.host.document.setMetadata(frame, legacyEnvelope(src("<p>small</p>")) as never);
+    await e.host.parts.write("uF1/source.json", legacyPart(big("legacy")));
+    await writeWebSource(e.host, frame, src("<p>new</p>"));
+    expect((await loadWebSource(e.host, frame))?.html).toBe("<p>new</p>");
+    e.undo();
+    expect((await loadWebSource(e.host, frame))?.html.startsWith("<p>legacy</p>")).toBe(true);
+  });
+});
