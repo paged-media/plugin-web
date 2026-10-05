@@ -40,6 +40,30 @@ The label is the truth, because it is what undo restores.
   source, or when the part is larger than a label can hold (so the label could never have
   mirrored it).
 
+## Evidence
+
+- `packages/web-model/src/source.ts:233` — the inline limit; `:292` `storeSource` decides
+  inline vs part; `:307` `sourceRefOf` reads a pointer.
+- `packages/web-bundle/src/source-part.ts:76` `loadWebSource`, `:125`
+  `prepareSourceLabel`, `:149` `writeWebSource`.
+- `packages/web-bundle/test/source-persistence.spec.ts` — undo of small, large and
+  mixed-size saves; large save/insert/import; refusals as diagnostics; the guard that no
+  other file reads metadata or parts.
+- `packages/web-bundle/test/conformance/persistence.spec.ts` — the same against the real
+  engine (its 64 KiB refusal, its undo, a large `.html` import through the bundle's
+  importer). Against the previous reader and writer three of its four cases fail.
+
+## Alternatives considered
+
+- **Keep reading the part first, rewrite the part on undo.** The plugin is not told what an
+  undo restored in time to rewrite parts consistently, and redo would need the same; the
+  label already carries exactly that history.
+- **Always write a part, label as pointer only.** Undo-correct too, but every small source
+  would need container parts to be read at all, and the label would stop being readable
+  through IDML for the common case.
+- **Split a large source over several labels.** Each label is still capped, the batch grows
+  with the source, and IDML gains many opaque key-value pairs; the container exists for this.
+
 ## Consequences
 
 - Undo and redo of a save are correct for every reader (panel, render, flow, bake);
