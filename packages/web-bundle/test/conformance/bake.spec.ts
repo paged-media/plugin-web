@@ -37,7 +37,12 @@ import { DEFAULT_SOURCE, type WebFrameSource } from "@paged-media/web-model";
 import { webBundle } from "../../src";
 import { sceneLayerToBakePlan } from "../../src/bake-plan";
 import { bakeWebFrameToDocument, bakeWebFlowToDocument } from "../../src/bake-to-document";
-import { parseSceneLayer, parseFlowResult, type WebEngine } from "../../src/engine-loader";
+import {
+  engineExtras,
+  parseSceneLayer,
+  parseFlowResult,
+  type WebEngine,
+} from "../../src/engine-loader";
 import { writeWebSource } from "../../src/source-part";
 import { countingHost, settle } from "../perf/counting-host";
 import { W1_EMPTY_PAGE } from "../fixtures/corpus";
@@ -103,6 +108,7 @@ describe.skipIf(!artifactPresent)(
       };
       glue.initSync({ module: readFileSync(wasmPath) });
       engine = {
+        ...engineExtras(glue as never),
         render: (html, w, hh) => parseSceneLayer(glue.render_web_frame(html, w, hh)),
         renderFlow: (html, frames, flowRoot) =>
           parseFlowResult(glue.render_web_flow(html, JSON.stringify(frames), flowRoot ?? "")),
@@ -177,6 +183,98 @@ describe.skipIf(!artifactPresent)(
       // also yields some multi-subpath fills, honestly deferred — the point is
       // that non-rect fills now bake instead of ALL being dropped.)
       expect(plan.paths.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("bakes faces, gradients, opacity, a drop shadow and an image in ONE applied batch @feat:plugin-web.bake-to-native", async () => {
+      const insert = h.contributions.find(
+        (x) => x.kind === "command" && x.id === "media.paged.web.command.insertWebFrame",
+      )!.value as { handler: (a: unknown) => unknown };
+      await insert.handler(undefined);
+      const rich = h.host.selection.get()[0];
+      const png =
+        "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAEklEQVR4nGP4z8DwHxkzkC4AADxAH+HggXe0AAAAAElFTkSuQmCC";
+      await writeWebSource(h.host, rich, {
+        ...SOURCE,
+        html:
+          '<div class="card"><p><b>Bold title</b> <i>slanted</i></p>' +
+          `<img src="data:image/png;base64,${png}" style="width:20px;height:20px;display:block">` +
+          '<div class="grad"></div><div class="glass"></div></div>',
+        css:
+          "body{margin:0}p{margin:0;font-size:14px}" +
+          ".card{width:220px;margin:8px;background:#ffffff;box-shadow:4px 4px 6px rgba(0,0,0,0.4)}" +
+          ".grad{width:60px;height:20px;background:linear-gradient(to right,#ff0000,#0000ff)}" +
+          ".glass{width:20px;height:20px;background:rgba(0,0,255,0.5)}",
+      });
+      const gradientsBefore = (await h.host.document.collection<{ selfId: string }>("gradients")).length;
+      // See the batch the bake sends (the counting host counts, it does not keep).
+      const sent: { op: string; args: { ops: { op: string; args: Record<string, unknown> }[] } }[] = [];
+      const doc = h.host.document;
+      const spied = new Proxy(h.host, {
+        get(t, k) {
+          if (k !== "document") return Reflect.get(t, k);
+          return new Proxy(doc, {
+            get(d, kk) {
+              const v = Reflect.get(d, kk) as unknown;
+              if (kk === "mutate") {
+                return (m: never) => {
+                  sent.push(m);
+                  return doc.mutate(m);
+                };
+              }
+              return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(d) : v;
+            },
+          });
+        },
+      });
+      const { host, work } = countingHost(spied);
+      const outcome = await bakeWebFrameToDocument(host, rich, engine);
+      await settle();
+      expect(work.mutations.map((m) => m.op)).toEqual(["batch"]);
+      expect(outcome.diagnostics.map((d) => d.message).join(" | ")).not.toMatch(/refused/);
+      expect(outcome.baked).toBe(true);
+      // Nothing of these kinds was left behind.
+      for (const k of ["image", "dropShadow", "dropShadow.onPath", "fillPathGradient.linear", "text"]) {
+        expect(outcome.deferred[k], k).toBeUndefined();
+      }
+      const ops = sent[0].args.ops;
+      const paths = ops.filter((o) => o.op === "setElementProperty").map((o) => o.args.path);
+      for (const p of [
+        "characterFontFamily",
+        "characterFontStyle",
+        "frameGradientFillAngle",
+        "frameOpacity",
+        "frameDropShadowSize",
+      ]) {
+        expect(paths, p).toContain(p);
+      }
+      expect(ops.some((o) => o.op === "replaceImageBytes")).toBe(true);
+      const styles = ops
+        .filter((o) => o.args.path === "characterFontStyle")
+        .map((o) => (o.args.value as { value: string }).value);
+      expect(styles).toEqual(expect.arrayContaining(["Bold", "Italic"]));
+      // The engine applied it: the gradient swatch exists.
+      const gradients = await h.host.document.collection<{ selfId: string }>("gradients");
+      expect(gradients.length).toBe(gradientsBefore + 1);
+    });
+
+    it("a rounded border (a multi-subpath fill) bakes whole, the engine taking its geometry @feat:plugin-web.bake-to-native", async () => {
+      const insert = h.contributions.find(
+        (x) => x.kind === "command" && x.id === "media.paged.web.command.insertWebFrame",
+      )!.value as { handler: (a: unknown) => unknown };
+      await insert.handler(undefined);
+      const ring = h.host.selection.get()[0];
+      await writeWebSource(h.host, ring, {
+        ...SOURCE,
+        html: '<div class="ring"></div>',
+        css: "body{margin:0}.ring{width:100px;height:60px;border:3px solid #333333;border-radius:14px}",
+      });
+      const { host, work } = countingHost(h.host);
+      const outcome = await bakeWebFrameToDocument(host, ring, engine);
+      await settle();
+      expect(work.mutations.map((m) => m.op)).toEqual(["batch"]);
+      expect(outcome.diagnostics).toEqual([]);
+      expect(outcome.baked).toBe(true);
+      expect(outcome.deferred).toEqual({});
     });
 
     it("a non-web-frame selection bakes nothing (honest, no crash)", async () => {
