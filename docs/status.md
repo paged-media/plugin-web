@@ -74,9 +74,15 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
   resolved again in each frame and may shift.
 - **A flow** re-renders when its source or a frame's size changes; a deleted recipient is
   skipped (the chain keeps its id, so undo of the delete brings it back). Overset is a warning
-  only, no frame or page is created, and DOM `flow-from` regions are ignored. The engine's
-  flow reports overset for every last frame, because it counts the transparent canvas
-  background (pinned as a defect spec); the "overset" readout is therefore unreliable.
+  only, no frame or page is created, and DOM `flow-from` regions are ignored. An overset last
+  frame ends at its last block, line or table row that fits; the rest is the overset.
+- **Layout against Chrome.** 39 hand-written fixtures and 7 flows are replayed against
+  Chrome recordings (`packages/web-conformance/chrome/PARITY.md`): 123 of 156 layout verdicts
+  agree, every flow agrees. The 13 open defects are in the pinned layout engine
+  (`line-height: normal`, optical sizing, shrink-to-fit rounding, flex auto margins with
+  `justify-content`, `vertical-align`, a no-break space that breaks, multi-column, percentage
+  padding, table spacing and collapsed borders, `position: sticky`, `text-align-last`,
+  `hyphens: none`); upstream reports are drafted in `chrome/UPSTREAM.md`.
 - **The flatten does not carry** images, strokes, gradients, shadows, blended fills or fills
   with more than one subpath. Partial transparency is lost, because swatches are opaque RGB.
   Each text run becomes its own text frame with only size and colour set. Items are created

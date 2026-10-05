@@ -43,28 +43,40 @@ without a browser.
 
 ## Defects (pinned)
 
-Ordered by what a reader of the canvas sees first. Numbers are at width 240 unless noted.
+Ordered by what a reader of the canvas sees first. Numbers are at width 240 unless noted. Every
+open defect is in the pinned upstream layout stack (Blitz 0.3.0-alpha.4, Taffy
+0.11.0-experimental-cache-fix.3, Parley 0.9; ADR 401 keeps the pin); the cause column names the
+code. Drafted upstream reports, each with a minimal reproduction, are in
+[`UPSTREAM.md`](UPSTREAM.md).
 
-| Id | Defect | Fixtures | Measured |
-|---|---|---|---|
-| CW-01 | Text recovery copies a parley Run's whole text onto every glyph run the Run is split into by a style change (decoration, `<code>`, `<small>`), so the canvas paints the same words over each other. | inline-bold-italic | 8 extra words at 240, 18 at 400 ("underline" 3x, "strike code" 4x) |
-| CW-02 | An outside list marker's glyph run takes the text of the next item; that item's text is painted at the marker position, one line up. Any list whose items wrap. | lists, lists-long | 4 of 9 runs (lists), 7 of 16 runs (lists-long) off their line |
-| CW-03 | Text in an anonymous block box (inline text beside a block child, e.g. `<li>text<ul>…`) is never recovered: missing on the canvas. | lists-nested | 2 words missing |
-| CW-04 | `line-height: normal` is 1.2 em; Chrome uses the font's rounded ascent + descent (+ line gap). | inline-line-height-normal | 19.2 vs 20 px per line at 16 px; 6.4 px drift after 8 lines |
-| CW-05 | `font-optical-sizing: auto` is ignored: the variable `opsz` axis stays at 14, Chrome sets it to the font size. | text-optical-sizing | text ≈1 % wider at 16 px; 8 lines vs 7 at 240 |
-| CW-06 | Max-content (shrink-to-fit) widths are rounded up to whole px. | flex-row, positioned | flex item 40.00 vs 39.02 px; abs box 94.00 vs 93.05 px |
-| CW-07 | Column flexbox: an item's `margin-top: auto` does not absorb free space before `justify-content: flex-end`; items shift by the free space and overflow. | flex-column | items 80 px lower (100 px at 400) |
-| CW-08 | Line boxes do not shorten beside floats: text runs under the float. | floats | 7 lines vs 9; wrapper 224 vs 180 px tall |
-| CW-09 | Consecutive left floats stack vertically instead of side by side. | floats-stack | container 112 vs 48 px tall |
-| CW-10 | `vertical-align: sub/super` do not grow the line box. | inline-bold-italic | paragraph 40.00 vs 47.17 px |
-| CW-11 | A no-break space (U+00A0) is a break opportunity. | inline-hard-breaks | 3 lines vs 2 |
-| CW-12 | Multi-column layout (`column-count`) is not implemented: one full-width column. | multicol | 7 lines vs 14 |
-| CW-13 | Percentage padding and margins resolve against the box's own width instead of the containing block's. | sizing-percent | padding 10.8 vs 12 px; child offset 64.8 vs 60 px |
-| CW-14 | `border-spacing` is not applied at the table's outer edges. | table-basic | cells at x 0 vs 2; table 114 vs 118 px tall |
-| CW-15 | `border-collapse: collapse` is not implemented: adjacent borders double. | table-collapse | table 116 vs 104 px tall |
-| FW-01 | The flow reports overset although all content fits the chain. | flow-forced-break, flow-headings-margins, flow-orphans-widows, flow-split-paragraph | 4 of 7 flows |
-| FW-02 | Fragmenting a list repeats and drops items across frames (CW-02 in the flow). | flow-list | 64/61/48 words vs 36/36/36 |
-| FW-03 | The last frame keeps a table row that does not fit its height. | flow-table-rows | 6 rows vs 5 in a 150 px frame |
+| Id | Defect | Fixtures | Measured | Cause (upstream) |
+|---|---|---|---|---|
+| CW-04 | `line-height: normal` is 1.2 em; Chrome uses the font's rounded ascent + descent (+ line gap). | inline-line-height-normal | 19.2 vs 20 px per line at 16 px; 6.4 px drift after 8 lines | blitz-dom `stylo_to_parley::style` maps `Normal` to `FontSizeRelative(1.2)` |
+| CW-05 | `font-optical-sizing: auto` is ignored: the variable `opsz` axis stays at 14, Chrome sets it to the font size. | text-optical-sizing | text ≈1 % wider at 16 px; 8 lines vs 7 at 240 | blitz-dom passes only `font-variation-settings` to Parley |
+| CW-06 | Max-content (shrink-to-fit) widths are rounded up to whole px. | flex-row, positioned | flex item 40.00 vs 39.02 px; abs box 94.00 vs 93.05 px | blitz-dom `layout/inline.rs` calls `ceil()` on the inline content width |
+| CW-07 | Flexbox: main-axis `auto` margins take the free space, and `justify-content` then distributes the same free space again. | flex-column | items 80 px lower (100 px at 400) | taffy `distribute_remaining_free_space` does not zero the free space after the auto margins |
+| CW-10 | `vertical-align: sub/super` do not grow the line box. | inline-bold-italic | paragraph 40.00 vs 47.17 px | no `vertical-align` in blitz-dom or Parley 0.9 |
+| CW-11 | A no-break space (U+00A0) is a break opportunity. | inline-hard-breaks | 3 lines vs 2 | Parley `line_break.rs` hangs an overflowing cluster when `is_space_or_nbsp()` and breaks after it |
+| CW-12 | Multi-column layout (`column-count`) is not implemented: one full-width column. | multicol | 7 lines vs 14 | no multi-column layout in blitz-dom |
+| CW-13 | Percentage padding and children's percentage margins resolve against the box's own width instead of the containing block's. | sizing-percent | padding 10.8 vs 12 px; child offset 64.8 vs 60 px | taffy `compute/block.rs` resolves them against `container_outer_width` |
+| CW-14 | `border-spacing` is not applied at the table's outer edges. | table-basic | cells at x 0 vs 2; table 114 vs 118 px tall | blitz-dom `layout/table.rs` maps `border-spacing` to grid gaps only |
+| CW-15 | `border-collapse: collapse` is not implemented: cells keep their full borders and a border-wide gap is added; auto column widths differ. | table-collapse | table 116 vs 104 px tall; rows 36 vs 34 px | blitz-dom `layout/table.rs` (collapse approximated by gaps) |
+| CW-16 | `position: sticky` is laid out as `relative`: the inset moves a box that is not stuck. | positioned-sticky | `top: 10px` box at y 58 vs 48 | stylo_taffy `convert.rs` maps `Sticky` to `Position::Relative` |
+| CW-17 | `text-align-last` is ignored. | text-align-last | centred last line starts at x 0 vs 66.9 | not mapped by blitz-dom; no last-line alignment in Parley 0.9 |
+| CW-18 | `hyphens: none` is ignored: a soft hyphen always breaks. | text-hyphens | 5 lines vs 4 (100 vs 80 px) | `hyphens` not read by blitz-dom; Parley breaks at U+00AD unconditionally |
+
+### Fixed
+
+| Id | Was | Fixed by |
+|---|---|---|
+| CW-01 | Every glyph run of a style-split line (colour, decoration, `<code>`, `<small>`) carried the shaping run's whole text: words painted over each other. | Text recovery slices each glyph run by its own clusters (unit test over every split kind). |
+| CW-02 | An outside list marker's run took the next item's text, painted one line up. | Text recovery walks each item's outside-marker layout. |
+| CW-03 | Text in an anonymous block box (`<li>text<ul>…`) was never painted. | Text recovery enters anonymous-block layout children. |
+| CW-08 | Line boxes did not shorten beside floats. | Blitz's opt-in `floats` feature is enabled. |
+| CW-09 | Consecutive left floats stacked vertically. | Same feature. |
+| FW-01 | The flow reported overset although all content fit. | The canvas background no longer counts as content. |
+| FW-02 | A fragmented list repeated and dropped items (CW-02 in the flow): 50/49/48 words vs 36/36/36. | CW-02's fix. |
+| FW-03 | The last frame kept a table row that did not fit its height. | An overset last frame is cut like every other frame. |
 
 ## Divergences (documented, not defects)
 
@@ -77,20 +89,21 @@ Ordered by what a reader of the canvas sees first. Numbers are at width 240 unle
 
 Block layout with margin collapsing through parents and empty blocks, the box model and
 `box-sizing`, line breaking of plain, bold and italic text (weights via the `wght` axis), `white-space`
-modes, hard breaks and soft hyphens, mixed font sizes and explicit line heights, `text-align`
-left/center/right/justify, `letter-spacing`/`word-spacing`/`text-indent`/`text-transform`,
-`overflow-wrap`/`word-break`, flex rows with grow/wrap/gap, grid templates, areas and spans,
+modes, hard breaks, soft hyphens with `hyphens: manual` and hard hyphens, mixed font sizes and
+explicit line heights, `text-align` left/center/right/end/justify, `letter-spacing`/`word-spacing`/`text-indent`/`text-transform`,
+`overflow-wrap`/`word-break`, every `text-decoration` line, style and colour, flex rows with grow/wrap/gap, grid templates, areas and spans,
+floats (text wrapping beside them, side-by-side floats, clearance), lists with outside and inside markers,
 absolute and relative positioning, `::before`/`::after`, borders and radii, user-agent heading and
-blockquote defaults, inline-block. In the flow lane, Chrome and Blitz break paragraphs, split
-paragraphs mid-text, honour default orphans/widows, truncate heading margins at a break and honour a
-forced break on the same word in every case except lists and the last table row.
+blockquote defaults, inline-block, and the boxes of `object-fit` images and `background-image` boxes. In the flow lane every fixture agrees: Chrome and Blitz break paragraphs, split
+paragraphs mid-text, honour default orphans/widows, truncate heading margins at a break, honour a
+forced break on the same word, fragment lists, and move a table row that does not fit the last frame to the overset.
 
 ## Not covered yet
 
 - Pixels: the PNGs are recorded, but no rasteriser for the captured display list exists in this
   repo (the host paints), so there is no pixel diff yet; `paint` checks text placement only.
-- Images, web fonts other than the bundled face, `background-image`, `object-fit` (Blitz loads no
-  resources in the plugin today).
+- The pixels of images, `background-image` and `object-fit`: their fixtures compare boxes and
+  text only. Web fonts other than the bundled face.
 - Frames of different sizes in the flow lane (Chrome has no Regions; the multicol model needs
   equal columns).
 
@@ -119,7 +132,7 @@ pinned with `it.fails`: S-01 an unterminated tag at the end of a paste keeps its
 (`<scr<script>ipt>alert(1)</scr<script>ipt>` becomes `<script>alert(1)`; `<a ON onclick="x"A=y>`
 becomes `<a ONA=y>`); S-03 an empty `onerror=` is kept. The template pass, the envelope round-trip
 and (`web-bundle/test/flow-properties.spec.ts`, real engine) text conservation across random frame
-chains hold, except lists (FW-02).
+chains hold, lists included.
 
 ## Measured tables
 
@@ -131,20 +144,20 @@ chains hold, except lists (FW-02).
 |---|---:|---|---|---|---|
 | blocks | 3 | 3 agree | 3 agree | 3 agree | 3 agree |
 | flex | 3 | 1 agree, 2 defect | 3 agree | 1 agree, 2 defect | 3 agree |
-| floats | 2 | 2 defect | 1 agree, 1 defect | 2 defect | 2 agree |
+| floats | 2 | 2 agree | 2 agree | 2 agree | 2 agree |
 | grid | 2 | 2 agree | 2 agree | 2 agree | 2 agree |
 | headings | 1 | 1 agree | 1 agree | 1 agree | 1 agree |
 | inline | 6 | 3 agree, 3 defect | 5 agree, 1 defect | 4 agree, 2 defect | 6 agree |
-| lists | 3 | 3 agree | 3 agree | 2 agree, 1 diverges | 3 defect |
+| lists | 3 | 3 agree | 3 agree | 2 agree, 1 diverges | 3 agree |
 | multicol | 1 | 1 defect | 1 defect | 1 agree | 1 agree |
-| paint | 1 | 1 agree | 1 agree | 1 agree | 1 agree |
-| positioned | 2 | 1 defect, 1 diverges | 2 agree | 1 defect, 1 diverges | 2 agree |
+| paint | 3 | 3 agree | 3 agree | 3 agree | 3 agree |
+| positioned | 3 | 2 defect, 1 diverges | 3 agree | 2 defect, 1 diverges | 3 agree |
 | pseudo | 1 | 1 agree | 1 agree | 1 agree | 1 agree |
 | sizing | 1 | 1 defect | 1 agree | 1 defect | 1 agree |
 | table | 2 | 2 defect | 2 agree | 2 defect | 2 agree |
-| text | 5 | 4 agree, 1 defect | 4 agree, 1 defect | 4 agree, 1 defect | 5 agree |
+| text | 8 | 6 agree, 2 defect | 6 agree, 2 defect | 5 agree, 3 defect | 7 agree, 1 defect |
 
-33 fixtures x 2 widths, 132 aspect verdicts: **98 agree, 31 defect, 3 diverges, 0 fail**. 16 fixtures agree on every aspect.
+39 fixtures x 2 widths, 156 aspect verdicts: **123 agree, 30 defect, 3 diverges, 0 fail**. 23 fixtures agree on every aspect.
 
 ### Per fixture
 
@@ -158,8 +171,8 @@ Numbers per width (`240 / 400`): boxes agreeing/checked and the largest box delt
 | flex-column | **defect CW-07** | agree | **defect CW-07** | agree | 1/4 (80) / 1/4 (100) | 4/4 / 3/3 | 0/4 (80) / 0/3 (100) |
 | flex-grow-wrap | agree | agree | agree | agree | 9/9 (0.01) / 9/9 (0.01) | 8/8 / 7/7 | 8/8 (0.01) / 7/7 (0.01) |
 | flex-row | **defect CW-06** | agree | **defect CW-06** | agree | 4/8 (0.98) / 4/8 (1.36) | 8/8 / 6/6 | 3/8 (0.98) / 3/6 (1.36) |
-| floats | **defect CW-08** | **defect CW-08** | **defect CW-08** | agree | 1/5 (180) / 1/5 (340) | 10/8 / 6/5 | 0/1 (44) / 0/1 (64) |
-| floats-stack | **defect CW-09** | agree | **defect CW-09** | agree | 1/7 (162) / 1/7 (216) | 2/2 / 2/2 | 0/2 (64) / 0/2 (88) |
+| floats | agree | agree | agree | agree | 5/5 (0) / 5/5 (0) | 10/10 / 6/6 | 10/10 (0.01) / 6/6 (0.01) |
+| floats-stack | agree | agree | agree | agree | 7/7 (0) / 7/7 (0) | 2/2 / 2/2 | 2/2 (0.01) / 2/2 (0.01) |
 | grid-areas | agree | agree | agree | agree | 9/9 (0) / 9/9 (0.39) | 8/8 / 7/7 | 8/8 (0.01) / 7/7 (0.4) |
 | grid-template | agree | agree | agree | agree | 7/7 (0.01) / 7/7 (0.01) | 7/7 / 6/6 | 7/7 (0.01) / 6/6 (0.01) |
 | headings | agree | agree | agree | agree | 7/7 (0.03) / 7/7 (0.03) | 9/9 / 7/7 | 9/9 (0.06) / 7/7 (0.06) |
@@ -169,18 +182,24 @@ Numbers per width (`240 / 400`): boxes agreeing/checked and the largest box delt
 | inline-line-breaking | agree | agree | agree | agree | 3/3 (0) / 3/3 (0) | 20/20 / 12/12 | 20/20 (0.01) / 12/12 (0.01) |
 | inline-line-height-normal | **defect CW-04** | agree | **defect CW-04** | agree | 0/3 (9.4) / 0/3 (5.8) | 15/15 / 9/9 | 0/15 (10.4) / 0/9 (6.8) |
 | inline-white-space | agree | agree | agree | agree | 4/4 (0) / 4/4 (0) | 9/9 / 7/7 | 9/9 (0.01) / 7/7 (0.01) |
-| lists | agree | agree | agree | **defect CW-02** | 7/7 (0) / 7/7 (0) | 13/13 / 9/9 | 13/13 (0.01) / 9/9 (0.01) |
-| lists-long | agree | agree | agree | **defect CW-02** | 9/9 (0) / 9/9 (0) | 16/16 / 8/8 | 16/16 (0.01) / 8/8 (0.01) |
-| lists-nested | agree | agree | diverges | **defect CW-03** | 11/11 (0) / 11/11 (0) | 7/7 / 7/7 | 5/7 (22) / 5/7 (22) |
+| lists | agree | agree | agree | agree | 7/7 (0) / 7/7 (0) | 13/13 / 9/9 | 13/13 (0.01) / 9/9 (0.01) |
+| lists-long | agree | agree | agree | agree | 9/9 (0) / 9/9 (0) | 16/16 / 8/8 | 16/16 (0.01) / 8/8 (0.01) |
+| lists-nested | agree | agree | diverges | agree | 11/11 (0) / 11/11 (0) | 7/7 / 7/7 | 5/7 (22) / 5/7 (22) |
 | multicol | **defect CW-12** | **defect CW-12** | agree | agree | 0/3 (160) / 0/3 (208) | 29/14 / 17/8 | 0/0 (0) / 0/0 (0) |
+| paint-background-image | agree | agree | agree | agree | 5/5 (0) / 5/5 (0) | 5/5 / 5/5 | 5/5 (0.01) / 5/5 (0.01) |
 | paint-borders-radius | agree | agree | agree | agree | 5/5 (0) / 5/5 (0) | 4/4 / 4/4 | 4/4 (0.01) / 4/4 (0.01) |
+| paint-object-fit | agree | agree | agree | agree | 6/6 (0) / 6/6 (0) | 3/3 / 2/2 | 3/3 (0.01) / 2/2 (0.01) |
 | positioned | **defect CW-06** | agree | **defect CW-06** | agree | 5/6 (0.95) / 5/6 (0.95) | 4/4 / 4/4 | 3/4 (0.95) / 3/4 (0.95) |
+| positioned-sticky | **defect CW-16** | agree | **defect CW-16** | agree | 4/7 (12) / 4/7 (12) | 6/6 / 6/6 | 3/6 (12) / 3/6 (12) |
 | positioned-zindex | diverges | agree | diverges | agree | 3/4 (10) / 3/4 (10) | 2/2 / 1/1 | 0/2 (10.01) / 0/1 (10.01) |
 | pseudo | agree | agree | agree | agree | 3/3 (0) / 3/3 (0) | 11/11 / 7/7 | 11/11 (0.01) / 7/7 (0.01) |
 | sizing-percent | **defect CW-13** | agree | **defect CW-13** | agree | 0/5 (4.8) / 0/5 (8) | 5/5 / 3/3 | 0/5 (4.4) / 0/3 (6) |
 | table-basic | **defect CW-14** | agree | **defect CW-14** | agree | 0/7 (4) / 0/7 (4) | 7/7 / 6/6 | 0/7 (12) / 0/6 (2.01) |
 | table-collapse | **defect CW-15** | agree | **defect CW-15** | agree | 0/8 (12) / 0/8 (37.55) | 8/8 / 7/7 | 1/8 (8) / 1/7 (20.81) |
 | text-align | agree | agree | agree | agree | 3/3 (0) / 3/3 (0) | 21/21 / 12/12 | 21/21 (0.01) / 12/12 (0.01) |
+| text-align-last | agree | agree | **defect CW-17** | agree | 4/4 (0.25) / 4/4 (0.5) | 15/15 / 9/9 | 13/15 (133.87) / 7/9 (19.86) |
+| text-decoration | agree | agree | agree | agree | 4/4 (0) / 4/4 (0) | 12/12 / 7/7 | 12/12 (0.03) / 7/7 (0.02) |
+| text-hyphens | **defect CW-18** | **defect CW-18** | **defect CW-18** | **defect CW-18** | 1/3 (20) / 1/3 (20) | 13/14 / 13/14 | 5/9 (20) / 5/9 (20) |
 | text-justify | agree | agree | agree | agree | 2/2 (0) / 2/2 (0) | 16/16 / 10/10 | 16/16 (0.01) / 10/10 (0.01) |
 | text-optical-sizing | **defect CW-05** | **defect CW-05** | **defect CW-05** | agree | 0/3 (20) / 0/3 (20) | 16/17 / 10/11 | 0/7 (20) / 0/6 (22.2) |
 | text-overflow-wrap | agree | agree | agree | agree | 3/3 (0) / 3/3 (0) | 8/8 / 6/6 | 8/8 (0.29) / 6/6 (0.01) |
@@ -194,10 +213,10 @@ Words per frame, Chrome vs Blitz (`+` = overset).
 |---|---|---|---|---|---|
 | flow-forced-break | agree | agree | agree | 36/29/0 | 36/29/0 |
 | flow-headings-margins | agree | agree | agree | 23/33/28 | 23/33/28 |
-| flow-list | **defect FW-02** | agree | **defect FW-02** | 36/36/36 + | 50/49/48 + |
+| flow-list | agree | agree | agree | 36/36/36 + | 36/36/36 + |
 | flow-orphans-widows | agree | agree | agree | 37/38/9 | 37/38/9 |
 | flow-paragraphs | agree | agree | agree | 36/36/36 + | 36/36/36 + |
 | flow-split-paragraph | agree | agree | agree | 34/38/15 | 34/38/15 |
-| flow-table-rows | **defect FW-03** | agree | agree | 20/20/20 + | 20/20/24 + |
+| flow-table-rows | agree | agree | agree | 20/20/20 + | 20/20/20 + |
 
 <!-- GENERATED:END -->
