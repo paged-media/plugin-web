@@ -1,0 +1,60 @@
+name: rust
+
+# The web-render crate (packages/web-render): formatting, clippy and the Rust
+# test suite. Until this workflow the crate's tests (the lowering, the
+# real-Blitz capture and the whole flow-fragmentation ladder) ran in no
+# workflow at all: the vitest lane only BUILT the crate to wasm.
+#
+# The crate is its own workspace with its own Cargo.lock (the Blitz tree pins
+# its own kurbo/peniko/stylo), so every step runs inside it.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: packages/web-render
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.93.0
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/web-render
+      - run: cargo fmt --check
+      # Both feature sets: the default build is the pure lowering lane, the
+      # `blitz` build adds the capture layer and the flow fragmentation.
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo clippy --all-targets --features blitz -- -D warnings
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.93.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/web-render
+      # No `|| true`: a red test reddens the job. `--features blitz` is the
+      # superset (the default-feature tests run in it too).
+      - name: cargo test (default features)
+        run: cargo test --no-fail-fast
+      - name: cargo test (blitz — capture + flow fragmentation)
+        run: cargo test --features blitz --no-fail-fast

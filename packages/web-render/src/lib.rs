@@ -37,35 +37,27 @@
 //!   real Blitz paint into a `WebDisplayList`, + `render_html`. The
 //!   engine-coupled half; opt-in.
 //!
-//! # What this slice covers vs. defers
+//! # What lowers today
 //!
-//! Covered (B2 vector + text + raster): solid-fill rectangles
-//! (backgrounds/borders), solid-fill arbitrary paths (border-radius /
-//! non-rect boxes), solid strokes, multi-run text (one C-1 `text` item per
-//! parley run, transform-correct), and axis-aligned raster images (straight
-//! RGBA8 → the Stage-A C-1 `image` item) → the matching C-1 items.
+//! Solid-fill rectangles (backgrounds/borders), solid-fill arbitrary paths
+//! (border-radius / non-rect boxes), solid strokes, multi-run text (one C-1
+//! `text` item per Parley run, transform-correct), axis-aligned raster
+//! images (straight RGBA8 → the C-1 `image` item), linear/radial/conic
+//! gradient fills, solid `mix-blend-mode` fills and outset/inset shadows.
 //!
-//! Also covered (C-1.3/1.4/1.5, v46): sweep/conic gradient fills
-//! (`SceneItem::FillPathGradient` sweep), solid `mix-blend-mode` fills
-//! (`SceneItem::FillPathBlend`), and outset drop shadows / `box-shadow`
-//! (`SceneItem::DropShadow`).
+//! Not lowered, COUNTED and REPORTED by [`lower::LowerReport`], never faked:
+//! image/pattern brushes, gradient text, rotated/sheared image destinations
+//! (no per-image transform on the wire), the CSS `spread` of inset shadows,
+//! and gradient/image fills inside a blend layer. Text runs carry a family
+//! HINT only: core redraws scene text in the document's default face.
 //!
-//! Deferred (the honest ceiling — C-1's open stages / Tier-B), all COUNTED
-//! and REPORTED by [`lower::LowerReport`], never faked:
-//! image/pattern brushes + rotated/sheared image dests (no per-image
-//! transform on the wire yet), INSET shadows + the CSS `spread` radius,
-//! gradient/image fills INSIDE a blend layer (only solid blended fills
-//! lower), and CSS fragmentation across linked frames.
+//! # Entry points
 //!
-//! # The named next slice
-//!
-//! The pure lowering + capture sink compile + run today (native), with
-//! transform-correct multi-run text recovery + raster images wired. The
-//! remaining integration is the **bundle WASM artifact**: build THIS crate
-//! to `wasm32-unknown-unknown` + `wasm-bindgen` into the manifest's
-//! `bin/blitz_web.wasm`, register pinned faces (so text shapes on wasm).
-//! Integration point: [`capture::render_html`] → [`lower::lower`]. See
-//! `scripts/build-wasm.sh`.
+//! The bundle's engine artifact (`scripts/build-wasm.sh --engine`) exports
+//! `render_web_frame` (one frame) and `render_web_flow` (one flow threaded
+//! across a frame chain, see [`flow`]); both take strings and answer JSON
+//! (ADR 403). `engine_source_hash` answers the hash of the sources the
+//! artifact was built from, so the bundle's test suite can refuse a stale one.
 
 pub mod display_list;
 pub mod lower;
@@ -77,8 +69,8 @@ pub mod capture;
 #[cfg(feature = "blitz")]
 pub mod fonts;
 
-// W-frag spike (feasibility PoC, not shipped) — fragment one flow across
-// frames. Behind `blitz`; see docs/design/flow-fragmentation.md.
+// Flow fragmentation — one flow across a frame chain (ADR 404). Behind
+// `blitz`; see docs/design/flow-fragmentation.md.
 #[cfg(feature = "blitz")]
 pub mod flow;
 
@@ -92,15 +84,11 @@ pub use wire::{
     ScenePathSeg, SceneTextItem,
 };
 
-/// The wasm entry point for the (future) bundle artifact. Behind `blitz`
-/// (the only build that needs to expose a render to JS): takes HTML +
-/// content-box size in CSS px, runs Blitz, lowers the paint, and returns
-/// the C-1 `SceneLayer` as JSON — exactly the `{ items }` payload the
-/// bundle submits via `host.contribute.sceneLayer().submit(...)`.
-///
-/// This is the seam the bundle's `renderWebFrame` drop-in calls once the
-/// artifact is built (see `web-model/src/render.ts`). Until then the
-/// bundle's TS render contract returns the honest not-loaded path.
+/// The wasm entry point for one frame. Behind `blitz` (the only build that
+/// exposes a render to JS): takes HTML + content-box size in CSS px, runs
+/// Blitz, lowers the paint, and returns the C-1 `SceneLayer` as JSON —
+/// exactly the `{ items }` payload the bundle submits via
+/// `host.contribute.sceneLayer().submit(...)`.
 #[cfg(all(feature = "blitz", target_arch = "wasm32"))]
 #[wasm_bindgen::prelude::wasm_bindgen]
 pub fn render_web_frame(html: &str, width_px: u32, height_px: u32) -> String {
@@ -119,4 +107,16 @@ pub fn render_web_flow(html: &str, frames_json: &str, flow_root: &str) -> String
     // `flow_root` is a CSS `flow-into` selector (Regions syntax) or "" for the
     // whole body.
     flow::render_web_flow_json(html, frames_json, flow_root)
+}
+
+/// The hash of the sources this wasm was built from (`scripts/source-hash.mjs`,
+/// stamped by `scripts/build-wasm.sh` through `WEB_RENDER_SOURCE_HASH`). Empty
+/// for a build that bypassed the script. The bundle's `wasm-fresh.spec.ts`
+/// compares it with the checkout so a stale artifact is never tested.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen::prelude::wasm_bindgen]
+pub fn engine_source_hash() -> String {
+    option_env!("WEB_RENDER_SOURCE_HASH")
+        .unwrap_or_default()
+        .to_string()
 }

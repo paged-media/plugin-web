@@ -1,18 +1,16 @@
-# CI evidence for the state matrix (plugin.web stage): run the
-# web-model + web-bundle unit/conformance tests and upload the junit as an
-# artifact for the private state repo to pull and normalize (suites.yaml
-# maps (plugin-web, vitest) → plugin.web; test-map.yaml bridges junit).
-# See the step comment for why the direction is inverted.
+# The TS lane: web-model + web-bundle vitest against the REAL engine wasm,
+# built here from the checkout. A red spec fails the job; the JUnit results
+# are still uploaded (under `!cancelled()`) for the private evidence pull.
 #
-# Layout note: the link: chain (web-bundle → ../../../plugin-sdk/
-# packages/*) requires plugin-web/ and sdk/ as SIBLINGS, so both
-# checkouts are nested (same shape as plugin-draw's vitest.yml). The
-# sdk checkout needs a token that can read the private repo —
-# STATE_DISPATCH_TOKEN (fall back to github.token for same-org runs).
+# One checkout: the bundle resolves @paged-media/plugin-api / plugin-sdk
+# from npm (exact devDependency pins, asserted by test/sdk-pin.spec.ts), so
+# no sibling repository is needed.
 name: vitest
 on:
   push:
     branches: [main]
+  # Pre-merge gate: a PR that breaks the bundle goes red BEFORE it lands.
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -27,13 +25,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          path: plugin-web
-      - uses: actions/checkout@v4
-        with:
-          repository: paged-media/sdk
-          path: sdk
-          token: ${{ secrets.STATE_DISPATCH_TOKEN || github.token }}
       - uses: pnpm/action-setup@v4
         with:
           version: 10
@@ -41,65 +32,52 @@ jobs:
         with:
           node-version: 22
       # ------------------------------------------------------------------
-      # REAL-ENGINE artifact. This lane used to run vitest with no Blitz
-      # wasm artifact, so web-bundle's engine.spec.ts + conformance/
-      # bake.spec.ts skipIf gates skipped the real-engine suites on EVERY
-      # CI run — no other workflow builds the artifact either. Build the
-      # ENGINE artifact here (scripts/build-wasm.sh --engine — the full
-      # Blitz/Stylo/Taffy/Parley stack exposing render_web_frame), with the
-      # plugin-sheets rust.yml pin recipe: pinned toolchain, wasm-bindgen-cli
-      # matched to the crate's own Cargo.lock, pinned binaryen (old apt
-      # binaryen breaks wasm-bindgen externref table grow).
-      # REQUIRE_REAL_ENGINE=1 below makes a missing artifact FAIL, not skip.
+      # REAL-ENGINE artifact: the Blitz engine wasm the specs boot, built
+      # from THIS checkout (wasm-fresh.spec.ts proves it). Pinned toolchain,
+      # wasm-bindgen-cli matched to the crate's Cargo.lock (build-wasm.sh
+      # refuses a mismatch), pinned binaryen (old apt binaryen breaks
+      # wasm-bindgen externref table grow).
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.93.0
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: plugin-web/packages/web-render
+          workspaces: packages/web-render
       - name: install pinned wasm-bindgen-cli (web-render Cargo.lock version)
         run: |
-          V=$(grep -A1 '^name = "wasm-bindgen"$' plugin-web/packages/web-render/Cargo.lock | grep version | head -1 | cut -d'"' -f2)
+          V=$(grep -A1 '^name = "wasm-bindgen"$' packages/web-render/Cargo.lock | grep version | head -1 | cut -d'"' -f2)
           cargo install wasm-bindgen-cli --version "$V" --locked
       - name: install pinned binaryen (reftypes-safe; old apt binaryen breaks externref table grow)
         run: |
           curl -sL https://github.com/WebAssembly/binaryen/releases/download/version_119/binaryen-version_119-x86_64-linux.tar.gz | tar xz
           echo "$PWD/binaryen-version_119/bin" >> "$GITHUB_PATH"
-      - name: build the Blitz ENGINE wasm artifact (64 MiB budget gate)
-        run: bash plugin-web/scripts/build-wasm.sh --engine
-      # Fail-not-skip belt at the JOB level too: the vitest step below keeps
-      # its deliberate `|| true` (red results still publish to state), so a
-      # missing artifact must redden the job HERE, before vitest can skip.
-      - name: real-engine artifact guard (fail, never skip)
-        run: |
-          test -f plugin-web/packages/web-bundle/bin/blitz_web_bg.wasm
-          test -f plugin-web/packages/web-bundle/bin/blitz_web.js
+      - name: build the Blitz ENGINE wasm artifact (64 MiB budget gate; stamps bin/SOURCE_HASH)
+        run: bash scripts/build-wasm.sh --engine
       # ------------------------------------------------------------------
-      - name: install (sdk sibling satisfies the link chain)
-        run: pnpm install --frozen-lockfile --dir plugin-web
-      - name: vitest (junit per package; red results still publish)
+      - run: pnpm install --frozen-lockfile
+      - name: contract-import lint (fail fast)
+        run: node scripts/check-contract-imports.mjs
+      # A red spec FAILS this job. It used to end in `|| true` (so red
+      # results would still be published as evidence), which also meant the
+      # lane could never go red. Evidence still ships — the JUnit steps below
+      # run under `!cancelled()`.
+      - name: vitest (junit per package)
         env:
-          # The spec-level half of the dual gate (engine.spec.ts +
-          # conformance/bake.spec.ts): under this env a missing artifact
-          # FAILS the suites instead of letting the skipIf gates silently
-          # pass a vacuous run.
+          # Under this env a missing engine artifact FAILS the real-engine
+          # suites (engine, conformance, wasm-fresh) instead of skipping.
           REQUIRE_REAL_ENGINE: "1"
         run: |
-          pnpm -r --no-bail --dir plugin-web exec \
-            vitest run --reporter=junit --outputFile=junit.xml || true
-          cat plugin-web/packages/*/junit.xml > junit-all.xml
-          [ -s junit-all.xml ] # at least one package must have produced results
-      # Evidence hand-off, INVERTED (2026-07-25). This step used to call
-      # paged-media/state/actions/publish-results@main, but that action lives in the
-      # PRIVATE paged-media/state repo, and GitHub refuses to resolve a private
-      # repo's action from a public workflow ("Unable to resolve action
-      # paged-media/state, not found") — so the job died at SET-UP, before any step
-      # ran, and this lane never published a single result. Follow the inverted
-      # pattern core/ci.yml and plugin-doc use: upload the results as an artifact
-      # and let state PULL it (private state can read a public repo's artifacts).
-      # Consumer: state/.github/workflows/siblings-pull.yml (source=plugin-web,
-      # suite=vitest, format=nextest-junit).
+          pnpm -r --no-bail exec \
+            vitest run --reporter=default --reporter=junit --outputFile.junit=junit.xml
+      - name: collect junit
+        if: ${{ !cancelled() }}
+        run: |
+          cat packages/*/junit.xml > junit-all.xml
+          [ -s junit-all.xml ]
+      # Evidence hand-off: upload the results as an artifact for the private
+      # evidence repository to PULL (a public workflow cannot call a private
+      # repository's action).
       - name: upload vitest results artifact
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4

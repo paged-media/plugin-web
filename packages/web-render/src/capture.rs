@@ -219,7 +219,8 @@ fn image_to_straight_rgba8(image: &peniko::ImageData, extra_alpha: f32) -> Optio
     let premultiplied = matches!(image.alpha_type, peniko::ImageAlphaType::AlphaPremultiplied);
     let bgra = matches!(image.format, peniko::ImageFormat::Bgra8);
     let mut out = Vec::with_capacity(need);
-    for chunk in src[..need].chunks_exact(4) {
+    let (chunks, _) = src[..need].as_chunks::<4>();
+    for chunk in chunks {
         // Read channels in source order, then swizzle BGRA → RGBA.
         let (mut r, mut g, mut b, a) = if bgra {
             (chunk[2], chunk[1], chunk[0], chunk[3])

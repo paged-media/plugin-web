@@ -5,3 +5,4 @@ dist/
 target/
 packages/web-render/target/
 packages/web-bundle/bin/
+junit.xml

@@ -16,14 +16,12 @@
  *  @license    AGPL-3.0-only OR Paged Media Enterprise License (PMEL)
  */
 
-//! **W-frag spike** (feature = `blitz`) — fragmenting ONE HTML flow across
-//! MULTIPLE frames. This is a FEASIBILITY PROTOTYPE, not shipped product: it
-//! answers ADR-020's open question ("can Blitz be driven to thread a flow
-//! across frames without a deep fork?") empirically. Scope + the 4-rung
-//! ladder: an internal spike log; as built: `docs/design/flow-fragmentation.md`.
+//! Flow fragmentation (feature = `blitz`) — threading ONE HTML flow across
+//! MULTIPLE frames (ADR 404: fragmentation by relayout, no engine fork). It
+//! ships behind the bundle's `renderWebFlow` command through
+//! [`render_web_flow_json`]. As built: `docs/design/flow-fragmentation.md`.
 //!
-//! Gated behind `blitz` so it never touches the default build or the bundle
-//! CI gate. Two rungs are built here:
+//! The rungs:
 //!
 //! - **Rung 1 — [`render_web_flow_equalwidth`]**: layout+paint ONCE at the
 //!   (shared) frame width via [`crate::capture::render_html`], then SLICE the
@@ -33,8 +31,12 @@
 //!   find the block break from Taffy geometry, delete the consumed prefix via
 //!   `DocumentMutator`, re-`set_viewport`+`resolve` at frame B's width so the
 //!   remainder RE-WRAPS, and paint each frame. Proves variable-width threading
-//!   is reachable through the pinned `BaseDocument`/mutator API — at block
-//!   granularity (mid-paragraph split is the honest follow-on).
+//!   is reachable through the pinned `BaseDocument`/mutator API.
+//! - **Rung 3** — a paragraph taller than the remaining space splits at a
+//!   LINE boundary (plain text and inline elements, `try_split`); nested
+//!   containers split between their children at any depth; tables split
+//!   between body rows with the `<thead>` repeated per frame. Replaced
+//!   elements stay atomic.
 
 use blitz_dom::{BaseDocument, DocumentConfig};
 use blitz_html::HtmlDocument;
@@ -592,7 +594,11 @@ fn plan_table_rows_cut(doc: &BaseDocument, rows: &[usize], limit_px: f32) -> (f3
 /// descendant concatenation, so offsets map 1:1 to DOM positions. If blitz
 /// normalised the inline text (so the concat differs), the mapping is
 /// unreliable and it returns `None` (the caller then moves the block whole).
-fn try_split(doc: &BaseDocument, block_id: usize, limit_px: f32) -> Option<(f32, Vec<(usize, String)>)> {
+fn try_split(
+    doc: &BaseDocument,
+    block_id: usize,
+    limit_px: f32,
+) -> Option<(f32, Vec<(usize, String)>)> {
     let node = doc.get_node(block_id)?;
     let ild = node.element_data()?.inline_layout_data.as_ref()?;
     let text: &str = &ild.text;
@@ -602,7 +608,9 @@ fn try_split(doc: &BaseDocument, block_id: usize, limit_px: f32) -> Option<(f32,
     for line in ild.layout.lines() {
         // The line's bottom in page px (Parley layout coords → page via the
         // block's absolute_position, the same mapping the capture uses).
-        let bottom = node.absolute_position(0.0, line.metrics().block_max_coord).y;
+        let bottom = node
+            .absolute_position(0.0, line.metrics().block_max_coord)
+            .y;
         if bottom <= limit_px + 0.5 {
             split_offset = Some(line.text_range().end);
             consumed_bottom_px = bottom;
@@ -623,7 +631,10 @@ fn try_split(doc: &BaseDocument, block_id: usize, limit_px: f32) -> Option<(f32,
     // consumed prefix's non-whitespace count is an invariant handle across the
     // collapse, and it maps 1:1 to a position in the raw DOM text (incl. inline
     // elements like <b>/<span>).
-    let target_nws = text[..offset].chars().filter(|c| !c.is_whitespace()).count();
+    let target_nws = text[..offset]
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .count();
     if target_nws == 0 {
         return None;
     }
@@ -1051,7 +1062,10 @@ mod tests {
         // NOT overset, and every marker MARK00..MARK23 appears across frames.
         let html = article(24);
         let out = render_web_flow_equalwidth(&html, &[400, 400, 400], 360);
-        assert!(!out.overset, "1200px of frames over ~576px content is not overset");
+        assert!(
+            !out.overset,
+            "1200px of frames over ~576px content is not overset"
+        );
         let mut seen = std::collections::BTreeSet::new();
         for f in &out.frames {
             for m in markers_in(f, 24) {
@@ -1059,7 +1073,10 @@ mod tests {
             }
         }
         let missing: Vec<usize> = (0..24).filter(|i| !seen.contains(i)).collect();
-        assert!(missing.is_empty(), "markers dropped by the flow: {missing:?}");
+        assert!(
+            missing.is_empty(),
+            "markers dropped by the flow: {missing:?}"
+        );
     }
 
     // --- Rung 2 — variable-width re-resolve-remainder ---
@@ -1107,8 +1124,14 @@ mod tests {
         let out = render_web_flow_variable(&html, &[(200, 60), (200, 4096)]);
         let a_text = frame_text(&out.frames[0]).join(" ");
         let b_text = frame_text(&out.frames[1]).join(" ");
-        assert!(a_text.contains("w0"), "frame A must hold the paragraph head: {a_text:?}");
-        assert!(b_text.contains("w39"), "frame B must hold the paragraph tail: {b_text:?}");
+        assert!(
+            a_text.contains("w0"),
+            "frame A must hold the paragraph head: {a_text:?}"
+        );
+        assert!(
+            b_text.contains("w39"),
+            "frame B must hold the paragraph tail: {b_text:?}"
+        );
         assert!(
             !a_text.contains("w39"),
             "frame A must NOT hold the tail — the split is mid-paragraph: {a_text:?}"
@@ -1140,12 +1163,18 @@ mod tests {
         assert_eq!(out.frames.len(), 2);
         let a = markers_in(&out.frames[0], 10);
         let b = markers_in(&out.frames[1], 10);
-        assert!(a.contains(&0), "frame A must hold the first list item; got {a:?}");
+        assert!(
+            a.contains(&0),
+            "frame A must hold the first list item; got {a:?}"
+        );
         assert!(
             !a.is_empty() && a.len() < 10,
             "the list must be SPLIT across frames, not moved whole; A={a:?}"
         );
-        assert!(b.contains(&9), "frame B must hold the last list item; got {b:?}");
+        assert!(
+            b.contains(&9),
+            "frame B must hold the last list item; got {b:?}"
+        );
         assert_eq!(
             *a.last().unwrap() + 1,
             b[0],
@@ -1185,7 +1214,10 @@ mod tests {
             !a.is_empty() && a.len() < 10,
             "the nested list must fragment, not move whole; A={a:?}"
         );
-        assert!(a.contains(&0) && b.contains(&9), "order preserved: A={a:?} B={b:?}");
+        assert!(
+            a.contains(&0) && b.contains(&9),
+            "order preserved: A={a:?} B={b:?}"
+        );
         let mut all: Vec<usize> = a.iter().chain(b.iter()).copied().collect();
         all.sort_unstable();
         all.dedup();
@@ -1221,11 +1253,17 @@ mod tests {
             !a.is_empty() && a.len() < 10,
             "the table must SPLIT between rows, not move whole; A={a:?}"
         );
-        assert!(a.contains(&0) && b.contains(&9), "rows stay in order: A={a:?} B={b:?}");
+        assert!(
+            a.contains(&0) && b.contains(&9),
+            "rows stay in order: A={a:?} B={b:?}"
+        );
         // The header repeats: HEADER appears in BOTH frames.
         let a_text = frame_text(&out.frames[0]).join(" ");
         let b_text = frame_text(&out.frames[1]).join(" ");
-        assert!(a_text.contains("HEADER"), "frame A shows the header: {a_text:?}");
+        assert!(
+            a_text.contains("HEADER"),
+            "frame A shows the header: {a_text:?}"
+        );
         assert!(
             b_text.contains("HEADER"),
             "frame B REPEATS the header (thead never consumed): {b_text:?}"
@@ -1263,13 +1301,24 @@ mod tests {
             .flat_map(frame_text)
             .collect::<Vec<_>>()
             .join(" ");
-        assert!(!all.contains("NAVLINK"), "the <nav> is not in the flow: {all:?}");
+        assert!(
+            !all.contains("NAVLINK"),
+            "the <nav> is not in the flow: {all:?}"
+        );
         assert!(all.contains("MARK00"), "the story flows: {all:?}");
         assert!(all.contains("MARK11"), "the whole story flows: {all:?}");
         // Contrast: without a flow root, the nav WOULD flow.
         let whole = render_web_flow_variable(&html, &[(400, 120), (400, 4096)]);
-        let whole_all: String = whole.frames.iter().flat_map(frame_text).collect::<Vec<_>>().join(" ");
-        assert!(whole_all.contains("NAVLINK"), "without flow-into the nav flows too");
+        let whole_all: String = whole
+            .frames
+            .iter()
+            .flat_map(frame_text)
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(
+            whole_all.contains("NAVLINK"),
+            "without flow-into the nav flows too"
+        );
     }
 
     #[test]
@@ -1297,9 +1346,18 @@ mod tests {
             .collect::<Vec<_>>()
             .join(" ");
         assert!(all.contains("MARK00"), "the nested story flows: {all:?}");
-        assert!(all.contains("MARK09"), "the whole nested story flows: {all:?}");
-        assert!(!all.contains("NAVLINK"), "top-level sibling pruned: {all:?}");
-        assert!(!all.contains("SIDEBAR"), "sibling inside <main> pruned: {all:?}");
+        assert!(
+            all.contains("MARK09"),
+            "the whole nested story flows: {all:?}"
+        );
+        assert!(
+            !all.contains("NAVLINK"),
+            "top-level sibling pruned: {all:?}"
+        );
+        assert!(
+            !all.contains("SIDEBAR"),
+            "sibling inside <main> pruned: {all:?}"
+        );
     }
 
     #[test]
@@ -1332,7 +1390,10 @@ mod tests {
         assert!(a.contains("w0"), "frame A holds the head: {a:?}");
         assert!(b.contains("w39"), "frame B holds the tail: {b:?}");
         assert!(!a.contains("w39"), "frame A must not hold the tail: {a:?}");
-        assert!(!b.contains("w0"), "frame B must not re-include the head: {b:?}");
+        assert!(
+            !b.contains("w0"),
+            "frame B must not re-include the head: {b:?}"
+        );
         // And no word is lost or duplicated.
         let mut got: Vec<String> = [&a, &b]
             .iter()
@@ -1341,7 +1402,10 @@ mod tests {
         got.sort();
         let mut want: Vec<String> = (0..40).map(|i| format!("w{i}")).collect();
         want.sort();
-        assert_eq!(got, want, "inline-element split must preserve every word exactly once");
+        assert_eq!(
+            got, want,
+            "inline-element split must preserve every word exactly once"
+        );
     }
 
     #[test]
@@ -1458,23 +1522,36 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join(" ");
-        assert!(f0_text.contains("MARK00"), "frame 0 must hold the top: {f0_text:?}");
+        assert!(
+            f0_text.contains("MARK00"),
+            "frame 0 must hold the top: {f0_text:?}"
+        );
     }
 
     #[test]
     fn render_web_flow_json_round_trips_to_the_wire_shape() {
         let html = article(12);
-        let json = render_web_flow_json(&html, r#"[{"widthPx":600,"heightPx":120},{"widthPx":200,"heightPx":4096}]"#, "");
+        let json = render_web_flow_json(
+            &html,
+            r#"[{"widthPx":600,"heightPx":120},{"widthPx":200,"heightPx":4096}]"#,
+            "",
+        );
         let v: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
         let frames = v["frames"].as_array().expect("frames array");
         assert_eq!(frames.len(), 2, "two frames in the wire result");
         assert!(v["overset"].is_boolean(), "overset is a bool");
         // Each frame carries a C-1 layer with items; the first holds MARK00.
         assert!(
-            frames[0]["layer"]["items"].as_array().map(|a| !a.is_empty()).unwrap_or(false),
+            frames[0]["layer"]["items"]
+                .as_array()
+                .map(|a| !a.is_empty())
+                .unwrap_or(false),
             "frame 0 layer has items: {json}"
         );
-        assert!(json.contains("MARK00"), "the flow's top text crosses the wire: {json}");
+        assert!(
+            json.contains("MARK00"),
+            "the flow's top text crosses the wire: {json}"
+        );
         // Malformed frames JSON → empty, non-overset flow, never a panic.
         let empty = render_web_flow_json(&html, "not json", "");
         assert_eq!(empty, r#"{"frames":[],"overset":false}"#);
