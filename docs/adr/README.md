@@ -20,9 +20,10 @@ the code as it stood, for decisions made earlier; their status says so.
 | [403](403-json-wasm-boundary.md) | The Rust/JS boundary is two string-in, JSON-out functions | Accepted, recorded retroactively 2026-10-02 |
 | [404](404-fragmentation-by-relayout.md) | A flow is fragmented by laying out the remainder again | Accepted, recorded retroactively 2026-10-02 |
 | [405](405-flow-chain-is-plugin-data.md) | The frame chain of a web flow is plugin data on the source frame | Accepted, recorded retroactively 2026-10-02 |
-| [406](406-web-frame-and-source-storage.md) | A web frame is an ordinary rectangle claimed by metadata; its source lives in a container part | Accepted, recorded retroactively 2026-10-02 |
+| [406](406-web-frame-and-source-storage.md) | A web frame is an ordinary rectangle claimed by metadata; its source lives in a container part | Accepted, recorded retroactively 2026-10-02; storage superseded by 409 |
 | [407](407-baking-flattens-to-native-items.md) | Baking flattens a web frame into native page items; the plugin contributes no exporter | Accepted, recorded retroactively 2026-10-02 |
 | [408](408-no-page-javascript.md) | Page JavaScript never executes; templating is a closed pass | Accepted, recorded retroactively 2026-10-02 |
+| [409](409-label-is-the-truth-large-sources-by-pointer.md) | The label names the live source; a large source is a content-addressed part behind a pointer | Accepted 2026-10-05 |
 
 Decisions made in other repositories that this plugin's code rests on are listed in
 [`../README.md`](../README.md).

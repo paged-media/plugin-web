@@ -1,6 +1,8 @@
 # ADR 406 — A web frame is an ordinary rectangle claimed by metadata; its source lives in a container part
 
 - **Status:** Accepted. Recorded retroactively on 2026-10-02 from the code at `40792fa`.
+  The storage half (two homes, part read first) is superseded by
+  [ADR 409](409-label-is-the-truth-large-sources-by-pointer.md) on 2026-10-05.
 - **Scope:** `packages/web-bundle/src/insert.ts`, `source-part.ts`, `edit-context.ts`,
   `activate.ts` (the importer), `packages/web-model/src/source.ts` and `import-html.ts`,
   the `objectTypes`, `partTypes` and `importers` entries of `packages/web-bundle/manifest.json`

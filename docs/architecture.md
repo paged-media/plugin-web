@@ -56,7 +56,7 @@ out and emits paint commands. No GPU renderer is linked: the lockfile has no `ve
 
 ```
 selected frame (a rectangle carrying the source envelope)
-   |  read: container part, else metadata                source-part.ts
+   |  read: label (inline, or pointer -> part)            source-part.ts
    v
 { html, css, options, vars?, flow? }
    |  template pass, then one composed HTML document     transform.ts, source.ts
@@ -150,18 +150,20 @@ plugin carries web content only as the native items a flatten created. See
 
 ## Where the source is stored
 
-A web frame is an ordinary rectangle. What makes it one is a versioned envelope,
-`{ v: 1, data: { html, css, options, vars?, flow? }, engine: {...} }`, kept in two places:
+A web frame is an ordinary rectangle. What makes it one is a versioned envelope in its
+plugin metadata label, key `x-paged:media.paged.web`, which undo and redo restore:
 
-- as plugin metadata on the frame, under the key `x-paged:media.paged.web`. The object type
-  `webFrame` is recognised by this envelope being loadable (`edit-context.ts`).
-- as a container part, `<frame id>/source.json` inside the plugin's part namespace, written
-  through `host.parts` when the host supports it (`source-part.ts`).
+- a source that fits is the label itself:
+  `{ v: 1, data: { html, css, options, vars?, flow? }, engine: {...} }`;
+- a larger one (the engine caps a label at 64 KiB) is written to a content-addressed
+  container part, `sources/<hash>.json`, never overwritten, and the label holds a pointer
+  `{ v: 1, data: { ref: { hash, bytes } }, engine }`.
 
-Reads prefer the part and fall back to the metadata. The panel's "Save to document" and the
-thread commands write both. Inserting a frame writes the metadata only, in the batch that
-creates the rectangle, so one undo removes both. See
-[ADR 406](adr/406-web-frame-and-source-storage.md).
+`loadWebSource` and `writeWebSource` in `source-part.ts` are the only reader and writer; the
+object type recognises either label shape (`edit-context.ts`). Inserting a frame puts the
+label in the batch that creates the rectangle, so one undo removes both. Older documents may
+also carry a `<frame id>/source.json` part, read only when the label cannot hold its content.
+See [ADR 409](adr/409-label-is-the-truth-large-sources-by-pointer.md).
 
 ## Host doors
 
@@ -172,7 +174,7 @@ creates the rectangle, so one undo removes both. See
 | `host.contribute.importer` | `.html` and `.htm` files become the source of a new web frame |
 | `host.contribute.sceneLayer()` | submit one layer per frame |
 | `host.document.mutate` | insert a frame with its metadata in one batch; every flatten operation |
-| `host.document.getMetadata` / `setMetadata`, `host.parts.read` / `write` | the two copies of the source envelope |
+| `host.document.getMetadata` / `setMetadata`, `host.parts.read` / `write` | the source label, and the content-addressed part of a large source |
 | `host.document.elementGeometry`, `meta`, `collection(...)` | frame bounds and page; active page for insert; new story of a flattened text frame; registered font families |
 | `host.document.onDidChange`, `host.selection.get` / `set` / `onDidChange` | the panel follows the selection and re-reads after undo or redo; commands act on the selection |
 | `host.diagnostics.set` | lint, render and flow findings |
