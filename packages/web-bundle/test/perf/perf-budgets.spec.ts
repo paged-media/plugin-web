@@ -234,10 +234,11 @@ describe.skipIf(!bundledPresent)("web perf budgets (real host + real Blitz)", ()
   it(`${CHANGES} document changes with the panel's font watch live [plugin-web.perf-budgets]`, async () => {
     const target = await insertWebFrameAt(h.host, PAGE, [700, 500, 740, 560], runGrid(1));
     const { host, work } = countingHost(h.host);
-    let updates = 0;
-    const sub = watchDocumentFonts(host, () => {
-      updates += 1;
-    });
+    const delivered: string[][] = [];
+    // A quiet time no edit loop reaches, so the count does not depend on
+    // how fast this machine applies an edit: the burst's one trailing read
+    // is taken by `flush()`.
+    const sub = watchDocumentFonts(host, (fs) => delivered.push(fs), { delayMs: 600_000 });
     let changes = 0;
     const seen = h.host.document.onDidChange(() => {
       changes += 1;
@@ -256,18 +257,48 @@ describe.skipIf(!bundledPresent)("web perf budgets (real host + real Blitz)", ()
           },
         } as never);
       }
+      await sub.flush();
       await settle();
     });
+    const burst = work.snapshot();
+    report(`font-watch-${CHANGES}-changes`, burst, { changes, updates: delivered.length, ms });
+
+    // Behaviour: the families were delivered on mount, and the edits —
+    // none of which touches a font — delivered nothing new.
+    expect(changes).toBe(CHANGES);
+    expect(delivered.length).toBe(1);
+
+    expect(burst.count("document.collection:fonts")).toBe(BUDGET.fontWatch.fontsReads);
+    expect(burst.total()).toBe(BUDGET.fontWatch.doorCalls);
+
+    // Behaviour: a change that DOES bring a new family is delivered.
+    const family = "Inter";
+    const out = await h.host.document.mutate({
+      op: "batch",
+      args: {
+        ops: [
+          { op: "insertTextFrame", args: { pageId: PAGE, bounds: [600, 36, 640, 300] } },
+          { op: "bindCreated", args: { handle: "f" } },
+          { op: "insertText", args: { storyId: "$h:f", offset: 0, text: "Face" } },
+          {
+            op: "setElementProperty",
+            args: {
+              elementId: { kind: "storyRange", id: { story_id: "$h:f", start: 0, end: 4 } },
+              path: "characterFontFamily",
+              value: { type: "text", value: family },
+            },
+          },
+        ],
+      },
+    } as never);
+    expect(out.applied).toBe(true);
+    await sub.flush();
+    expect(delivered.length).toBe(2);
+    expect(delivered[1]).toContain(family);
+    expect(work.count("document.collection:fonts")).toBe(BUDGET.fontWatch.fontsReads + 1);
+
     seen.dispose();
     sub.dispose();
-    report(`font-watch-${CHANGES}-changes`, work, { changes, updates, ms });
-
-    // Behaviour: the watch delivered the families after every change.
-    expect(changes).toBe(CHANGES);
-    expect(updates).toBe(CHANGES + 1);
-
-    expect(work.count("document.collection:fonts")).toBe(BUDGET.fontWatch.fontsReads);
-    expect(work.total()).toBe(BUDGET.fontWatch.doorCalls);
   });
 
   it("cold boot: the engine instantiates once across every command [plugin-web.perf-budgets]", () => {
@@ -300,7 +331,10 @@ const BUDGET = {
     storiesReads: 0,
     storyRowsRead: 0,
   },
-  fontWatch: { fontsReads: 1001, doorCalls: 1003 },
+  // Was 1001 / 1003: the whole `fonts` collection re-read on every change.
+  // Now one read on mount + one trailing read per burst of changes (the
+  // event carries no hint of which edits touch fonts).
+  fontWatch: { fontsReads: 2, doorCalls: 3 },
   coldBoot: { boots: 1, loaderImports: 1 },
 } as const;
 
