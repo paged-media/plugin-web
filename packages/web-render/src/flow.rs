@@ -45,7 +45,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::capture::{capture_resolved, render_html};
 use crate::display_list::{WebDisplayList, WebDrawCmd, WebGlyphRun, WebGradient, WebImage};
-use crate::fonts::build_font_ctx;
+use crate::fonts::font_ctx;
 use crate::wire::{RectPt, SceneLayer, ScenePathSeg};
 
 /// CSS px → content points (the capture's `PX_TO_PT`, 1px = 1/96in, 1pt = 1/72in).
@@ -156,7 +156,7 @@ pub fn render_web_flow_variable_rooted(
         .lock()
         .unwrap_or_else(|e| e.into_inner());
     let config = DocumentConfig {
-        font_ctx: Some(build_font_ctx()),
+        font_ctx: Some(font_ctx()),
         ..Default::default()
     };
     let mut doc = HtmlDocument::from_html(html, config);

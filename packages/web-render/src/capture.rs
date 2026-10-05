@@ -56,7 +56,7 @@ use crate::display_list::{
     LocalKey, UnsupportedKind, WebBlendMode, WebDisplayList, WebDrawCmd, WebGlyphRun, WebGradient,
     WebGradientStop, WebImage,
 };
-use crate::fonts::{build_font_ctx, BUNDLED_FAMILY};
+use crate::fonts::{font_ctx, BUNDLED_FAMILY};
 use crate::perf::{self, Counter};
 use crate::wire::{RectPt, ScenePaint, ScenePathSeg};
 
@@ -787,8 +787,8 @@ struct RecoveredRun {
 /// run's PLAIN TEXT recovered from the DOM. Mirrors the W0 spike's
 /// `render_fragment`, but records commands instead of counting them, and:
 ///
-///   1. registers the bundled fallback face ([`build_font_ctx`]) so text
-///      SHAPES on wasm (parley/fontique exposes no system fonts there —
+///   1. registers the bundled fallback face ([`font_ctx`], built once per
+///      engine) so text SHAPES on wasm (parley/fontique exposes no system fonts there —
 ///      the spike's 22-vs-19 delta); the same context drives the native
 ///      build so tests exercise real shaping deterministically;
 ///   2. after paint, walks every inline root's parley `Layout` and slices
@@ -801,7 +801,7 @@ pub fn render_html(html: &str, width_px: u32, height_px: u32) -> WebDisplayList 
     #[cfg(test)]
     let _shape_guard = SHAPE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let config = DocumentConfig {
-        font_ctx: Some(build_font_ctx()),
+        font_ctx: Some(font_ctx()),
         ..Default::default()
     };
     let mut doc = HtmlDocument::from_html(html, config);

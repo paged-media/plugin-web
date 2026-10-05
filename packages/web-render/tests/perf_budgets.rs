@@ -48,7 +48,12 @@ use web_render::{render_web_flow_boundary_json, render_web_frame_json};
 /// serialize the workloads so geometry — and so the counts — is stable.
 static LOCK: Mutex<()> = Mutex::new(());
 
+/// Count `f`'s work on a WARM engine: the font context (built once per engine
+/// thread) is built before the counters are reset, so a budget pins the
+/// per-render work, not the engine's one-time start-up
+/// (`font_context_is_built_once_per_engine` counts that).
 fn measure<T>(f: impl FnOnce() -> T) -> (T, PerfCounters) {
+    let _ = web_render::fonts::font_ctx();
     reset_perf_counters();
     let out = f();
     (out, perf_counters())
@@ -212,8 +217,33 @@ fn baseline_shapes_are_per_frame_and_quadratic__feat__plugin_web_perf_budgets() 
     // the article's 200 line runs cost 200^2 comparisons, not ~200.
     assert_eq!(ARTICLE_1.run_match_comparisons, 200 * 200);
     const { assert!(STYLED_200.run_match_comparisons >= (STYLED_RUNS * STYLED_RUNS) as u64) };
-    // One font context per render call — none cached across calls.
-    assert_eq!(ARTICLE_12.font_context_builds, 1);
+    // The font context is built once per engine, not per render call.
+    assert_eq!(ARTICLE_12.font_context_builds, 0);
+}
+
+/// The font context is built ONCE per engine (thread): the first render on a
+/// cold engine builds it, every later render reuses it. Before Wave 2 every
+/// render call built its own (1 per call).
+#[test]
+fn font_context_is_built_once_per_engine__feat__plugin_web_perf_budgets() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::thread::spawn(|| {
+        let html = article(2);
+        reset_perf_counters();
+        let _ = render_web_frame_json(&html, FRAME_W, TALL_H);
+        let cold = perf_counters().font_context_builds;
+        reset_perf_counters();
+        let _ = render_web_frame_json(&html, FRAME_W, TALL_H);
+        let _ = render_web_flow_boundary_json(&html, &frames_json(&frames(2, 60)), "");
+        let warm = perf_counters().font_context_builds;
+        assert_eq!(
+            (cold, warm),
+            (1, 0),
+            "one build on a cold engine, none after"
+        );
+    })
+    .join()
+    .unwrap();
 }
 
 // ---------------------------------------------------------------------------
@@ -307,7 +337,7 @@ const ARTICLE_1: Budget = Budget {
     html_parses: 1,
     resolves: 1,
     paint_captures: 1,
-    font_context_builds: 1,
+    font_context_builds: 0,
     painted_commands: 243,
     run_match_comparisons: 40000,
     bytes_in: 8894,
@@ -317,7 +347,7 @@ const ARTICLE_4: Budget = Budget {
     html_parses: 1,
     resolves: 4,
     paint_captures: 4,
-    font_context_builds: 1,
+    font_context_builds: 0,
     painted_commands: 514,
     run_match_comparisons: 60896,
     bytes_in: 9023,
@@ -327,7 +357,7 @@ const ARTICLE_12: Budget = Budget {
     html_parses: 1,
     resolves: 12,
     paint_captures: 12,
-    font_context_builds: 1,
+    font_context_builds: 0,
     painted_commands: 1360,
     run_match_comparisons: 150365,
     bytes_in: 9267,
@@ -337,7 +367,7 @@ const TABLE_300: Budget = Budget {
     html_parses: 1,
     resolves: 1,
     paint_captures: 1,
-    font_context_builds: 1,
+    font_context_builds: 0,
     painted_commands: 2121,
     run_match_comparisons: 815409,
     bytes_in: 15942,
@@ -347,7 +377,7 @@ const STYLED_200: Budget = Budget {
     html_parses: 1,
     resolves: 1,
     paint_captures: 1,
-    font_context_builds: 1,
+    font_context_builds: 0,
     painted_commands: 403,
     run_match_comparisons: 159201,
     bytes_in: 7722,
