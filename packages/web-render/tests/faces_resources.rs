@@ -213,6 +213,16 @@ fn a_font_face_source_loads_and_shapes__feat__plugin_web_web_fonts() {
 }
 
 #[test]
+fn an_asset_store_url_loads_only_when_registered_as_is__feat__plugin_web_resources() {
+    on_fresh_thread(|| {
+        register_resource("paged-image:u1a", &red_png());
+        let it = items("<img src=\"paged-image:u1a\" style=\"width:10px;height:10px\">");
+        assert!(kinds(&it).contains(&"image".to_string()));
+        assert!(take_resource_misses().is_empty());
+    });
+}
+
+#[test]
 fn what_does_not_load_is_reported__feat__plugin_web_resources() {
     on_fresh_thread(|| {
         let it = items(

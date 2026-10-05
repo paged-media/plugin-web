@@ -80,9 +80,16 @@ pub fn clear_resources() {
 }
 
 /// The registry key of a URL: the path under the base, without a leading
-/// `./` or `/`, percent-decoded, query and fragment dropped.
+/// `./` or `/`, percent-decoded, query and fragment dropped. A URL outside
+/// the base keys as itself (minus query and fragment), so only a host that
+/// registered that exact URL can answer it.
 fn key_of(url: &str) -> String {
-    let rest = url.strip_prefix(BASE_URL).unwrap_or(url);
+    let Some(rest) = url.strip_prefix(BASE_URL).or_else(|| {
+        // A relative URL (no scheme) is source-relative.
+        (!url.contains(':')).then_some(url)
+    }) else {
+        return url.split(['?', '#']).next().unwrap_or("").to_string();
+    };
     let rest = rest.split(['?', '#']).next().unwrap_or("");
     let rest = rest.trim_start_matches("./").trim_start_matches('/');
     percent_decode(rest)
@@ -171,10 +178,11 @@ impl NetProvider for ResourceProvider {
         let url = request.url.as_str().to_string();
         let bytes = if url.starts_with("data:") {
             decode_data_url(&url).map(Bytes::from)
-        } else if url.starts_with(BASE_URL) {
-            self.resources.get(&key_of(&url)).cloned()
         } else {
-            None
+            // Under the base: the source-relative key. Anything else only
+            // when the host registered that exact URL (an asset-store entry
+            // such as `paged-image:<element id>`) — never a network fetch.
+            self.resources.get(&key_of(&url)).cloned()
         };
         match bytes {
             Some(b) => {
@@ -272,5 +280,14 @@ mod tests {
         );
         assert_eq!(decode_data_url("data:text/css,a%7Bb%7D").unwrap(), b"a{b}");
         assert!(decode_data_url("data:nocomma").is_none());
+    }
+
+    #[test]
+    fn a_url_outside_the_base_keys_as_itself() {
+        assert_eq!(key_of("paged-image:u1a?x"), "paged-image:u1a");
+        assert_eq!(
+            key_of("https://example.com/a.png"),
+            "https://example.com/a.png"
+        );
     }
 }
