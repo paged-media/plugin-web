@@ -193,12 +193,10 @@ fn styled_runs_200_in_one_frame__feat__plugin_web_perf_budgets() {
     let html = styled_runs(STYLED_RUNS);
     let (ws, c) = frame_render(&html, TALL_H);
     show("styled-runs-200/1-frame", &c);
-    // Every span's word reaches the canvas. NOT "exactly once": each colour
-    // run carries its whole line's text today
-    // (see `defect_styled_runs_carry_their_whole_line_text`).
-    for m in (0..STYLED_RUNS).map(styled_marker) {
-        assert!(ws.contains(&m), "span word {m} missing");
-    }
+    // Every span's word reaches the canvas exactly once, and nothing else
+    // does (see `styled_runs_carry_only_their_own_text`).
+    assert_eq!(ws.len(), STYLED_RUNS, "one word per span");
+    assert_each_once(&ws, (0..STYLED_RUNS).map(styled_marker));
     check(&c, &STYLED_200);
 }
 
@@ -219,7 +217,7 @@ fn work_shapes__feat__plugin_web_perf_budgets() {
     // candidate (the article's 200 line runs cost 200 comparisons; before
     // Wave 2 they cost 200^2 = 40 000, the table 815 409).
     assert_eq!(ARTICLE_1.run_match_comparisons, 200);
-    const { assert!(STYLED_200.run_match_comparisons <= 2 * STYLED_RUNS as u64) };
+    assert_eq!(STYLED_200.run_match_comparisons, STYLED_RUNS as u64);
     const { assert!(TABLE_300.run_match_comparisons <= 4 * TABLE_ROWS as u64) };
     // The font context is built once per engine, not per render call.
     assert_eq!(ARTICLE_12.font_context_builds, 0);
@@ -251,19 +249,20 @@ fn font_context_is_built_once_per_engine__feat__plugin_web_perf_budgets() {
 }
 
 // ---------------------------------------------------------------------------
-// Defects the workloads exposed (pinned: these panic today; when one is fixed
-// the test fails — drop its `should_panic` and tighten the budget's behaviour
-// assertion in the same commit)
+// Defects the workloads exposed. Pinned as `should_panic` while open; when one
+// is fixed its test becomes a plain assertion in the fixing commit.
 // ---------------------------------------------------------------------------
 
-/// Colour-only `<span>`s share one shaping run, so every per-style glyph run
-/// recovers the shaping run's WHOLE line text (`run.text_range()`) — the
-/// canvas paints each line's text once per colour run, overlapping.
+/// FIXED in Wave 2 (was `defect_styled_runs_carry_their_whole_line_text`):
+/// colour-only `<span>`s share one shaping run, and every per-style glyph run
+/// recovered the shaping run's WHOLE line text (`run.text_range()`) — the
+/// canvas painted each line once per colour run, overlapping (3 257 words for
+/// 200 spans). Each glyph run now recovers only its own clusters' text.
 #[test]
-#[should_panic(expected = "occur exactly once")]
-fn defect_styled_runs_carry_their_whole_line_text__feat__plugin_web_perf_budgets() {
+fn styled_runs_carry_only_their_own_text__feat__plugin_web_perf_budgets() {
     let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let (ws, _) = frame_render(&styled_runs(STYLED_RUNS), TALL_H);
+    assert_eq!(ws.len(), STYLED_RUNS, "one word per span, no repeats");
     assert_each_once(&ws, (0..STYLED_RUNS).map(styled_marker));
 }
 
@@ -383,7 +382,7 @@ const STYLED_200: Budget = Budget {
     paint_captures: 1,
     font_context_builds: 0,
     painted_commands: 403,
-    run_match_comparisons: 399,
+    run_match_comparisons: 200,
     bytes_in: 7722,
-    bytes_out: 71303,
+    bytes_out: 28600,
 };

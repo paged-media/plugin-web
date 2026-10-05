@@ -887,12 +887,26 @@ fn recover_layout_runs(
     let inset_x = lay.border.left + lay.padding.left;
     let inset_y = lay.border.top + lay.padding.top;
     for line in layout.lines() {
+        // Parley splits one shaping run into several glyph runs where the
+        // STYLE changes (spans differing only in colour shape as one run).
+        // They arrive consecutively; `consumed` is how many of the current
+        // shaping run's glyphs the earlier glyph runs took, so each glyph run
+        // recovers only ITS OWN text, not the shaping run's whole range.
+        let mut consumed: Option<(std::ops::Range<usize>, usize)> = None;
         for item in line.items() {
             let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
+                consumed = None;
                 continue;
             };
             let run = glyph_run.run();
-            let range = run.text_range();
+            let run_range = run.text_range();
+            let glyph_count = glyph_run.glyphs().count();
+            let glyph_start = match &consumed {
+                Some((r, n)) if *r == run_range => *n,
+                _ => 0,
+            };
+            consumed = Some((run_range.clone(), glyph_start + glyph_count));
+            let range = glyph_span_text_range(run, glyph_start, glyph_count).unwrap_or(run_range);
             let Some(slice) = text.get(range) else {
                 continue; // defensive: a non-char-boundary range never happens here
             };
@@ -917,6 +931,34 @@ fn recover_layout_runs(
             });
         }
     }
+}
+
+/// The source-text range of glyphs `start..start + count` of `run` (in the
+/// run's visual glyph order — the order a parley `GlyphRun` takes them): the
+/// union of the ranges of the clusters whose first glyph falls in the span.
+/// `None` when no cluster does.
+fn glyph_span_text_range(
+    run: &parley::Run<'_, TextBrush>,
+    start: usize,
+    count: usize,
+) -> Option<std::ops::Range<usize>> {
+    let end = start + count;
+    let mut g = 0usize;
+    let mut out: Option<std::ops::Range<usize>> = None;
+    for cluster in run.visual_clusters() {
+        if g >= end {
+            break;
+        }
+        if g >= start {
+            let r = cluster.text_range();
+            out = Some(match out {
+                None => r,
+                Some(o) => o.start.min(r.start)..o.end.max(r.end),
+            });
+        }
+        g += cluster.glyphs().count();
+    }
+    out
 }
 
 /// Grid cell (content points) of the run-match index. Any match lies within
@@ -1424,6 +1466,28 @@ mod tests {
                 joined.contains(word),
                 "scaled run text {joined:?} missing {word:?} (items {scaled:?})"
             );
+        }
+    }
+
+    #[test]
+    fn colour_only_spans_each_recover_only_their_own_text() {
+        // Spans differing only in colour shape as ONE parley run that paint
+        // splits into one glyph run per colour. Each must carry its own words
+        // — before Wave 2 every colour run carried the whole line, so the
+        // canvas drew the line once per colour, overlapping.
+        let items = text_items(
+            "<html><body><p style=\"margin:0\">\
+             <span style=\"color:#c00\">red</span> \
+             <span style=\"color:#00a\">blue</span> \
+             <span style=\"color:#060\">green</span></p></body></html>",
+        );
+        let words: Vec<String> = items
+            .iter()
+            .flat_map(|(t, ..)| t.split_whitespace().map(str::to_string))
+            .collect();
+        for w in ["red", "blue", "green"] {
+            let n = words.iter().filter(|x| *x == w).count();
+            assert_eq!(n, 1, "{w:?} must occur exactly once: {items:?}");
         }
     }
 
