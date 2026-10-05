@@ -250,6 +250,54 @@ fn font_context_is_built_once_per_engine__feat__plugin_web_perf_budgets() {
     .unwrap();
 }
 
+/// Sub-resources and registered faces add work only where a source uses them:
+/// an `<img>` (fetched while the HTML is parsed) loads in the ONE resolve every
+/// render does; a CSS background (fetched while styles resolve) costs exactly
+/// one more; a face registered twice is registered once and never rebuilds the
+/// font context. Each fetch crosses no bytes at render time (the bytes were
+/// registered once, before).
+#[test]
+fn resources_and_faces__feat__plugin_web_perf_budgets() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::thread::spawn(|| {
+        let png = web_render::resources::decode_data_url(
+            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAEklEQVR4nGP4z8DwHxkzkC4AADxAH+HggXe0AAAAAElFTkSuQmCC",
+        )
+        .unwrap();
+        web_render::resources::register_resource("img/a.png", &png);
+        let count_images = |json: &str| json.matches("\"kind\":\"image\"").count();
+
+        let (out, img) = measure(|| {
+            render_web_frame_json("<img src=\"img/a.png\" style=\"width:20px;height:20px\">", 200, 200)
+        });
+        show("resources/img", &img);
+        assert_eq!(count_images(&out), 1, "the image painted");
+        assert_eq!((img.resolves, img.resource_fetches), (1, 1));
+
+        let (out, bg) = measure(|| {
+            render_web_frame_json(
+                "<div style=\"width:20px;height:20px;background-image:url(img/a.png)\"></div>",
+                200,
+                200,
+            )
+        });
+        show("resources/background", &bg);
+        assert_eq!(count_images(&out), 1, "the background painted");
+        assert_eq!((bg.resolves, bg.resource_fetches), (2, 1));
+
+        let (_, faces) = measure(|| {
+            web_render::fonts::register_font(web_render::fonts::INTER_REGULAR, Some("Brand"));
+            web_render::fonts::register_font(web_render::fonts::INTER_REGULAR, Some("Brand"));
+            render_web_frame_json("<p style=\"font-family:Brand\">x</p>", 200, 200)
+        });
+        show("resources/faces", &faces);
+        assert_eq!((faces.font_registrations, faces.font_context_builds), (1, 0));
+        assert_eq!(faces.resolves, 1);
+    })
+    .join()
+    .unwrap();
+}
+
 // ---------------------------------------------------------------------------
 // Defects the workloads exposed. Pinned as `should_panic` while open; when one
 // is fixed its test becomes a plain assertion in the fixing commit.
@@ -303,7 +351,10 @@ struct Budget {
     painted_commands: u64,
     run_match_comparisons: u64,
     bytes_in: u64,
+    /// Output bytes WITHOUT the text-face fields (pinned before faces).
     bytes_out: u64,
+    /// The text-face fields' bytes (`weight` / `italic` of non-regular runs).
+    face_bytes_out: u64,
 }
 
 fn check(c: &PerfCounters, b: &Budget) {
@@ -333,10 +384,16 @@ fn check(c: &PerfCounters, b: &Budget) {
         b.bytes_in
     );
     assert!(
-        c.bytes_out <= b.bytes_out,
-        "bytes out {} > budget {}",
-        c.bytes_out,
+        c.bytes_out - c.face_bytes_out <= b.bytes_out,
+        "bytes out (without faces) {} > budget {}",
+        c.bytes_out - c.face_bytes_out,
         b.bytes_out
+    );
+    assert!(
+        c.face_bytes_out <= b.face_bytes_out,
+        "face bytes out {} > budget {}",
+        c.face_bytes_out,
+        b.face_bytes_out
     );
 }
 
@@ -349,6 +406,7 @@ const ARTICLE_1: Budget = Budget {
     run_match_comparisons: 200,
     bytes_in: 8894,
     bytes_out: 31634,
+    face_bytes_out: 0,
 };
 const ARTICLE_4: Budget = Budget {
     html_parses: 1,
@@ -359,6 +417,7 @@ const ARTICLE_4: Budget = Budget {
     run_match_comparisons: 217,
     bytes_in: 9023,
     bytes_out: 31646,
+    face_bytes_out: 0,
 };
 const ARTICLE_12: Budget = Budget {
     html_parses: 1,
@@ -369,6 +428,7 @@ const ARTICLE_12: Budget = Budget {
     run_match_comparisons: 250,
     bytes_in: 9267,
     bytes_out: 31873,
+    face_bytes_out: 0,
 };
 const TABLE_300: Budget = Budget {
     html_parses: 1,
@@ -379,6 +439,7 @@ const TABLE_300: Budget = Budget {
     run_match_comparisons: 903,
     bytes_in: 15942,
     bytes_out: 190761,
+    face_bytes_out: 45,
 };
 const STYLED_200: Budget = Budget {
     html_parses: 1,
@@ -389,4 +450,5 @@ const STYLED_200: Budget = Budget {
     run_match_comparisons: 200,
     bytes_in: 7722,
     bytes_out: 26515,
+    face_bytes_out: 0,
 };

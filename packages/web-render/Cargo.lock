@@ -2354,6 +2354,7 @@ dependencies = [
  "peniko",
  "serde",
  "serde_json",
+ "skrifa",
  "wasm-bindgen",
 ]
 

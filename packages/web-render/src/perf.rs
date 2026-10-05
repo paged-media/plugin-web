@@ -52,11 +52,21 @@ pub enum Counter {
     BytesIn,
     /// Bytes returned OUT of the wasm exports (the JSON result).
     BytesOut,
+    /// Faces newly registered into the engine's font context
+    /// (`fonts::register_font`; a repeat registration is not counted).
+    FontRegistrations,
+    /// Sub-resources (images, stylesheets, `@font-face` sources) the resource
+    /// provider served to a document.
+    ResourceFetches,
+    /// The part of `BytesOut` that carries text faces (the `weight` /
+    /// `italic` fields of non-regular runs) — budgeted on its own so the
+    /// pre-face output budgets stay pinned.
+    FaceBytesOut,
 }
 
 impl Counter {
     /// Every counter, in table order.
-    pub const ALL: [Counter; 8] = [
+    pub const ALL: [Counter; 11] = [
         Counter::HtmlParses,
         Counter::Resolves,
         Counter::PaintCaptures,
@@ -65,6 +75,9 @@ impl Counter {
         Counter::FontContextBuilds,
         Counter::BytesIn,
         Counter::BytesOut,
+        Counter::FontRegistrations,
+        Counter::ResourceFetches,
+        Counter::FaceBytesOut,
     ];
 
     /// The camelCase name the JSON export (and the TS side) uses.
@@ -78,6 +91,9 @@ impl Counter {
             Counter::FontContextBuilds => "fontContextBuilds",
             Counter::BytesIn => "bytesIn",
             Counter::BytesOut => "bytesOut",
+            Counter::FontRegistrations => "fontRegistrations",
+            Counter::ResourceFetches => "resourceFetches",
+            Counter::FaceBytesOut => "faceBytesOut",
         }
     }
 }
@@ -95,6 +111,9 @@ pub struct PerfCounters {
     pub font_context_builds: u64,
     pub bytes_in: u64,
     pub bytes_out: u64,
+    pub font_registrations: u64,
+    pub resource_fetches: u64,
+    pub face_bytes_out: u64,
 }
 
 impl PerfCounters {
@@ -108,6 +127,9 @@ impl PerfCounters {
             font_context_builds: t[Counter::FontContextBuilds as usize],
             bytes_in: t[Counter::BytesIn as usize],
             bytes_out: t[Counter::BytesOut as usize],
+            font_registrations: t[Counter::FontRegistrations as usize],
+            resource_fetches: t[Counter::ResourceFetches as usize],
+            face_bytes_out: t[Counter::FaceBytesOut as usize],
         }
     }
 
@@ -122,6 +144,9 @@ impl PerfCounters {
             Counter::FontContextBuilds => self.font_context_builds,
             Counter::BytesIn => self.bytes_in,
             Counter::BytesOut => self.bytes_out,
+            Counter::FontRegistrations => self.font_registrations,
+            Counter::ResourceFetches => self.resource_fetches,
+            Counter::FaceBytesOut => self.face_bytes_out,
         }
     }
 

@@ -38,14 +38,13 @@
 //!   between body rows with the `<thead>` repeated per frame. Replaced
 //!   elements stay atomic.
 
-use blitz_dom::{BaseDocument, DocumentConfig};
+use blitz_dom::BaseDocument;
 use blitz_html::HtmlDocument;
 use blitz_traits::shell::{ColorScheme, Viewport};
 use serde::{Deserialize, Serialize};
 
 use crate::capture::{capture_resolved, render_html};
 use crate::display_list::{WebDisplayList, WebDrawCmd, WebGlyphRun, WebGradient, WebImage};
-use crate::fonts::font_ctx;
 use crate::wire::{RectPt, SceneLayer, ScenePathSeg};
 
 /// CSS px → content points (the capture's `PX_TO_PT`, 1px = 1/96in, 1pt = 1/72in).
@@ -150,11 +149,7 @@ pub fn render_web_flow_variable_rooted(
     let _shape_guard = crate::capture::SHAPE_LOCK
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    let config = DocumentConfig {
-        font_ctx: Some(font_ctx()),
-        ..Default::default()
-    };
-    let mut doc = HtmlDocument::from_html(html, config);
+    let mut doc = HtmlDocument::from_html(html, crate::resources::document_config());
     crate::perf::bump(crate::perf::Counter::HtmlParses, 1);
 
     // CSS Regions `flow-into`: keep ONLY the named flow root's subtree so only
@@ -186,8 +181,7 @@ pub fn render_web_flow_variable_rooted(
 
     for (fi, &(w, h)) in frames.iter().enumerate() {
         doc.set_viewport(Viewport::new(w, tall, 1.0, ColorScheme::Light));
-        doc.resolve(0.0);
-        crate::perf::bump(crate::perf::Counter::Resolves, 1);
+        crate::resources::resolve(&mut doc);
 
         let h_pt = h as f32 * PX_TO_PT;
         let is_last = fi + 1 == frames.len();
@@ -763,17 +757,20 @@ pub fn render_web_flow_rooted(
 }
 
 fn flow_result_to_wire(result: FlowResult) -> FlowWire {
+    let mut advances = Vec::with_capacity(result.frames.len());
     let frames = result
         .frames
         .iter()
         .map(|dl| {
             let low = crate::lower::lower(dl);
+            advances.push(low.text_advances);
             FlowFrameWire {
                 layer: low.layer,
                 emitted: low.report.emitted,
             }
         })
         .collect();
+    crate::boundary::set_text_advances(advances);
     FlowWire {
         frames,
         overset: result.overset,
