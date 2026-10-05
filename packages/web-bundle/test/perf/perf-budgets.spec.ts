@@ -276,7 +276,9 @@ describe.skipIf(!bundledPresent)("web perf budgets (real host + real Blitz)", ()
 
 const BUDGET = {
   renderFrame: { doorCalls: 8, reads: 2, bytesIn: 8936, bytesOut: 12788 },
-  renderFlow: { doorCalls: 9, reads: 1, bytesIn: 9309, bytesOut: 78153 },
+  // 9 / 1 before the single source reader (ADR 409): it also reads the
+  // pre-pointer part of a frame, so an old document's larger source wins.
+  renderFlow: { doorCalls: 11, reads: 3, bytesIn: 9309, bytesOut: 78153 },
   bake: {
     doorCalls: 1410,
     mutates: 801,
