@@ -149,9 +149,7 @@ fn article_flowed_into_4_frames__feat__plugin_web_perf_budgets() {
     let html = article(ARTICLE_PARAS);
     let (ws, overset, c) = flow_render(&html, &frames(4, ARTICLE_FLOW_CAPACITY / 4));
     show("article/flow-4", &c);
-    // `overset` is NOT asserted: it is always true below a 4096 px last frame
-    // (see `defect_flow_reports_overset_for_content_that_fits`).
-    let _ = overset;
+    assert!(!overset, "the article fits 4 x 1500 px");
     assert_eq!(
         ws.len(),
         ARTICLE_PARAS * article_words(),
@@ -167,7 +165,7 @@ fn article_flowed_into_12_frames__feat__plugin_web_perf_budgets() {
     let html = article(ARTICLE_PARAS);
     let (ws, overset, c) = flow_render(&html, &frames(12, ARTICLE_FLOW_CAPACITY / 12));
     show("article/flow-12", &c);
-    let _ = overset;
+    assert!(!overset, "the article fits 12 x 500 px");
     assert_eq!(
         ws.len(),
         ARTICLE_PARAS * article_words(),
@@ -266,12 +264,14 @@ fn styled_runs_carry_only_their_own_text__feat__plugin_web_perf_budgets() {
     assert_each_once(&ws, (0..STYLED_RUNS).map(styled_marker));
 }
 
-/// The flow's last-frame bottom includes the viewport-sized (transparent)
-/// root background fill, so `overset` is true whenever the last frame is
-/// shorter than the 4096 px paint viewport — even when the text fits.
+/// FIXED in Wave 2 (was `defect_flow_reports_overset_for_content_that_fits`):
+/// the flow's last-frame bottom included the viewport-sized transparent canvas
+/// background fill, so `overset` was true whenever the last frame was shorter
+/// than the 4096 px paint viewport, even when the text fit. The transparent
+/// fill is dropped at capture and the canvas background never counts as
+/// content.
 #[test]
-#[should_panic(expected = "fits, so not overset")]
-fn defect_flow_reports_overset_for_content_that_fits__feat__plugin_web_perf_budgets() {
+fn flow_that_fits_is_not_overset__feat__plugin_web_perf_budgets() {
     let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let (ws, overset, _) = flow_render(&article(2), &frames(1, 2000));
     assert_eq!(ws.len(), 2 * article_words(), "both paragraphs painted");
@@ -341,48 +341,48 @@ const ARTICLE_1: Budget = Budget {
     resolves: 1,
     paint_captures: 1,
     font_context_builds: 0,
-    painted_commands: 243,
+    painted_commands: 242,
     run_match_comparisons: 200,
     bytes_in: 8894,
-    bytes_out: 58784,
+    bytes_out: 58560,
 };
 const ARTICLE_4: Budget = Budget {
     html_parses: 1,
     resolves: 4,
     paint_captures: 4,
     font_context_builds: 0,
-    painted_commands: 514,
+    painted_commands: 510,
     run_match_comparisons: 417,
     bytes_in: 9023,
-    bytes_out: 64594,
+    bytes_out: 63699,
 };
 const ARTICLE_12: Budget = Budget {
     html_parses: 1,
     resolves: 12,
     paint_captures: 12,
     font_context_builds: 0,
-    painted_commands: 1360,
+    painted_commands: 1348,
     run_match_comparisons: 1100,
     bytes_in: 9267,
-    bytes_out: 78153,
+    bytes_out: 75467,
 };
 const TABLE_300: Budget = Budget {
     html_parses: 1,
     resolves: 1,
     paint_captures: 1,
     font_context_builds: 0,
-    painted_commands: 2121,
+    painted_commands: 2120,
     run_match_comparisons: 903,
     bytes_in: 15942,
-    bytes_out: 814706,
+    bytes_out: 814482,
 };
 const STYLED_200: Budget = Budget {
     html_parses: 1,
     resolves: 1,
     paint_captures: 1,
     font_context_builds: 0,
-    painted_commands: 403,
+    painted_commands: 402,
     run_match_comparisons: 200,
     bytes_in: 7722,
-    bytes_out: 28600,
+    bytes_out: 28376,
 };

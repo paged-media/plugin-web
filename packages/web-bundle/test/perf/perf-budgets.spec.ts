@@ -275,10 +275,12 @@ describe.skipIf(!bundledPresent)("web perf budgets (real host + real Blitz)", ()
 // --- the pins (measured 2026-10-05) ----------------------------------------
 
 const BUDGET = {
-  renderFrame: { doorCalls: 8, reads: 2, bytesIn: 8936, bytesOut: 12788 },
+  // bytesOut lowered by the engine (Wave 2): the transparent canvas fill no
+  // longer crosses the wire (frame 12 788 -> 12 564, flow 78 153 -> 75 467).
+  renderFrame: { doorCalls: 8, reads: 2, bytesIn: 8936, bytesOut: 12564 },
   // 9 / 1 before the single source reader (ADR 409): it also reads the
   // pre-pointer part of a frame, so an old document's larger source wins.
-  renderFlow: { doorCalls: 11, reads: 3, bytesIn: 9309, bytesOut: 78153 },
+  renderFlow: { doorCalls: 11, reads: 3, bytesIn: 9309, bytesOut: 75467 },
   bake: {
     doorCalls: 1410,
     mutates: 801,

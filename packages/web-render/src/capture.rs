@@ -609,6 +609,14 @@ impl PaintScene for CapturingScene {
             anyrender::Paint::Image(_) | anyrender::Paint::Solid(_) => None,
         };
         match solid_paint(pr) {
+            // A fully transparent fill outside every layer paints nothing —
+            // chiefly the canvas background Blitz paints first over
+            // `max(viewport, root box)` when the page sets none. Dropped, so
+            // it neither crosses the wire nor counts as painted content (a
+            // flow's last frame read it as content and reported overset).
+            // Inside a layer it is kept: the inset-shadow capture reads the
+            // fill before a DestOut layer as the shadow colour.
+            Some(paint) if paint.a <= 0.0 && self.blend_stack.is_empty() => {}
             Some(paint) => {
                 // A solid fill INSIDE a non-Normal blend layer lowers to a
                 // C-1.4 `fillPathBlend` (CSS `mix-blend-mode`). The blend lane
