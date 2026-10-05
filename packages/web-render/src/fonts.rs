@@ -51,9 +51,28 @@ pub const BUNDLED_FAMILY: &str = "Inter";
 /// the WASM-correct setup (mirrors `blitz_dom::build_single_font_ctx`,
 /// which is the upstream "standard setup for WASM"). Used for BOTH the
 /// native and wasm builds so shaping is deterministic.
+///
+/// Builds a FRESH context (decode + register the face) every call. The
+/// render paths use [`font_ctx`], which builds once per engine thread.
 pub fn build_font_ctx() -> FontContext {
     crate::perf::bump(crate::perf::Counter::FontContextBuilds, 1);
     blitz_dom::build_single_font_ctx(INTER_REGULAR)
+}
+
+thread_local! {
+    /// The engine's font context, built on first use and kept for the
+    /// thread's lifetime (the wasm engine is single-threaded, so this is
+    /// once per engine instance).
+    static FONT_CTX: FontContext = build_font_ctx();
+}
+
+/// The engine's font context: built ONCE per thread ([`build_font_ctx`]) and
+/// handed to each document as a clone. A clone copies the collection's
+/// family maps (the registered face's blob is shared, not re-decoded) and
+/// shares the source cache, so a document registering its own faces never
+/// touches the cached original.
+pub fn font_ctx() -> FontContext {
+    FONT_CTX.with(FontContext::clone)
 }
 
 #[cfg(test)]
@@ -77,5 +96,19 @@ mod tests {
         // The context construction registers the face into a fresh,
         // system-fonts-off collection — the wasm-correct path.
         let _ctx = build_font_ctx();
+    }
+
+    #[test]
+    fn the_cached_context_is_built_once_per_thread() {
+        // A fresh thread, so the thread-local starts empty whatever ran here.
+        std::thread::spawn(|| {
+            crate::perf::reset_perf_counters();
+            let _a = font_ctx();
+            let _b = font_ctx();
+            let expect = if crate::perf::ENABLED { 1 } else { 0 };
+            assert_eq!(crate::perf::perf_counters().font_context_builds, expect);
+        })
+        .join()
+        .unwrap();
     }
 }

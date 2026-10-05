@@ -321,10 +321,13 @@ const BUDGET = {
   // Was 8: the single reader also read the pre-pointer part (+ its
   // `supports` probe) for every inline label. A label the single writer
   // wrote is marked `legacyPart: false` and costs no part read.
-  renderFrame: { doorCalls: 6, reads: 2, bytesIn: 8936, bytesOut: 12788 },
+  // bytesOut lowered by the engine optimisations: the transparent canvas fill no
+  // longer crosses the wire (frame 12 788 -> 12 564, flow 78 153 -> 75 467),
+  // nor do zero-extent border subpaths (frame -> 6 302, flow -> 31 873).
+  renderFrame: { doorCalls: 6, reads: 2, bytesIn: 8936, bytesOut: 6302 },
   // 9 before the single source reader (ADR 409), 11 with its legacy-part
   // read (two source loads: the chain resolve and the render), 7 now.
-  renderFlow: { doorCalls: 7, reads: 3, bytesIn: 9309, bytesOut: 78153 },
+  renderFlow: { doorCalls: 7, reads: 3, bytesIn: 9309, bytesOut: 31873 },
   // Was 1410 / 801 / 400 / 400 / 40000 (one story-diffing mutate chain per
   // run, 801 undo steps). Now ONE batch of 5 ops per run + 1 swatch, story
   // ids through `bindCreated` handles; the one collection read is the

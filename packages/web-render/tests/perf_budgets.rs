@@ -25,10 +25,12 @@
 //! count is the same on every machine; an optimisation lowers the pin in the
 //! commit that earns it, and a pin is never raised.
 //!
-//! The baseline shows the shapes Wave 2 attacks: a flow resolves and paints
-//! once PER FRAME, each paint covering the whole remainder (painted commands
-//! ~ frames x remaining content), and text recovery compares every captured
-//! run against every recovered run (run-match comparisons ~ R^2).
+//! The baseline (2026-10-05) showed the shapes the optimisations attack: a flow
+//! resolves and paints once PER FRAME, each paint covering the whole
+//! remainder (painted commands ~ frames x remaining content), and text
+//! recovery compared every captured run against every recovered run
+//! (run-match comparisons ~ R^2). Now a flow frame paints only its
+//! band and run matching is ~R through an index.
 //!
 //! Run: `cargo test --features blitz,perf-counters --test perf_budgets`;
 //! `PERF_SHOW=1` (with `-- --nocapture`) prints the measured table.
@@ -48,7 +50,12 @@ use web_render::{render_web_flow_boundary_json, render_web_frame_json};
 /// serialize the workloads so geometry — and so the counts — is stable.
 static LOCK: Mutex<()> = Mutex::new(());
 
+/// Count `f`'s work on a WARM engine: the font context (built once per engine
+/// thread) is built before the counters are reset, so a budget pins the
+/// per-render work, not the engine's one-time start-up
+/// (`font_context_is_built_once_per_engine` counts that).
 fn measure<T>(f: impl FnOnce() -> T) -> (T, PerfCounters) {
+    let _ = web_render::fonts::font_ctx();
     reset_perf_counters();
     let out = f();
     (out, perf_counters())
@@ -143,9 +150,7 @@ fn article_flowed_into_4_frames__feat__plugin_web_perf_budgets() {
     let html = article(ARTICLE_PARAS);
     let (ws, overset, c) = flow_render(&html, &frames(4, ARTICLE_FLOW_CAPACITY / 4));
     show("article/flow-4", &c);
-    // `overset` is NOT asserted: it is always true below a 4096 px last frame
-    // (see `defect_flow_reports_overset_for_content_that_fits`).
-    let _ = overset;
+    assert!(!overset, "the article fits 4 x 1500 px");
     assert_eq!(
         ws.len(),
         ARTICLE_PARAS * article_words(),
@@ -161,7 +166,7 @@ fn article_flowed_into_12_frames__feat__plugin_web_perf_budgets() {
     let html = article(ARTICLE_PARAS);
     let (ws, overset, c) = flow_render(&html, &frames(12, ARTICLE_FLOW_CAPACITY / 12));
     show("article/flow-12", &c);
-    let _ = overset;
+    assert!(!overset, "the article fits 12 x 500 px");
     assert_eq!(
         ws.len(),
         ARTICLE_PARAS * article_words(),
@@ -187,58 +192,90 @@ fn styled_runs_200_in_one_frame__feat__plugin_web_perf_budgets() {
     let html = styled_runs(STYLED_RUNS);
     let (ws, c) = frame_render(&html, TALL_H);
     show("styled-runs-200/1-frame", &c);
-    // Every span's word reaches the canvas. NOT "exactly once": each colour
-    // run carries its whole line's text today
-    // (see `defect_styled_runs_carry_their_whole_line_text`).
-    for m in (0..STYLED_RUNS).map(styled_marker) {
-        assert!(ws.contains(&m), "span word {m} missing");
-    }
+    // Every span's word reaches the canvas exactly once, and nothing else
+    // does (see `styled_runs_carry_only_their_own_text`).
+    assert_eq!(ws.len(), STYLED_RUNS, "one word per span");
+    assert_each_once(&ws, (0..STYLED_RUNS).map(styled_marker));
     check(&c, &STYLED_200);
 }
 
-/// The quadratic shapes, stated as relations between the measured runs so
-/// they read as the defect they are (Wave 2 turns these around).
+/// The work SHAPES, stated as relations between the pinned budgets so they
+/// read as the property they are (baseline 2026-10-05: per-frame flow work,
+/// R^2 run matching, a font context per call; the optimisations turn them around).
 #[test]
-fn baseline_shapes_are_per_frame_and_quadratic__feat__plugin_web_perf_budgets() {
-    // Resolves per flow = frames (a full style + layout pass per frame).
+fn work_shapes__feat__plugin_web_perf_budgets() {
+    // Resolves per flow = frames: each frame re-lays out the remainder at its
+    // own width after the consumed prefix is deleted (the fragmentation model,
+    // ADR 404 — a continuation re-applies box tops, margins and indents).
     assert_eq!(ARTICLE_4.resolves, 4);
     assert_eq!(ARTICLE_12.resolves, 12);
-    // Each frame repaints the whole REMAINDER: 12 frames paint far more
-    // commands than 4 for the same content (~ frames x remaining / 2).
-    // Sum over frames of the remainder ~ C x (F + 1) / 2 for C commands.
-    const { assert!(ARTICLE_4.painted_commands >= 2 * ARTICLE_1.painted_commands) };
-    const { assert!(ARTICLE_12.painted_commands >= 5 * ARTICLE_1.painted_commands) };
-    // Run matching compares every captured run against every recovered run:
-    // the article's 200 line runs cost 200^2 comparisons, not ~200.
-    assert_eq!(ARTICLE_1.run_match_comparisons, 200 * 200);
-    const { assert!(STYLED_200.run_match_comparisons >= (STYLED_RUNS * STYLED_RUNS) as u64) };
-    // One font context per render call — none cached across calls.
-    assert_eq!(ARTICLE_12.font_context_builds, 1);
+    // Each frame paints only its BAND (the last frame its remainder), so a
+    // flow paints about its content once, however many frames: 12 frames
+    // paint < 1.5 x one frame's commands (in the baseline each frame repainted
+    // the whole remainder: ~ C x (F + 1) / 2, 1 360 for 12 frames).
+    const { assert!(2 * ARTICLE_4.painted_commands < 3 * ARTICLE_1.painted_commands) };
+    const { assert!(2 * ARTICLE_12.painted_commands < 3 * ARTICLE_1.painted_commands) };
+    // Run matching is LINEAR: an index answers each captured run with ~one
+    // candidate (the article's 200 line runs cost 200 comparisons; in
+    // the baseline they cost 200^2 = 40 000, the table 815 409).
+    assert_eq!(ARTICLE_1.run_match_comparisons, 200);
+    assert_eq!(STYLED_200.run_match_comparisons, STYLED_RUNS as u64);
+    const { assert!(TABLE_300.run_match_comparisons <= 4 * TABLE_ROWS as u64) };
+    // The font context is built once per engine, not per render call.
+    assert_eq!(ARTICLE_12.font_context_builds, 0);
+}
+
+/// The font context is built ONCE per engine (thread): the first render on a
+/// cold engine builds it, every later render reuses it. In the baseline every
+/// render call built its own (1 per call).
+#[test]
+fn font_context_is_built_once_per_engine__feat__plugin_web_perf_budgets() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::thread::spawn(|| {
+        let html = article(2);
+        reset_perf_counters();
+        let _ = render_web_frame_json(&html, FRAME_W, TALL_H);
+        let cold = perf_counters().font_context_builds;
+        reset_perf_counters();
+        let _ = render_web_frame_json(&html, FRAME_W, TALL_H);
+        let _ = render_web_flow_boundary_json(&html, &frames_json(&frames(2, 60)), "");
+        let warm = perf_counters().font_context_builds;
+        assert_eq!(
+            (cold, warm),
+            (1, 0),
+            "one build on a cold engine, none after"
+        );
+    })
+    .join()
+    .unwrap();
 }
 
 // ---------------------------------------------------------------------------
-// Defects the workloads exposed (pinned: these panic today; when one is fixed
-// the test fails — drop its `should_panic` and tighten the budget's behaviour
-// assertion in the same commit)
+// Defects the workloads exposed. Pinned as `should_panic` while open; when one
+// is fixed its test becomes a plain assertion in the fixing commit.
 // ---------------------------------------------------------------------------
 
-/// Colour-only `<span>`s share one shaping run, so every per-style glyph run
-/// recovers the shaping run's WHOLE line text (`run.text_range()`) — the
-/// canvas paints each line's text once per colour run, overlapping.
+/// FIXED 2026-10-05 (was `defect_styled_runs_carry_their_whole_line_text`):
+/// colour-only `<span>`s share one shaping run, and every per-style glyph run
+/// recovered the shaping run's WHOLE line text (`run.text_range()`) — the
+/// canvas painted each line once per colour run, overlapping (3 257 words for
+/// 200 spans). Each glyph run now recovers only its own clusters' text.
 #[test]
-#[should_panic(expected = "occur exactly once")]
-fn defect_styled_runs_carry_their_whole_line_text__feat__plugin_web_perf_budgets() {
+fn styled_runs_carry_only_their_own_text__feat__plugin_web_perf_budgets() {
     let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let (ws, _) = frame_render(&styled_runs(STYLED_RUNS), TALL_H);
+    assert_eq!(ws.len(), STYLED_RUNS, "one word per span, no repeats");
     assert_each_once(&ws, (0..STYLED_RUNS).map(styled_marker));
 }
 
-/// The flow's last-frame bottom includes the viewport-sized (transparent)
-/// root background fill, so `overset` is true whenever the last frame is
-/// shorter than the 4096 px paint viewport — even when the text fits.
+/// FIXED 2026-10-05 (was `defect_flow_reports_overset_for_content_that_fits`):
+/// the flow's last-frame bottom included the viewport-sized transparent canvas
+/// background fill, so `overset` was true whenever the last frame was shorter
+/// than the 4096 px paint viewport, even when the text fit. The transparent
+/// fill is dropped at capture and the canvas background never counts as
+/// content.
 #[test]
-#[should_panic(expected = "fits, so not overset")]
-fn defect_flow_reports_overset_for_content_that_fits__feat__plugin_web_perf_budgets() {
+fn flow_that_fits_is_not_overset__feat__plugin_web_perf_budgets() {
     let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let (ws, overset, _) = flow_render(&article(2), &frames(1, 2000));
     assert_eq!(ws.len(), 2 * article_words(), "both paragraphs painted");
@@ -307,49 +344,49 @@ const ARTICLE_1: Budget = Budget {
     html_parses: 1,
     resolves: 1,
     paint_captures: 1,
-    font_context_builds: 1,
-    painted_commands: 243,
-    run_match_comparisons: 40000,
+    font_context_builds: 0,
+    painted_commands: 200,
+    run_match_comparisons: 200,
     bytes_in: 8894,
-    bytes_out: 58784,
+    bytes_out: 31634,
 };
 const ARTICLE_4: Budget = Budget {
     html_parses: 1,
     resolves: 4,
     paint_captures: 4,
-    font_context_builds: 1,
-    painted_commands: 514,
-    run_match_comparisons: 60896,
+    font_context_builds: 0,
+    painted_commands: 217,
+    run_match_comparisons: 217,
     bytes_in: 9023,
-    bytes_out: 64594,
+    bytes_out: 31646,
 };
 const ARTICLE_12: Budget = Budget {
     html_parses: 1,
     resolves: 12,
     paint_captures: 12,
-    font_context_builds: 1,
-    painted_commands: 1360,
-    run_match_comparisons: 150365,
+    font_context_builds: 0,
+    painted_commands: 250,
+    run_match_comparisons: 250,
     bytes_in: 9267,
-    bytes_out: 78153,
+    bytes_out: 31873,
 };
 const TABLE_300: Budget = Budget {
     html_parses: 1,
     resolves: 1,
     paint_captures: 1,
-    font_context_builds: 1,
-    painted_commands: 2121,
-    run_match_comparisons: 815409,
+    font_context_builds: 0,
+    painted_commands: 1214,
+    run_match_comparisons: 903,
     bytes_in: 15942,
-    bytes_out: 814706,
+    bytes_out: 190761,
 };
 const STYLED_200: Budget = Budget {
     html_parses: 1,
     resolves: 1,
     paint_captures: 1,
-    font_context_builds: 1,
-    painted_commands: 403,
-    run_match_comparisons: 159201,
+    font_context_builds: 0,
+    painted_commands: 399,
+    run_match_comparisons: 200,
     bytes_in: 7722,
-    bytes_out: 71303,
+    bytes_out: 26515,
 };

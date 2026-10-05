@@ -56,7 +56,7 @@ use crate::display_list::{
     LocalKey, UnsupportedKind, WebBlendMode, WebDisplayList, WebDrawCmd, WebGlyphRun, WebGradient,
     WebGradientStop, WebImage,
 };
-use crate::fonts::{build_font_ctx, BUNDLED_FAMILY};
+use crate::fonts::{font_ctx, BUNDLED_FAMILY};
 use crate::perf::{self, Counter};
 use crate::wire::{RectPt, ScenePaint, ScenePathSeg};
 
@@ -432,6 +432,54 @@ fn flatten_shape(shape: &impl Shape, transform: Affine) -> Vec<ScenePathSeg> {
     out
 }
 
+/// `path` without its ZERO-EXTENT subpaths: those whose points (control
+/// points included) all share one x or one y — a line or a point, which a
+/// fill covers no area of. Blitz paints every border side as a filled
+/// subpath, so a collapsed or zero-width border becomes four such subpaths per
+/// box (906 of the 1 215 fills of a 300-row table, 70 % of its wire bytes).
+/// A subpath with any extent in both axes is kept unchanged.
+fn drop_zero_extent_subpaths(path: Vec<ScenePathSeg>) -> Vec<ScenePathSeg> {
+    let mut out = Vec::with_capacity(path.len());
+    let mut start = 0;
+    while start < path.len() {
+        let end = path[start + 1..]
+            .iter()
+            .position(|s| matches!(s, ScenePathSeg::MoveTo { .. }))
+            .map_or(path.len(), |i| start + 1 + i);
+        let sub = &path[start..end];
+        let (mut x0, mut x1, mut y0, mut y1) = (f32::MAX, f32::MIN, f32::MAX, f32::MIN);
+        let mut see = |x: f32, y: f32| {
+            x0 = x0.min(x);
+            x1 = x1.max(x);
+            y0 = y0.min(y);
+            y1 = y1.max(y);
+        };
+        for seg in sub {
+            match *seg {
+                ScenePathSeg::MoveTo { x, y } | ScenePathSeg::LineTo { x, y } => see(x, y),
+                ScenePathSeg::CubicTo {
+                    cx1,
+                    cy1,
+                    cx2,
+                    cy2,
+                    x,
+                    y,
+                } => {
+                    see(cx1, cy1);
+                    see(cx2, cy2);
+                    see(x, y);
+                }
+                ScenePathSeg::Close => {}
+            }
+        }
+        if x1 > x0 && y1 > y0 {
+            out.extend_from_slice(sub);
+        }
+        start = end;
+    }
+    out
+}
+
 /// Whether a transformed shape is an axis-aligned rectangle — the common
 /// case (backgrounds, borders), fast-pathed to a [`WebDrawCmd::FillRect`]
 /// so the lowering emits a tidy box rather than a 5-segment path.
@@ -609,6 +657,14 @@ impl PaintScene for CapturingScene {
             anyrender::Paint::Image(_) | anyrender::Paint::Solid(_) => None,
         };
         match solid_paint(pr) {
+            // A fully transparent fill outside every layer paints nothing —
+            // chiefly the canvas background Blitz paints first over
+            // `max(viewport, root box)` when the page sets none. Dropped, so
+            // it neither crosses the wire nor counts as painted content (a
+            // flow's last frame read it as content and reported overset).
+            // Inside a layer it is kept: the inset-shadow capture reads the
+            // fill before a DestOut layer as the shadow colour.
+            Some(paint) if paint.a <= 0.0 && self.blend_stack.is_empty() => {}
             Some(paint) => {
                 // A solid fill INSIDE a non-Normal blend layer lowers to a
                 // C-1.4 `fillPathBlend` (CSS `mix-blend-mode`). The blend lane
@@ -619,8 +675,13 @@ impl PaintScene for CapturingScene {
                 } else if let Some(rect) = as_axis_aligned_rect(shape, transform) {
                     self.dl.push(WebDrawCmd::FillRect { rect, paint });
                 } else {
-                    let path = flatten_shape(shape, transform);
-                    self.dl.push(WebDrawCmd::FillPath { path, paint });
+                    // Zero-extent subpaths fill nothing (Blitz paints every
+                    // border side, zero-width ones included); a fill left with
+                    // no subpath is not recorded.
+                    let path = drop_zero_extent_subpaths(flatten_shape(shape, transform));
+                    if !path.is_empty() {
+                        self.dl.push(WebDrawCmd::FillPath { path, paint });
+                    }
                 }
             }
             None => self.dl.push(WebDrawCmd::NonSolidPaint {
@@ -787,8 +848,8 @@ struct RecoveredRun {
 /// run's PLAIN TEXT recovered from the DOM. Mirrors the W0 spike's
 /// `render_fragment`, but records commands instead of counting them, and:
 ///
-///   1. registers the bundled fallback face ([`build_font_ctx`]) so text
-///      SHAPES on wasm (parley/fontique exposes no system fonts there —
+///   1. registers the bundled fallback face ([`font_ctx`], built once per
+///      engine) so text SHAPES on wasm (parley/fontique exposes no system fonts there —
 ///      the spike's 22-vs-19 delta); the same context drives the native
 ///      build so tests exercise real shaping deterministically;
 ///   2. after paint, walks every inline root's parley `Layout` and slices
@@ -801,7 +862,7 @@ pub fn render_html(html: &str, width_px: u32, height_px: u32) -> WebDisplayList 
     #[cfg(test)]
     let _shape_guard = SHAPE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let config = DocumentConfig {
-        font_ctx: Some(build_font_ctx()),
+        font_ctx: Some(font_ctx()),
         ..Default::default()
     };
     let mut doc = HtmlDocument::from_html(html, config);
@@ -825,7 +886,7 @@ pub fn capture_resolved(doc: &mut BaseDocument, width_px: u32, height_px: u32) -
     perf::bump(Counter::PaintCaptures, 1);
     perf::bump(Counter::PaintedCommands, dl.commands.len() as u64);
     // Recover run text from the resolved document + attach it by baseline.
-    let recovered = recover_run_texts(doc);
+    let recovered = recover_run_texts(doc, height_px as f32);
     attach_run_texts(&mut dl, &recovered);
     dl
 }
@@ -836,22 +897,32 @@ pub fn capture_resolved(doc: &mut BaseDocument, width_px: u32, height_px: u32) -
 /// records). This is the honest text-recovery path: the text comes from
 /// the DOM's own inline formatting context (`TextLayout::text`), not from
 /// reverse-mapping glyph ids.
-fn recover_run_texts(doc: &BaseDocument) -> Vec<RecoveredRun> {
+///
+/// Inline roots whose box starts below `paint_height_px` are skipped: Blitz
+/// culls exactly those (by the untransformed box top), so nothing of theirs
+/// was captured — a flow frame painting only its band recovers only its band.
+fn recover_run_texts(doc: &BaseDocument, paint_height_px: f32) -> Vec<RecoveredRun> {
     let mut out = Vec::new();
     // The node arena is contiguous ids; walk all of them and pick inline
     // roots (each owns one inline formatting context's layout + text).
     let root = doc.root_node().id;
-    collect_inline_runs(doc, root, &mut out);
+    collect_inline_runs(doc, root, paint_height_px, &mut out);
     out
 }
 
 /// Depth-first walk from `node_id`, collecting recovered runs from every
-/// inline-root descendant (and the node itself if it is one).
-fn collect_inline_runs(doc: &BaseDocument, node_id: usize, out: &mut Vec<RecoveredRun>) {
+/// inline-root descendant (and the node itself if it is one) whose box
+/// starts within the paint height.
+fn collect_inline_runs(
+    doc: &BaseDocument,
+    node_id: usize,
+    paint_height_px: f32,
+    out: &mut Vec<RecoveredRun>,
+) {
     let Some(node) = doc.get_node(node_id) else {
         return;
     };
-    if node.flags.is_inline_root() {
+    if node.flags.is_inline_root() && node.absolute_position(0.0, 0.0).y <= paint_height_px {
         if let Some(element) = node.element_data() {
             if let Some(ild) = element.inline_layout_data.as_ref() {
                 recover_layout_runs(node, &ild.text, &ild.layout, out);
@@ -859,7 +930,7 @@ fn collect_inline_runs(doc: &BaseDocument, node_id: usize, out: &mut Vec<Recover
         }
     }
     for child in &node.children {
-        collect_inline_runs(doc, *child, out);
+        collect_inline_runs(doc, *child, paint_height_px, out);
     }
 }
 
@@ -871,20 +942,42 @@ fn collect_inline_runs(doc: &BaseDocument, node_id: usize, out: &mut Vec<Recover
 ///     space, the SAME point the capture records as `WebGlyphRun::local_key`
 ///     (so it survives a CSS transform on the inline root); and
 ///   · the untransformed absolute baseline via `Node::absolute_position`
-///     (the disambiguator for a local-key collision across inline roots).
+///     plus the root's border + padding inset (where paint draws it — the
+///     disambiguator for a local-key collision across inline roots).
 fn recover_layout_runs(
     inline_root: &blitz_dom::Node,
     text: &str,
     layout: &Layout<TextBrush>,
     out: &mut Vec<RecoveredRun>,
 ) {
+    // Paint draws an inline layout at the root's CONTENT box (border +
+    // padding in from the box `absolute_position` measures), so the run's
+    // untransformed absolute baseline adds that inset — the point where an
+    // untransformed run's capture lands.
+    let lay = &inline_root.final_layout;
+    let inset_x = lay.border.left + lay.padding.left;
+    let inset_y = lay.border.top + lay.padding.top;
     for line in layout.lines() {
+        // Parley splits one shaping run into several glyph runs where the
+        // STYLE changes (spans differing only in colour shape as one run).
+        // They arrive consecutively; `consumed` is how many of the current
+        // shaping run's glyphs the earlier glyph runs took, so each glyph run
+        // recovers only ITS OWN text, not the shaping run's whole range.
+        let mut consumed: Option<(std::ops::Range<usize>, usize)> = None;
         for item in line.items() {
             let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
+                consumed = None;
                 continue;
             };
             let run = glyph_run.run();
-            let range = run.text_range();
+            let run_range = run.text_range();
+            let glyph_count = glyph_run.glyphs().count();
+            let glyph_start = match &consumed {
+                Some((r, n)) if *r == run_range => *n,
+                _ => 0,
+            };
+            consumed = Some((run_range.clone(), glyph_start + glyph_count));
+            let range = glyph_span_text_range(run, glyph_start, glyph_count).unwrap_or(run_range);
             let Some(slice) = text.get(range) else {
                 continue; // defensive: a non-char-boundary range never happens here
             };
@@ -897,7 +990,7 @@ fn recover_layout_runs(
             // coords (CSS px, scale 1); both px→pt to match the capture.
             let local_x = glyph_run.offset();
             let local_y = glyph_run.baseline();
-            let abs = inline_root.absolute_position(local_x, local_y);
+            let abs = inline_root.absolute_position(local_x + inset_x, local_y + inset_y);
             out.push(RecoveredRun {
                 local: LocalKey::new(
                     CapturingScene::px_pt(local_x as f64),
@@ -911,6 +1004,91 @@ fn recover_layout_runs(
     }
 }
 
+/// The source-text range of glyphs `start..start + count` of `run` (in the
+/// run's visual glyph order — the order a parley `GlyphRun` takes them): the
+/// union of the ranges of the clusters whose first glyph falls in the span.
+/// `None` when no cluster does.
+fn glyph_span_text_range(
+    run: &parley::Run<'_, TextBrush>,
+    start: usize,
+    count: usize,
+) -> Option<std::ops::Range<usize>> {
+    let end = start + count;
+    let mut g = 0usize;
+    let mut out: Option<std::ops::Range<usize>> = None;
+    for cluster in run.visual_clusters() {
+        if g >= end {
+            break;
+        }
+        if g >= start {
+            let r = cluster.text_range();
+            out = Some(match out {
+                None => r,
+                Some(o) => o.start.min(r.start)..o.end.max(r.end),
+            });
+        }
+        g += cluster.glyphs().count();
+    }
+    out
+}
+
+/// Grid cell (content points) of the run-match index. Any match lies within
+/// [`RUN_MATCH_TOL_PT`] of its key, so the 3 x 3 cells around a key (at least
+/// one cell = 1 pt in every direction) hold every candidate.
+const RUN_MATCH_CELL_PT: f32 = 1.0;
+
+/// A point's cell in the run-match grid.
+fn run_cell(x: f32, y: f32) -> (i32, i32) {
+    (
+        (x / RUN_MATCH_CELL_PT).floor() as i32,
+        (y / RUN_MATCH_CELL_PT).floor() as i32,
+    )
+}
+
+/// The recovered runs bucketed by grid cell, twice: by LOCAL key (the match
+/// key) and by untransformed ABSOLUTE baseline (where an untransformed run's
+/// capture lands). A lookup reads the 3 x 3 cells around a point, so matching
+/// costs ~one candidate per captured run instead of a scan of every
+/// recovered run (R comparisons per run, R^2 per render, in the 2026-10-05 baseline).
+struct RunIndex {
+    by_local: std::collections::HashMap<(i32, i32), Vec<usize>>,
+    by_abs: std::collections::HashMap<(i32, i32), Vec<usize>>,
+}
+
+impl RunIndex {
+    fn new(recovered: &[RecoveredRun]) -> Self {
+        let mut by_local: std::collections::HashMap<(i32, i32), Vec<usize>> =
+            std::collections::HashMap::with_capacity(recovered.len());
+        let mut by_abs: std::collections::HashMap<(i32, i32), Vec<usize>> =
+            std::collections::HashMap::with_capacity(recovered.len());
+        for (i, rec) in recovered.iter().enumerate() {
+            by_local
+                .entry(run_cell(rec.local.x, rec.local.y))
+                .or_default()
+                .push(i);
+            by_abs
+                .entry(run_cell(rec.abs_x, rec.abs_y))
+                .or_default()
+                .push(i);
+        }
+        RunIndex { by_local, by_abs }
+    }
+
+    /// Every indexed run in the 3 x 3 cells around `(x, y)` of `map`.
+    fn around(
+        map: &std::collections::HashMap<(i32, i32), Vec<usize>>,
+        x: f32,
+        y: f32,
+    ) -> impl Iterator<Item = usize> + '_ {
+        let (cx, cy) = run_cell(x, y);
+        (-1..=1)
+            .flat_map(move |dy| (-1..=1).map(move |dx| (cx + dx, cy + dy)))
+            .filter_map(move |cell| map.get(&cell))
+            .flatten()
+            .copied()
+    }
+}
+
 /// Fill each captured `GlyphRun`'s empty `text` (and `family` hint) from
 /// the recovered runs.
 ///
@@ -920,14 +1098,19 @@ fn recover_layout_runs(
 /// when a CSS transform (translate/scale/rotate/skew on the inline root)
 /// moved its painted baseline — no transform reconstruction. When several
 /// unused recovered runs share a local key (distinct inline roots that
-/// happen to start at the same local point), the captured run's PAINTED
-/// baseline disambiguates by nearest untransformed absolute baseline — exact
-/// for the untransformed roots (degrading to the prior baseline behaviour),
-/// and the honest remaining slice is several SIMULTANEOUSLY-transformed
-/// inline roots colliding on one local key (rare): the loser stays empty
-/// (the lowering then skips it), never a faked or misattached string. Each
-/// recovered run is consumed at most once.
+/// happen to start at the same local point — every table cell does), the
+/// captured run's PAINTED baseline disambiguates by nearest untransformed
+/// absolute baseline. The honest remaining slice is several
+/// SIMULTANEOUSLY-transformed inline roots colliding on one local key (rare):
+/// the loser stays empty (the lowering then skips it), never a faked or
+/// misattached string. Each recovered run is consumed at most once.
+///
+/// The candidates come from a [`RunIndex`], not a scan: first the runs whose
+/// absolute baseline sits at the captured run's painted baseline (every
+/// untransformed run — one candidate each); only when none matches the local
+/// key (a transformed inline root) the runs sharing its local-key cell.
 fn attach_run_texts(dl: &mut WebDisplayList, recovered: &[RecoveredRun]) {
+    let index = RunIndex::new(recovered);
     let mut used = vec![false; recovered.len()];
     for cmd in &mut dl.commands {
         let WebDrawCmd::GlyphRun(run) = cmd else {
@@ -935,29 +1118,48 @@ fn attach_run_texts(dl: &mut WebDisplayList, recovered: &[RecoveredRun]) {
         };
         // Best candidate: smallest local-key distance; ties (a local-key
         // collision) broken by nearest untransformed absolute baseline.
-        let mut best: Option<(usize, f32, f32)> = None;
-        perf::bump(Counter::RunMatchComparisons, recovered.len() as u64);
-        for (i, rec) in recovered.iter().enumerate() {
-            if used[i] {
-                continue;
-            }
-            let key_d = (rec.local.x - run.local_key.x).hypot(rec.local.y - run.local_key.y);
-            if key_d > RUN_MATCH_TOL_PT {
-                continue;
-            }
-            let abs_d = (rec.abs_x - run.baseline_x).hypot(rec.abs_y - run.baseline_y);
-            let better = match best {
-                None => true,
-                Some((_, bk, ba)) => {
-                    // Prefer a strictly closer local key; on a local-key tie,
-                    // prefer the nearer absolute baseline.
-                    key_d < bk - f32::EPSILON || ((key_d - bk).abs() <= f32::EPSILON && abs_d < ba)
+        let pick = |candidates: &mut dyn Iterator<Item = usize>| {
+            let mut best: Option<(usize, f32, f32)> = None;
+            let mut examined = 0u64;
+            for i in candidates {
+                examined += 1;
+                if used[i] {
+                    continue;
                 }
-            };
-            if better {
-                best = Some((i, key_d, abs_d));
+                let rec = &recovered[i];
+                let key_d = (rec.local.x - run.local_key.x).hypot(rec.local.y - run.local_key.y);
+                if key_d > RUN_MATCH_TOL_PT {
+                    continue;
+                }
+                let abs_d = (rec.abs_x - run.baseline_x).hypot(rec.abs_y - run.baseline_y);
+                let better = match best {
+                    None => true,
+                    Some((_, bk, ba)) => {
+                        // Prefer a strictly closer local key; on a local-key
+                        // tie, prefer the nearer absolute baseline.
+                        key_d < bk - f32::EPSILON
+                            || ((key_d - bk).abs() <= f32::EPSILON && abs_d < ba)
+                    }
+                };
+                if better {
+                    best = Some((i, key_d, abs_d));
+                }
             }
-        }
+            perf::bump(Counter::RunMatchComparisons, examined);
+            best
+        };
+        let best = pick(&mut RunIndex::around(
+            &index.by_abs,
+            run.baseline_x,
+            run.baseline_y,
+        ))
+        .or_else(|| {
+            pick(&mut RunIndex::around(
+                &index.by_local,
+                run.local_key.x,
+                run.local_key.y,
+            ))
+        });
         if let Some((i, _, _)) = best {
             used[i] = true;
             run.text = recovered[i].text.clone();
@@ -1181,6 +1383,52 @@ mod tests {
     }
 
     #[test]
+    fn zero_extent_subpaths_are_dropped_and_area_subpaths_kept() {
+        use ScenePathSeg::*;
+        let line = |x0, y0, x1, y1| {
+            vec![
+                MoveTo { x: x0, y: y0 },
+                LineTo { x: x0, y: y0 },
+                LineTo { x: x1, y: y1 },
+                LineTo { x: x1, y: y1 },
+            ]
+        };
+        // Four zero-width border sides: nothing left.
+        let mut border = line(0.0, 0.0, 300.0, 0.0);
+        border.extend(line(300.0, 0.0, 300.0, 50.0));
+        border.extend(line(300.0, 50.0, 0.0, 50.0));
+        border.extend(line(0.0, 50.0, 0.0, 0.0));
+        assert!(drop_zero_extent_subpaths(border).is_empty());
+        // A real quad between two degenerate ones survives unchanged.
+        let quad = vec![
+            MoveTo { x: 0.0, y: 0.0 },
+            LineTo { x: 10.0, y: 0.0 },
+            LineTo { x: 10.0, y: 0.75 },
+            LineTo { x: 0.0, y: 0.75 },
+            Close,
+        ];
+        let mut mixed = line(0.0, 0.0, 5.0, 0.0);
+        mixed.extend(quad.clone());
+        mixed.extend(line(0.0, 9.0, 0.0, 20.0));
+        assert_eq!(drop_zero_extent_subpaths(mixed), quad);
+        // A curve whose end points are collinear but whose controls bulge
+        // has area: kept.
+        let bulge = vec![
+            MoveTo { x: 0.0, y: 0.0 },
+            CubicTo {
+                cx1: 3.0,
+                cy1: 5.0,
+                cx2: 7.0,
+                cy2: 5.0,
+                x: 10.0,
+                y: 0.0,
+            },
+            Close,
+        ];
+        assert_eq!(drop_zero_extent_subpaths(bulge.clone()), bulge);
+    }
+
+    #[test]
     fn quad_is_elevated_to_a_cubic_segment() {
         let segs = _demo_flatten();
         assert!(matches!(segs[0], ScenePathSeg::MoveTo { .. }));
@@ -1335,6 +1583,28 @@ mod tests {
                 joined.contains(word),
                 "scaled run text {joined:?} missing {word:?} (items {scaled:?})"
             );
+        }
+    }
+
+    #[test]
+    fn colour_only_spans_each_recover_only_their_own_text() {
+        // Spans differing only in colour shape as ONE parley run that paint
+        // splits into one glyph run per colour. Each must carry its own words
+        // — in the 2026-10-05 baseline every colour run carried the whole line, so the
+        // canvas drew the line once per colour, overlapping.
+        let items = text_items(
+            "<html><body><p style=\"margin:0\">\
+             <span style=\"color:#c00\">red</span> \
+             <span style=\"color:#00a\">blue</span> \
+             <span style=\"color:#060\">green</span></p></body></html>",
+        );
+        let words: Vec<String> = items
+            .iter()
+            .flat_map(|(t, ..)| t.split_whitespace().map(str::to_string))
+            .collect();
+        for w in ["red", "blue", "green"] {
+            let n = words.iter().filter(|x| *x == w).count();
+            assert_eq!(n, 1, "{w:?} must occur exactly once: {items:?}");
         }
     }
 

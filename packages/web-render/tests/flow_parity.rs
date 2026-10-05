@@ -53,10 +53,6 @@ enum Expect {
 
 #[rustfmt::skip]
 const EXPECT: &[(&str, &str, Expect)] = &[
-    ("flow-forced-break", "overset", Expect::Defect("FW-01 overset is reported although the content fits the chain")),
-    ("flow-headings-margins", "overset", Expect::Defect("FW-01 overset is reported although the content fits the chain")),
-    ("flow-orphans-widows", "overset", Expect::Defect("FW-01 overset is reported although the content fits the chain")),
-    ("flow-split-paragraph", "overset", Expect::Defect("FW-01 overset is reported although the content fits the chain")),
     ("flow-list", "breaks", Expect::Defect("FW-02 list items: frames repeat and drop items (CW-02 marker text theft)")),
     ("flow-list", "conserve", Expect::Defect("FW-02 list items: frames repeat and drop items (CW-02 marker text theft)")),
     ("flow-table-rows", "breaks", Expect::Defect("FW-03 the last frame keeps a table row that does not fit its height")),

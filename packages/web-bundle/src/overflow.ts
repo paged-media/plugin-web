@@ -31,11 +31,10 @@
 // "Fits" is measured from the paint: the content's bottom is the lowest
 // painted item of a layout in a very tall viewport (an invisible item, or
 // one that fills the whole viewport — the canvas background — is not
-// content). The engine's flow `overset` cannot be used for this: it counts
-// that viewport-filling background, so it is true for every last frame (a
-// defect pinned in conformance/overflow.spec.ts). The engine has no
-// content-height export either, so shrink searches (about ten layouts) and
-// grow and thread measure once.
+// content). The engine's flow `overset` is correct for a flow chain (it once
+// counted that background; conformance/overflow.spec.ts keeps the case), but
+// it answers only "fits or not". The engine has no content-height export, so
+// shrink searches (about ten layouts) and grow and thread measure once.
 
 import { scaleSceneLayer, type OverflowPolicy, type SceneLayer } from "../../web-model/src";
 

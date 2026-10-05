@@ -134,7 +134,7 @@ chains hold, except lists (FW-02).
 | floats | 2 | 2 defect | 1 agree, 1 defect | 2 defect | 2 agree |
 | grid | 2 | 2 agree | 2 agree | 2 agree | 2 agree |
 | headings | 1 | 1 agree | 1 agree | 1 agree | 1 agree |
-| inline | 6 | 3 agree, 3 defect | 5 agree, 1 defect | 4 agree, 2 defect | 5 agree, 1 defect |
+| inline | 6 | 3 agree, 3 defect | 5 agree, 1 defect | 4 agree, 2 defect | 6 agree |
 | lists | 3 | 3 agree | 3 agree | 2 agree, 1 diverges | 3 defect |
 | multicol | 1 | 1 defect | 1 defect | 1 agree | 1 agree |
 | paint | 1 | 1 agree | 1 agree | 1 agree | 1 agree |
@@ -144,7 +144,7 @@ chains hold, except lists (FW-02).
 | table | 2 | 2 defect | 2 agree | 2 defect | 2 agree |
 | text | 5 | 4 agree, 1 defect | 4 agree, 1 defect | 4 agree, 1 defect | 5 agree |
 
-33 fixtures x 2 widths, 132 aspect verdicts: **97 agree, 32 defect, 3 diverges, 0 fail**. 16 fixtures agree on every aspect.
+33 fixtures x 2 widths, 132 aspect verdicts: **98 agree, 31 defect, 3 diverges, 0 fail**. 16 fixtures agree on every aspect.
 
 ### Per fixture
 
@@ -163,7 +163,7 @@ Numbers per width (`240 / 400`): boxes agreeing/checked and the largest box delt
 | grid-areas | agree | agree | agree | agree | 9/9 (0) / 9/9 (0.39) | 8/8 / 7/7 | 8/8 (0.01) / 7/7 (0.4) |
 | grid-template | agree | agree | agree | agree | 7/7 (0.01) / 7/7 (0.01) | 7/7 / 6/6 | 7/7 (0.01) / 6/6 (0.01) |
 | headings | agree | agree | agree | agree | 7/7 (0.03) / 7/7 (0.03) | 9/9 / 7/7 | 9/9 (0.06) / 7/7 (0.06) |
-| inline-bold-italic | **defect CW-10** | agree | **defect CW-10** | **defect CW-01** | 1/3 (7.17) / 1/3 (7.17) | 14/14 / 10/10 | 5/14 (7.17) / 3/10 (7.17) |
+| inline-bold-italic | **defect CW-10** | agree | **defect CW-10** | agree | 1/3 (7.17) / 1/3 (7.17) | 14/14 / 10/10 | 5/14 (7.17) / 3/10 (7.17) |
 | inline-font-sizes | agree | agree | agree | agree | 5/5 (0.02) / 5/5 (0.01) | 23/23 / 14/14 | 23/23 (0.41) / 14/14 (0.41) |
 | inline-hard-breaks | **defect CW-11** | **defect CW-11** | agree | agree | 1/2 (20) / 2/2 (0) | 5/6 / 5/5 | 3/3 (0.01) / 5/5 (0.01) |
 | inline-line-breaking | agree | agree | agree | agree | 3/3 (0) / 3/3 (0) | 20/20 / 12/12 | 20/20 (0.01) / 12/12 (0.01) |
@@ -192,12 +192,12 @@ Words per frame, Chrome vs Blitz (`+` = overset).
 
 | Fixture | breaks | overset | conserve | Chrome words | Blitz words |
 |---|---|---|---|---|---|
-| flow-forced-break | agree | **defect FW-01** | agree | 36/29/0 | 36/29/0 + |
-| flow-headings-margins | agree | **defect FW-01** | agree | 23/33/28 | 23/33/28 + |
-| flow-list | **defect FW-02** | agree | **defect FW-02** | 36/36/36 + | 64/61/48 + |
-| flow-orphans-widows | agree | **defect FW-01** | agree | 37/38/9 | 37/38/9 + |
+| flow-forced-break | agree | agree | agree | 36/29/0 | 36/29/0 |
+| flow-headings-margins | agree | agree | agree | 23/33/28 | 23/33/28 |
+| flow-list | **defect FW-02** | agree | **defect FW-02** | 36/36/36 + | 50/49/48 + |
+| flow-orphans-widows | agree | agree | agree | 37/38/9 | 37/38/9 |
 | flow-paragraphs | agree | agree | agree | 36/36/36 + | 36/36/36 + |
-| flow-split-paragraph | agree | **defect FW-01** | agree | 34/38/15 | 34/38/15 + |
+| flow-split-paragraph | agree | agree | agree | 34/38/15 | 34/38/15 |
 | flow-table-rows | **defect FW-03** | agree | agree | 20/20/20 + | 20/20/24 + |
 
 <!-- GENERATED:END -->

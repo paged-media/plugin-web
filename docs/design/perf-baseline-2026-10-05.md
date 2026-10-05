@@ -64,7 +64,8 @@ quadratic in runs (200 runs → 40 000 rows), and the 801 mutations are 801 undo
 
 ## Defects the workloads exposed
 
-Pinned in `perf_budgets.rs` as `#[should_panic]` defect tests (they start failing when fixed):
+Pinned in `perf_budgets.rs` as `#[should_panic]` defect tests (they start failing when fixed).
+Both are fixed; see "After the engine optimisations".
 
 1. **Colour-only spans repeat their line's text.** Spans that differ only in colour share one
    shaping run, and text recovery slices each glyph run by the shaping run's range — so every
@@ -143,3 +144,63 @@ Recorded, not built (the engine half):
   the command rework that touches the same paths.
 - **Font faces on baked text.** `characterFontFamily` / `characterFontStyle` per run fit the same
   batch (the core contract test carries them) once runs carry their faces.
+
+## After the engine optimisations
+
+Same workloads, same counters, measured on a warm engine (the font context is built before the
+counters are reset). Every lowered count is the new pin in `perf_budgets.rs`, lowered in the
+commit that earned it.
+
+| Workload | parses | resolves | paint captures | painted cmds | run-match comparisons | font ctx | bytes in | bytes out | wall-clock (release) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| article, 1 frame (400 × 8192 px) | 1 | 1 | 1 | 243 → **200** | 40 000 → **200** | 1 → **0** | 8 894 | 58 784 → **31 634** | 4.1 → 3.1 ms |
+| article flowed into 4 frames (400 × 1500 px) | 1 | 4 | 4 | 514 → **217** | 60 896 → **217** | 1 → **0** | 9 023 | 64 594 → **31 646** | 9.1 → 6.2 ms |
+| article flowed into 12 frames (400 × 500 px) | 1 | 12 | 12 | 1 360 → **250** | 150 365 → **250** | 1 → **0** | 9 267 | 78 153 → **31 873** | 27.7 → 14.8 ms |
+| 300-row table, 1 frame | 1 | 1 | 1 | 2 121 → **1 214** | 815 409 → **903** | 1 → **0** | 15 942 | 814 706 → **190 761** | 23.1 → 17.1 ms |
+| 200 styled runs, 1 frame | 1 | 1 | 1 | 403 → **399** | 159 201 → **200** | 1 → **0** | 7 722 | 71 303 → **26 515** | 2.1 → 2.3 ms |
+
+Host side (`perf-budgets.spec.ts`), engine bytes out: render one frame 12 788 → **6 302**,
+render one flow into 12 frames 78 153 → **31 873**; the bake's one engine call 152 754 → 24 023
+(not budgeted). Wall-clock is one `cargo bench` run on one machine, for information only.
+
+What changed, each in its own commit with its budget:
+
+- **Font context once per engine.** Built on first use per thread (the wasm engine is
+  single-threaded) and cloned into each document; `font_context_is_built_once_per_engine` pins
+  cold = 1, warm = 0.
+- **Run matching by index.** Recovered runs are bucketed in a 1 pt grid by untransformed
+  absolute baseline and by local key; a captured run reads the 3 × 3 cells at its painted
+  baseline and falls back to its local-key cells only for a transformed inline root. The
+  absolute baseline now includes the inline root's border + padding inset (where paint draws
+  the text); without it every table cell missed the fast path. Same matches as before.
+- **A flow frame paints only its band.** Layout keeps the tall viewport; a non-last frame paints
+  its height + 64 px (Blitz culls elements whose box starts below the paint height) and text
+  recovery skips the culled inline roots. The last frame paints its whole remainder, which
+  decides overset. The JSON of four differential flows (variable widths, a table with header
+  repeat, upward box shadows, colour runs) is byte-identical before and after.
+- **Wire size.** A fully transparent fill outside every layer (the canvas background when the
+  page sets none) and zero-extent border subpaths (every border side is a filled subpath,
+  zero-width ones included) are not recorded: neither paints anything. The wire contract is
+  unchanged. Floats were not rounded: after the subpath drop the table's text items and real
+  border fills are what remains, and their values are already short.
+
+Defects, fixed:
+
+1. **Colour-only spans** — each glyph run now recovers only its own clusters' text (the shaping
+   run's glyphs consumed by earlier glyph runs are tracked). The 200-span paragraph paints 200
+   words. Test `styled_runs_carry_only_their_own_text` (was the `should_panic` defect test) and
+   the unit test `colour_only_spans_each_recover_only_their_own_text`.
+2. **Overset for content that fits** — the transparent canvas fill is gone and the flow's content
+   bottom skips an opaque canvas background. Test `flow_that_fits_is_not_overset` (was the
+   defect test); the 4- and 12-frame budgets assert not overset;
+   `a_flow_that_fits_its_last_frame_is_not_overset` covers transparent and opaque page
+   backgrounds, variable and equal width.
+
+Recorded, not built:
+
+- **Resolves stay one per frame**, also when consecutive frames share a width. After the
+  consumed prefix is deleted the remainder has to be laid out again: a continuation re-applies
+  box tops, margins and text indents, which scrolling the first layout would not. Skipping it
+  needs a different fragmentation model, not a cache.
+- **Parse once per flow group** (target 7) is host-side (the bundle calls the engine per group).
+

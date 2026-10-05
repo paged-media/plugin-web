@@ -45,7 +45,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::capture::{capture_resolved, render_html};
 use crate::display_list::{WebDisplayList, WebDrawCmd, WebGlyphRun, WebGradient, WebImage};
-use crate::fonts::build_font_ctx;
+use crate::fonts::font_ctx;
 use crate::wire::{RectPt, SceneLayer, ScenePathSeg};
 
 /// CSS px → content points (the capture's `PX_TO_PT`, 1px = 1/96in, 1pt = 1/72in).
@@ -87,12 +87,7 @@ pub fn render_web_flow_equalwidth(
     // ONE layout+paint+text-recovery pass at the shared width, tall enough to
     // hold the whole flow (so nothing is culled before we slice).
     let full = render_html(html, width_px, total_h);
-    let content_bottom_pt = full
-        .commands
-        .iter()
-        .filter_map(cmd_y_band)
-        .map(|(_, hi)| hi)
-        .fold(0.0f32, f32::max);
+    let content_bottom_pt = painted_content_bottom_pt(&full, width_px, total_h);
 
     let mut frames = Vec::with_capacity(frame_heights_px.len());
     let mut cum_px = 0u32;
@@ -156,7 +151,7 @@ pub fn render_web_flow_variable_rooted(
         .lock()
         .unwrap_or_else(|e| e.into_inner());
     let config = DocumentConfig {
-        font_ctx: Some(build_font_ctx()),
+        font_ctx: Some(font_ctx()),
         ..Default::default()
     };
     let mut doc = HtmlDocument::from_html(html, config);
@@ -194,16 +189,6 @@ pub fn render_web_flow_variable_rooted(
         doc.resolve(0.0);
         crate::perf::bump(crate::perf::Counter::Resolves, 1);
 
-        // Paint the REMAINING document at this width. After each prefix
-        // deletion the remainder re-lays out from y=0, so the capture is
-        // already frame-local.
-        let full = capture_resolved(&mut doc, w, tall);
-        let remainder_bottom_pt = full
-            .commands
-            .iter()
-            .filter_map(cmd_y_band)
-            .map(|(_, hi)| hi)
-            .fold(0.0f32, f32::max);
         let h_pt = h as f32 * PX_TO_PT;
         let is_last = fi + 1 == frames.len();
 
@@ -211,13 +196,29 @@ pub fn render_web_flow_variable_rooted(
         // overset). A non-last frame is cut by `plan_frame_cut`: the full
         // blocks it consumes PLUS a mid-block line split of the straddling
         // plain-text paragraph (rung 3) — the cut aligns to exactly what we
-        // then delete/split, so no block or line straddle-duplicates.
+        // then delete/split, so no block or line straddle-duplicates. The cut
+        // reads layout only, so it is planned before the paint.
         let (cut_pt, cut) = if is_last {
             (h_pt, None)
         } else {
             let c = plan_frame_cut(&doc, h as f32, flow_root);
             (c.cut_px * PX_TO_PT, Some(c))
         };
+
+        // Paint the REMAINING document at this width. After each prefix
+        // deletion the remainder re-lays out from y=0, so the capture is
+        // already frame-local. Layout keeps the tall viewport (so `vh` and
+        // percentage heights resolve as before); the PAINT covers only the
+        // frame's band — Blitz skips every element whose box starts below the
+        // paint height — so a frame paints its own content, not the whole
+        // remainder. The last frame paints the whole remainder: its bottom
+        // decides `overset`.
+        let paint_h = if is_last {
+            tall
+        } else {
+            h.saturating_add(BAND_MARGIN_PX).min(tall)
+        };
+        let full = capture_resolved(&mut doc, w, paint_h);
 
         let mut dl = WebDisplayList::new();
         for cmd in &full.commands {
@@ -230,7 +231,8 @@ pub fn render_web_flow_variable_rooted(
         out_frames.push(dl);
 
         let Some(cut) = cut else {
-            // Last frame.
+            // Last frame: overset when painted content reaches past it.
+            let remainder_bottom_pt = painted_content_bottom_pt(&full, w, paint_h);
             overset = remainder_bottom_pt > h_pt + 0.5;
             content_bottom_pt = remainder_bottom_pt;
             break;
@@ -801,6 +803,36 @@ pub fn render_web_flow_json(html: &str, frames_json: &str, flow_root: &str) -> S
 // Geometry helpers (pure — operate on the captured display list)
 // ---------------------------------------------------------------------------
 
+/// Extra paint height below a non-last frame's band, in CSS px. Blitz culls
+/// by an element's own box, so an element starting just below the frame but
+/// painting up into it (an outset shadow, a negative offset) still reaches
+/// the frame; content further down is not painted for this frame at all.
+const BAND_MARGIN_PX: u32 = 64;
+
+/// Where a capture's painted CONTENT ends, in content points: the bottom of
+/// every command except the canvas background. Blitz paints the canvas
+/// background first, over `max(viewport, root box)` — a viewport-sized fill
+/// that is no content. Counting it made every flow overset whose last frame
+/// was shorter than the paint viewport. (A transparent canvas background is
+/// already dropped at capture; this skips an opaque one.)
+fn painted_content_bottom_pt(dl: &WebDisplayList, width_px: u32, height_px: u32) -> f32 {
+    let skip_canvas = match dl.commands.first() {
+        Some(WebDrawCmd::FillRect { rect, .. }) => {
+            rect.x.abs() < 0.5
+                && rect.y.abs() < 0.5
+                && rect.w + 0.5 >= width_px as f32 * PX_TO_PT
+                && rect.h + 0.5 >= height_px as f32 * PX_TO_PT
+        }
+        _ => false,
+    };
+    dl.commands
+        .iter()
+        .skip(usize::from(skip_canvas))
+        .filter_map(cmd_y_band)
+        .map(|(_, hi)| hi)
+        .fold(0.0f32, f32::max)
+}
+
 /// The vertical extent `(min_y, max_y)` of a command's geometry in content
 /// points, or `None` for a geometry-less diagnostic marker.
 fn cmd_y_band(cmd: &WebDrawCmd) -> Option<(f32, f32)> {
@@ -1056,6 +1088,26 @@ mod tests {
             );
             prev_max = hi;
         }
+    }
+
+    #[test]
+    fn a_flow_that_fits_its_last_frame_is_not_overset() {
+        // The last frame (2000 px) is shorter than the 4096 px paint viewport.
+        // In the 2026-10-05 baseline the viewport-sized canvas background counted as
+        // content, so this always reported overset. Both with no page
+        // background (a transparent canvas fill) and with an opaque one.
+        for bg in ["", "html{background:#fafafa}"] {
+            let html = article(4).replace("<style>", &format!("<style>{bg}"));
+            let out = render_web_flow_variable(&html, &[(360, 48), (360, 2000)]);
+            assert!(!out.overset, "4 lines fit 48 + 2000 px (bg {bg:?})");
+            let all: Vec<usize> = out.frames.iter().flat_map(|f| markers_in(f, 4)).collect();
+            assert_eq!(all, vec![0, 1, 2, 3], "every paragraph once, in order");
+            let eq = render_web_flow_equalwidth(&html, &[48, 2000], 360);
+            assert!(!eq.overset, "equal-width: fits (bg {bg:?})");
+        }
+        // And content that does NOT fit still is.
+        let out = render_web_flow_variable(&article(4), &[(360, 48)]);
+        assert!(out.overset, "4 lines do not fit 48 px");
     }
 
     #[test]

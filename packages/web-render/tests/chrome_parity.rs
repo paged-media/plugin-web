@@ -75,7 +75,6 @@ enum Expect {
 /// (fixture, aspect, expectation). Absent = must agree.
 #[rustfmt::skip]
 const EXPECT: &[(&str, &str, Expect)] = &[
-    ("inline-bold-italic", "paint", Expect::Defect("CW-01 run text recovery copies a parley Run's whole text onto every style-split glyph run")),
     ("lists", "paint", Expect::Defect("CW-02 an outside list marker's glyph run takes the next item's text")),
     ("lists-long", "paint", Expect::Defect("CW-02 an outside list marker's glyph run takes the next item's text")),
     ("lists-nested", "paint", Expect::Defect("CW-03 text in an anonymous block box is never recovered")),

@@ -156,7 +156,7 @@ describe.skipIf(!blitzPresent)("web conformance — overflow policies (real host
   // measuring viewport, so a one-frame flow of one short paragraph reports
   // overset. overflow.ts measures from the paint instead. Flips when the
   // flow ignores viewport-filling items.
-  it.fails("DEFECT: a one-frame flow of content that fits reports overset", () => {
+  it("a one-frame flow of content that fits is not overset (was a pinned defect)", () => {
     const html =
       "<!doctype html><html><head><style>body{margin:0}</style></head><body><p>Short</p></body></html>";
     const flow = engine.renderFlow(html, [{ widthPx: 320, heightPx: 160 }]);
