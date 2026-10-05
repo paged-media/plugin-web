@@ -833,7 +833,7 @@ pub fn capture_resolved(doc: &mut BaseDocument, width_px: u32, height_px: u32) -
     perf::bump(Counter::PaintCaptures, 1);
     perf::bump(Counter::PaintedCommands, dl.commands.len() as u64);
     // Recover run text from the resolved document + attach it by baseline.
-    let recovered = recover_run_texts(doc);
+    let recovered = recover_run_texts(doc, height_px as f32);
     attach_run_texts(&mut dl, &recovered);
     dl
 }
@@ -844,22 +844,32 @@ pub fn capture_resolved(doc: &mut BaseDocument, width_px: u32, height_px: u32) -
 /// records). This is the honest text-recovery path: the text comes from
 /// the DOM's own inline formatting context (`TextLayout::text`), not from
 /// reverse-mapping glyph ids.
-fn recover_run_texts(doc: &BaseDocument) -> Vec<RecoveredRun> {
+///
+/// Inline roots whose box starts below `paint_height_px` are skipped: Blitz
+/// culls exactly those (by the untransformed box top), so nothing of theirs
+/// was captured — a flow frame painting only its band recovers only its band.
+fn recover_run_texts(doc: &BaseDocument, paint_height_px: f32) -> Vec<RecoveredRun> {
     let mut out = Vec::new();
     // The node arena is contiguous ids; walk all of them and pick inline
     // roots (each owns one inline formatting context's layout + text).
     let root = doc.root_node().id;
-    collect_inline_runs(doc, root, &mut out);
+    collect_inline_runs(doc, root, paint_height_px, &mut out);
     out
 }
 
 /// Depth-first walk from `node_id`, collecting recovered runs from every
-/// inline-root descendant (and the node itself if it is one).
-fn collect_inline_runs(doc: &BaseDocument, node_id: usize, out: &mut Vec<RecoveredRun>) {
+/// inline-root descendant (and the node itself if it is one) whose box
+/// starts within the paint height.
+fn collect_inline_runs(
+    doc: &BaseDocument,
+    node_id: usize,
+    paint_height_px: f32,
+    out: &mut Vec<RecoveredRun>,
+) {
     let Some(node) = doc.get_node(node_id) else {
         return;
     };
-    if node.flags.is_inline_root() {
+    if node.flags.is_inline_root() && node.absolute_position(0.0, 0.0).y <= paint_height_px {
         if let Some(element) = node.element_data() {
             if let Some(ild) = element.inline_layout_data.as_ref() {
                 recover_layout_runs(node, &ild.text, &ild.layout, out);
@@ -867,7 +877,7 @@ fn collect_inline_runs(doc: &BaseDocument, node_id: usize, out: &mut Vec<Recover
         }
     }
     for child in &node.children {
-        collect_inline_runs(doc, *child, out);
+        collect_inline_runs(doc, *child, paint_height_px, out);
     }
 }
 

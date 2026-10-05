@@ -29,7 +29,8 @@
 //! resolves and paints once PER FRAME, each paint covering the whole
 //! remainder (painted commands ~ frames x remaining content), and text
 //! recovery compared every captured run against every recovered run
-//! (run-match comparisons ~ R^2 — now ~R through an index).
+//! (run-match comparisons ~ R^2). After Wave 2 a flow frame paints only its
+//! band and run matching is ~R through an index.
 //!
 //! Run: `cargo test --features blitz,perf-counters --test perf_budgets`;
 //! `PERF_SHOW=1` (with `-- --nocapture`) prints the measured table.
@@ -203,14 +204,17 @@ fn styled_runs_200_in_one_frame__feat__plugin_web_perf_budgets() {
 /// R^2 run matching, a font context per call; Wave 2 turns them around).
 #[test]
 fn work_shapes__feat__plugin_web_perf_budgets() {
-    // Resolves per flow = frames (a full style + layout pass per frame).
+    // Resolves per flow = frames: each frame re-lays out the remainder at its
+    // own width after the consumed prefix is deleted (the fragmentation model,
+    // ADR 404 — a continuation re-applies box tops, margins and indents).
     assert_eq!(ARTICLE_4.resolves, 4);
     assert_eq!(ARTICLE_12.resolves, 12);
-    // Each frame repaints the whole REMAINDER: 12 frames paint far more
-    // commands than 4 for the same content (~ frames x remaining / 2).
-    // Sum over frames of the remainder ~ C x (F + 1) / 2 for C commands.
-    const { assert!(ARTICLE_4.painted_commands >= 2 * ARTICLE_1.painted_commands) };
-    const { assert!(ARTICLE_12.painted_commands >= 5 * ARTICLE_1.painted_commands) };
+    // Each frame paints only its BAND (the last frame its remainder), so a
+    // flow paints about its content once, however many frames: 12 frames
+    // paint < 1.5 x one frame's commands (before Wave 2 each frame repainted
+    // the whole remainder: ~ C x (F + 1) / 2, 1 360 for 12 frames).
+    const { assert!(2 * ARTICLE_4.painted_commands < 3 * ARTICLE_1.painted_commands) };
+    const { assert!(2 * ARTICLE_12.painted_commands < 3 * ARTICLE_1.painted_commands) };
     // Run matching is LINEAR: an index answers each captured run with ~one
     // candidate (the article's 200 line runs cost 200 comparisons; before
     // Wave 2 they cost 200^2 = 40 000, the table 815 409).
@@ -351,8 +355,8 @@ const ARTICLE_4: Budget = Budget {
     resolves: 4,
     paint_captures: 4,
     font_context_builds: 0,
-    painted_commands: 510,
-    run_match_comparisons: 417,
+    painted_commands: 270,
+    run_match_comparisons: 217,
     bytes_in: 9023,
     bytes_out: 63699,
 };
@@ -361,8 +365,8 @@ const ARTICLE_12: Budget = Budget {
     resolves: 12,
     paint_captures: 12,
     font_context_builds: 0,
-    painted_commands: 1348,
-    run_match_comparisons: 1100,
+    painted_commands: 328,
+    run_match_comparisons: 250,
     bytes_in: 9267,
     bytes_out: 75467,
 };

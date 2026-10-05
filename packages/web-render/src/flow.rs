@@ -207,8 +207,17 @@ pub fn render_web_flow_variable_rooted(
 
         // Paint the REMAINING document at this width. After each prefix
         // deletion the remainder re-lays out from y=0, so the capture is
-        // already frame-local.
-        let paint_h = tall;
+        // already frame-local. Layout keeps the tall viewport (so `vh` and
+        // percentage heights resolve as before); the PAINT covers only the
+        // frame's band — Blitz skips every element whose box starts below the
+        // paint height — so a frame paints its own content, not the whole
+        // remainder. The last frame paints the whole remainder: its bottom
+        // decides `overset`.
+        let paint_h = if is_last {
+            tall
+        } else {
+            h.saturating_add(BAND_MARGIN_PX).min(tall)
+        };
         let full = capture_resolved(&mut doc, w, paint_h);
 
         let mut dl = WebDisplayList::new();
@@ -793,6 +802,12 @@ pub fn render_web_flow_json(html: &str, frames_json: &str, flow_root: &str) -> S
 // ---------------------------------------------------------------------------
 // Geometry helpers (pure — operate on the captured display list)
 // ---------------------------------------------------------------------------
+
+/// Extra paint height below a non-last frame's band, in CSS px. Blitz culls
+/// by an element's own box, so an element starting just below the frame but
+/// painting up into it (an outset shadow, a negative offset) still reaches
+/// the frame; content further down is not painted for this frame at all.
+const BAND_MARGIN_PX: u32 = 64;
 
 /// Where a capture's painted CONTENT ends, in content points: the bottom of
 /// every command except the canvas background. Blitz paints the canvas
