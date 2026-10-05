@@ -92,3 +92,54 @@ Pinned in `perf_budgets.rs` as `#[should_panic]` defect tests (they start failin
    precision). Not in the Wave 2 list; recorded so it can be weighed against the above.
 7. **Parse once per flow, not per flow group** — 1 parse per group (the single-flow workloads here
    show 1); matters for multi-flow sources only.
+
+## After Wave 2 (host)
+
+Same workloads, same real headless host and engine wasm (`perf-budgets.spec.ts`; the headless
+host now boots the published `@paged-media/canvas-wasm` 0.67.0, pinned as a devDependency —
+before, it resolved whatever copy sat in a parent `node_modules`). Each pin was lowered in the
+commit that earned it, beside a behaviour assertion.
+
+| Command | door calls | `mutate` | `collection` | stories reads / rows | other | wall-clock |
+|---|---:|---:|---:|---:|---|---:|
+| render one frame | 8 → **6** | 0 | 0 | 0 / 0 | no `parts.read` | 62 → 81 ms |
+| render one flow into 12 frames | 11 → **7** | 0 | 0 | 0 / 0 | no `parts.read` (9 before ADR 409) | 37 → 35 ms |
+| bake a frame of 200 text runs | 1 410 → **207** | 801 → **1** (batch of 1 001 ops) | 400 → **1** (`swatches`) | 400 / 40 000 → **0 / 0** | 200 `measureString` | 891 → 120 ms |
+| 1 000 document changes, font watch live | 1 003 → **3** | 0 | 1 001 → **2** (`fonts`) | — | panel updates 1 001 → 1 | (the edits dominate) |
+| cold boot | — | — | — | — | 1 instantiation, 1 loader import | — |
+
+What changed:
+
+- **Bake as one batch** (`bakeBatchOps` in `bake-plan.ts`, pure). Every run is measured first;
+  then one `batch`: new swatches, then per frame each rectangle, path and text run, each creating
+  op followed by `bindCreated` and later ops addressing `$h:<handle>` — a text frame's handle in a
+  `storyId` / `story_id` position resolves to the story it minted. Created items are counted from
+  the outcome's `minted`. One bake = one undo step (asserted: one undo removes all 200 stories,
+  redo restores them); a flow bake is one batch across its frames. The swatches collection is
+  read once so an existing `Color/wb-…` swatch is not created again — the engine refuses a
+  duplicate self-id, and in one batch that would roll back the whole bake. The bake's cost is now
+  linear: one measurement per run plus a constant.
+- **Font watch per burst** (`font-watch.ts`). `DocumentChangeEvent` carries no hint of which
+  edits touch fonts, so the watch cannot filter by kind: a burst of changes collapses into one
+  trailing read 250 ms after the last change, and the panel is told only when the sorted family
+  list differs. The budget runs with a quiet time no edit loop reaches plus `flush()`, so the count
+  does not depend on machine speed.
+- **No legacy-part read for new labels** (`source-part.ts`). The writer marks every envelope
+  `legacyPart: false` (web-model `NO_LEGACY_PART`); the reader skips `<id>/source.json` for a
+  marked label. This also fixed a stale read: a small source saved onto a frame that carried a
+  large legacy part read back the legacy part.
+- **Multi-flow geometry in one read**, and the template pass memoized per source content
+  (`engine-document.ts`) — only for sources with `vars`: without them the composition is a
+  passthrough cheaper than hashing the source (0.002 ms against 0.04 ms for the 40-paragraph
+  article); with them the pass costs ~7 ms for 45 KB against ~0.1 ms for the key.
+
+Recorded, not built (the engine half):
+
+- **One parse per multi-flow source.** `render_web_flow` takes one flow root per call, so a source
+  with N named flows is parsed and resolved N times. Needs an engine entry point that lays out
+  every group from one parse.
+- **One source load per command.** The bake and flow commands load the source twice (the chain
+  resolve and the render each call `loadWebSource`: 2 `getMetadata`). Small, host-side, left for
+  the Wave 4 command rework that touches the same paths.
+- **Font faces on baked text.** `characterFontFamily` / `characterFontStyle` per run fit the same
+  batch (the core contract test carries them) once runs carry faces (Wave 5).

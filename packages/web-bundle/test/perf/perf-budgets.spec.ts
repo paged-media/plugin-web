@@ -24,10 +24,13 @@
 // that earns it, and a pin is never raised. Wall-clock is printed, not
 // gated. `PERF_SHOW=1` prints one `PERF` line per scenario.
 //
-// The baseline shows Wave 2's targets on the host side: a bake spends ~7
+// The baseline showed Wave 2's targets on the host side: a bake spent ~7
 // awaited door calls per text run, two of them full `stories` reads (rows
-// read grow with the SQUARE of the runs), one `mutate` per item; the panel's
-// font watch re-reads the whole `fonts` collection on EVERY document change.
+// read grew with the SQUARE of the runs), one `mutate` per item; the panel's
+// font watch re-read the whole `fonts` collection on EVERY document change.
+// Wave 2 (host) made the bake one batch (one measurement per run + a
+// constant), the font watch one read per burst, and dropped the legacy-part
+// read for labels the single writer wrote — see each pin's note.
 //
 // Engine artifact: skipped with a reason when `bin/blitz_web*` is absent,
 // FAILED when REQUIRE_REAL_ENGINE=1 (CI builds it first).
