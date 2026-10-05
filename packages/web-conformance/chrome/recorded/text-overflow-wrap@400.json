@@ -1,0 +1,91 @@
+{
+ "fixture": "text-overflow-wrap",
+ "width": 400,
+ "height": 1000,
+ "sourceSha256": "558b538d7b0aee806e2162c650ee9f81f40afc4c50d9daf1d3b5b587dd6e24fd",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "bw",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 400,
+   "h": 40
+  },
+  {
+   "id": "ba",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 48,
+   "w": 400,
+   "h": 40
+  },
+  {
+   "id": "ov",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 96,
+   "w": 400,
+   "h": 40
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "bw",
+   "text": "Supercalifragilisticexpialidociouslylongwordwithouta",
+   "top": 0,
+   "bottom": 20,
+   "left": 0,
+   "right": 396.453
+  },
+  {
+   "owner": "bw",
+   "text": "nybreakopportunity and more.",
+   "top": 20,
+   "bottom": 40,
+   "left": 0,
+   "right": 228.891
+  },
+  {
+   "owner": "ba",
+   "text": "Break all breaks anywhere in words when needed to ",
+   "top": 48,
+   "bottom": 68,
+   "left": 0,
+   "right": 394.391
+  },
+  {
+   "owner": "ba",
+   "text": "fit the frame.",
+   "top": 68,
+   "bottom": 88,
+   "left": 0,
+   "right": 96.938
+  },
+  {
+   "owner": "ov",
+   "text": "Overflowingsupercalifragilisticexpialidociouslylongword ",
+   "top": 96,
+   "bottom": 116,
+   "left": 0,
+   "right": 421.469
+  },
+  {
+   "owner": "ov",
+   "text": "stays whole.",
+   "top": 116,
+   "bottom": 136,
+   "left": 0,
+   "right": 94.406
+  }
+ ],
+ "scrollHeight": 1000
+}

@@ -76,6 +76,11 @@ pub mod capture;
 #[cfg(feature = "blitz")]
 pub mod fonts;
 
+// Layout geometry readout (box rects + line boxes) for the Chrome
+// conformance replay — read-only, never part of a render.
+#[cfg(feature = "blitz")]
+pub mod geometry;
+
 // Flow fragmentation — one flow across a frame chain (ADR 404). Behind
 // `blitz`; see docs/design/flow-fragmentation.md.
 #[cfg(feature = "blitz")]

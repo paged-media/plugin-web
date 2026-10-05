@@ -1,0 +1,157 @@
+{
+ "fixture": "flex-row",
+ "width": 240,
+ "height": 1000,
+ "sourceSha256": "03e3808367ae5e2b2545dcaaadf82c8ec961bf4b02120cb0fe7ab75a41e3483a",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "row",
+   "tag": "div",
+   "display": "flex",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 240,
+   "h": 64
+  },
+  {
+   "id": "a",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 8,
+   "y": 8,
+   "w": 39.016,
+   "h": 48
+  },
+  {
+   "id": "b",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 57.016,
+   "y": 8,
+   "w": 63.641,
+   "h": 48
+  },
+  {
+   "id": "c",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 130.656,
+   "y": 8,
+   "w": 101.344,
+   "h": 48
+  },
+  {
+   "id": "row2",
+   "tag": "div",
+   "display": "flex",
+   "position": "static",
+   "x": 0,
+   "y": 64,
+   "w": 240,
+   "h": 76
+  },
+  {
+   "id": "d",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 8,
+   "y": 88,
+   "w": 36.984,
+   "h": 28
+  },
+  {
+   "id": "e",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 97.094,
+   "y": 83,
+   "w": 36.125,
+   "h": 38
+  },
+  {
+   "id": "f",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 185.313,
+   "y": 88,
+   "w": 46.688,
+   "h": 28
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "a",
+   "text": "One",
+   "top": 12,
+   "bottom": 32,
+   "left": 12,
+   "right": 43.016
+  },
+  {
+   "owner": "b",
+   "text": "Two ",
+   "top": 12,
+   "bottom": 32,
+   "left": 61.016,
+   "right": 92.75
+  },
+  {
+   "owner": "b",
+   "text": "words",
+   "top": 32,
+   "bottom": 52,
+   "left": 61.016,
+   "right": 107.422
+  },
+  {
+   "owner": "c",
+   "text": "Three short ",
+   "top": 12,
+   "bottom": 32,
+   "left": 134.656,
+   "right": 222.375
+  },
+  {
+   "owner": "c",
+   "text": "words",
+   "top": 32,
+   "bottom": 52,
+   "left": 134.656,
+   "right": 181.063
+  },
+  {
+   "owner": "d",
+   "text": "Left",
+   "top": 92,
+   "bottom": 112,
+   "left": 12,
+   "right": 40.984
+  },
+  {
+   "owner": "e",
+   "text": "Mid",
+   "top": 87,
+   "bottom": 107,
+   "left": 101.094,
+   "right": 129.219
+  },
+  {
+   "owner": "f",
+   "text": "Right",
+   "top": 92,
+   "bottom": 112,
+   "left": 189.313,
+   "right": 228
+  }
+ ],
+ "scrollHeight": 1000
+}

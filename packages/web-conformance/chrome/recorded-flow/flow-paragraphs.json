@@ -1,0 +1,25 @@
+{
+ "fixture": "flow-paragraphs",
+ "frames": [
+  {
+   "widthPx": 240,
+   "heightPx": 200
+  },
+  {
+   "widthPx": 240,
+   "heightPx": 200
+  },
+  {
+   "widthPx": 240,
+   "heightPx": 200
+  }
+ ],
+ "sourceSha256": "03fa9afa20f1b06fd113889b52176e0dd1719e3e596ae07d4df81fe031224828",
+ "chrome": "153.0.8010.12",
+ "frameText": [
+  "Paragraph 1 of 12. Alpha bravo charlie delta echo foxtrot golf hotel. Paragraph 2 of 12. Alpha bravo charlie delta echo foxtrot golf hotel. Paragraph 3 of 12. Alpha bravo charlie delta echo foxtrot golf hotel.",
+  "Paragraph 4 of 12. Alpha bravo charlie delta echo foxtrot golf hotel. Paragraph 5 of 12. Alpha bravo charlie delta echo foxtrot golf hotel. Paragraph 6 of 12. Alpha bravo charlie delta echo foxtrot golf hotel.",
+  "Paragraph 7 of 12. Alpha bravo charlie delta echo foxtrot golf hotel. Paragraph 8 of 12. Alpha bravo charlie delta echo foxtrot golf hotel. Paragraph 9 of 12. Alpha bravo charlie delta echo foxtrot golf hotel."
+ ],
+ "oversetText": "Paragraph 10 of 12. Alpha bravo charlie delta echo foxtrot golf hotel. Paragraph 11 of 12. Alpha bravo charlie delta echo foxtrot golf hotel. Paragraph 12 of 12. Alpha bravo charlie delta echo foxtrot golf hotel."
+}

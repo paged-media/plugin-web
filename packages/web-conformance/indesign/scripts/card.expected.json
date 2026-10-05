@@ -1,0 +1,102 @@
+{
+ "items": [
+  {
+   "kind": "rectangle",
+   "bounds": [
+    36,
+    36,
+    115.5,
+    336
+   ],
+   "fill": "Color/wb-f2efe6"
+  },
+  {
+   "kind": "rectangle",
+   "bounds": [
+    100.5,
+    45,
+    106.5,
+    327
+   ],
+   "fill": "Color/wb-e63946"
+  },
+  {
+   "kind": "textFrame",
+   "bounds": [
+    44.71875,
+    45,
+    62.8681640625,
+    160.115234375
+   ],
+   "text": "Quarterly report",
+   "pointSize": 15,
+   "textFill": "Color/wb-1d3557"
+  },
+  {
+   "kind": "textFrame",
+   "bounds": [
+    68.5546875,
+    45,
+    80.351806640625,
+    187.8465576171875
+   ],
+   "text": "Revenue grew in every region.",
+   "pointSize": 9.75,
+   "textFill": "Color/wb-333333"
+  },
+  {
+   "kind": "textFrame",
+   "bounds": [
+    80.5546875,
+    45,
+    92.351806640625,
+    127.3232421875
+   ],
+   "text": "Costs stayed flat.",
+   "pointSize": 9.75,
+   "textFill": "Color/wb-333333"
+  }
+ ],
+ "swatches": [
+  {
+   "name": "Color/wb-000000",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "name": "Color/wb-f2efe6",
+   "rgb": [
+    242,
+    239,
+    230
+   ]
+  },
+  {
+   "name": "Color/wb-1d3557",
+   "rgb": [
+    29,
+    53,
+    87
+   ]
+  },
+  {
+   "name": "Color/wb-333333",
+   "rgb": [
+    51,
+    51,
+    51
+   ]
+  },
+  {
+   "name": "Color/wb-e63946",
+   "rgb": [
+    230,
+    57,
+    70
+   ]
+  }
+ ]
+}

@@ -1,0 +1,167 @@
+{
+ "fixture": "flex-grow-wrap",
+ "width": 240,
+ "height": 1000,
+ "sourceSha256": "129510d029bbe38bcf25f1d848904425a8d6ef66bca44f201725c8af8fee420b",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "row",
+   "tag": "div",
+   "display": "flex",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 240,
+   "h": 48
+  },
+  {
+   "id": "a",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 49.328,
+   "h": 48
+  },
+  {
+   "id": "b",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 55.328,
+   "y": 0,
+   "w": 90.672,
+   "h": 48
+  },
+  {
+   "id": "c",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 152,
+   "y": 0,
+   "w": 88,
+   "h": 48
+  },
+  {
+   "id": "wrap",
+   "tag": "div",
+   "display": "flex",
+   "position": "static",
+   "x": 0,
+   "y": 58,
+   "w": 240,
+   "h": 62
+  },
+  {
+   "id": "w1",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 58,
+   "w": 108,
+   "h": 28
+  },
+  {
+   "id": "w2",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 114,
+   "y": 58,
+   "w": 108,
+   "h": 28
+  },
+  {
+   "id": "w3",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 92,
+   "w": 108,
+   "h": 28
+  },
+  {
+   "id": "w4",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 114,
+   "y": 92,
+   "w": 108,
+   "h": 28
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "a",
+   "text": "Grow ",
+   "top": 4,
+   "bottom": 24,
+   "left": 4,
+   "right": 44.094
+  },
+  {
+   "owner": "a",
+   "text": "one",
+   "top": 24,
+   "bottom": 44,
+   "left": 4,
+   "right": 32.375
+  },
+  {
+   "owner": "b",
+   "text": "Grow two",
+   "top": 4,
+   "bottom": 24,
+   "left": 59.328,
+   "right": 131.797
+  },
+  {
+   "owner": "c",
+   "text": "Fixed",
+   "top": 4,
+   "bottom": 24,
+   "left": 156,
+   "right": 196.828
+  },
+  {
+   "owner": "w1",
+   "text": "Item one",
+   "top": 62,
+   "bottom": 82,
+   "left": 4,
+   "right": 69.828
+  },
+  {
+   "owner": "w2",
+   "text": "Item two",
+   "top": 62,
+   "bottom": 82,
+   "left": 118,
+   "right": 183.328
+  },
+  {
+   "owner": "w3",
+   "text": "Item three",
+   "top": 96,
+   "bottom": 116,
+   "left": 4,
+   "right": 80.563
+  },
+  {
+   "owner": "w4",
+   "text": "Item four",
+   "top": 96,
+   "bottom": 116,
+   "left": 118,
+   "right": 185.984
+  }
+ ],
+ "scrollHeight": 1000
+}

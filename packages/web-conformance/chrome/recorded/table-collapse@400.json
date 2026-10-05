@@ -1,0 +1,179 @@
+{
+ "fixture": "table-collapse",
+ "width": 400,
+ "height": 1000,
+ "sourceSha256": "ea549b72c6bc9a44c1c57ec832ca63c8bdbc6eddf6ee90539472be222a8f5570",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "t",
+   "tag": "table",
+   "display": "table",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 400,
+   "h": 104
+  },
+  {
+   "id": "r1",
+   "tag": "tr",
+   "display": "table-row",
+   "position": "static",
+   "x": 1,
+   "y": 1,
+   "w": 398,
+   "h": 34
+  },
+  {
+   "id": "a",
+   "tag": "td",
+   "display": "table-cell",
+   "position": "static",
+   "x": 1,
+   "y": 1,
+   "w": 301.734,
+   "h": 34
+  },
+  {
+   "id": "b",
+   "tag": "td",
+   "display": "table-cell",
+   "position": "static",
+   "x": 302.734,
+   "y": 1,
+   "w": 96.266,
+   "h": 34
+  },
+  {
+   "id": "r2",
+   "tag": "tr",
+   "display": "table-row",
+   "position": "static",
+   "x": 1,
+   "y": 35,
+   "w": 398,
+   "h": 34
+  },
+  {
+   "id": "c",
+   "tag": "td",
+   "display": "table-cell",
+   "position": "static",
+   "x": 1,
+   "y": 35,
+   "w": 79.188,
+   "h": 34
+  },
+  {
+   "id": "d",
+   "tag": "td",
+   "display": "table-cell",
+   "position": "static",
+   "x": 80.188,
+   "y": 35,
+   "w": 222.547,
+   "h": 68
+  },
+  {
+   "id": "e",
+   "tag": "td",
+   "display": "table-cell",
+   "position": "static",
+   "x": 302.734,
+   "y": 35,
+   "w": 96.266,
+   "h": 34
+  },
+  {
+   "id": "r3",
+   "tag": "tr",
+   "display": "table-row",
+   "position": "static",
+   "x": 1,
+   "y": 69,
+   "w": 398,
+   "h": 34
+  },
+  {
+   "id": "f",
+   "tag": "td",
+   "display": "table-cell",
+   "position": "static",
+   "x": 1,
+   "y": 69,
+   "w": 79.188,
+   "h": 34
+  },
+  {
+   "id": "g",
+   "tag": "td",
+   "display": "table-cell",
+   "position": "static",
+   "x": 302.734,
+   "y": 69,
+   "w": 96.266,
+   "h": 34
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "a",
+   "text": "Spans two columns",
+   "top": 8,
+   "bottom": 28,
+   "left": 8,
+   "right": 155.953
+  },
+  {
+   "owner": "b",
+   "text": "C",
+   "top": 8,
+   "bottom": 28,
+   "left": 309.734,
+   "right": 321.422
+  },
+  {
+   "owner": "c",
+   "text": "One",
+   "top": 42,
+   "bottom": 62,
+   "left": 8,
+   "right": 39.016
+  },
+  {
+   "owner": "d",
+   "text": "Spans two rows",
+   "top": 59,
+   "bottom": 79,
+   "left": 87.188,
+   "right": 207.766
+  },
+  {
+   "owner": "e",
+   "text": "Three",
+   "top": 42,
+   "bottom": 62,
+   "left": 309.734,
+   "right": 353.938
+  },
+  {
+   "owner": "f",
+   "text": "Four",
+   "top": 76,
+   "bottom": 96,
+   "left": 8,
+   "right": 41.891
+  },
+  {
+   "owner": "g",
+   "text": "Six",
+   "top": 76,
+   "bottom": 96,
+   "left": 309.734,
+   "right": 332.609
+  }
+ ],
+ "scrollHeight": 1000
+}

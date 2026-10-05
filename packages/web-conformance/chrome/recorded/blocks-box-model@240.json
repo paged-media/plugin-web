@@ -1,0 +1,107 @@
+{
+ "fixture": "blocks-box-model",
+ "width": 240,
+ "height": 1000,
+ "sourceSha256": "0b404ae0949f1a7c192611d0de7ff6c653f27f9e55f91a1c8ea7a781b470657e",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "b1",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 31,
+   "y": 8,
+   "w": 178,
+   "h": 86
+  },
+  {
+   "id": "b2",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 48,
+   "y": 102,
+   "w": 144,
+   "h": 86
+  },
+  {
+   "id": "b3",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 31,
+   "y": 196,
+   "w": 178,
+   "h": 66
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "b1",
+   "text": "Content box sizing ",
+   "top": 21,
+   "bottom": 41,
+   "left": 48,
+   "right": 188.891
+  },
+  {
+   "owner": "b1",
+   "text": "with padding and ",
+   "top": 41,
+   "bottom": 61,
+   "left": 48,
+   "right": 178.578
+  },
+  {
+   "owner": "b1",
+   "text": "border.",
+   "top": 61,
+   "bottom": 81,
+   "left": 48,
+   "right": 101.906
+  },
+  {
+   "owner": "b2",
+   "text": "Border box ",
+   "top": 115,
+   "bottom": 135,
+   "left": 65,
+   "right": 148.234
+  },
+  {
+   "owner": "b2",
+   "text": "sizing keeps ",
+   "top": 135,
+   "bottom": 155,
+   "left": 65,
+   "right": 159.125
+  },
+  {
+   "owner": "b2",
+   "text": "sixty percent.",
+   "top": 155,
+   "bottom": 175,
+   "left": 65,
+   "right": 168.063
+  },
+  {
+   "owner": "b3",
+   "text": "Max width and min ",
+   "top": 209,
+   "bottom": 229,
+   "left": 48,
+   "right": 190.953
+  },
+  {
+   "owner": "b3",
+   "text": "height.",
+   "top": 229,
+   "bottom": 249,
+   "left": 48,
+   "right": 99.781
+  }
+ ],
+ "scrollHeight": 1000
+}

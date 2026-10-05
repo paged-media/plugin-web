@@ -1,0 +1,91 @@
+{
+ "fixture": "blocks-box-model",
+ "width": 400,
+ "height": 1000,
+ "sourceSha256": "0b404ae0949f1a7c192611d0de7ff6c653f27f9e55f91a1c8ea7a781b470657e",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "b1",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 63,
+   "y": 8,
+   "w": 274,
+   "h": 66
+  },
+  {
+   "id": "b2",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 80,
+   "y": 82,
+   "w": 240,
+   "h": 66
+  },
+  {
+   "id": "b3",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 108,
+   "y": 156,
+   "w": 184,
+   "h": 66
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "b1",
+   "text": "Content box sizing with ",
+   "top": 21,
+   "bottom": 41,
+   "left": 80,
+   "right": 257.063
+  },
+  {
+   "owner": "b1",
+   "text": "padding and border.",
+   "top": 41,
+   "bottom": 61,
+   "left": 80,
+   "right": 232.813
+  },
+  {
+   "owner": "b2",
+   "text": "Border box sizing keeps ",
+   "top": 95,
+   "bottom": 115,
+   "left": 97,
+   "right": 278.859
+  },
+  {
+   "owner": "b2",
+   "text": "sixty percent.",
+   "top": 115,
+   "bottom": 135,
+   "left": 97,
+   "right": 200.063
+  },
+  {
+   "owner": "b3",
+   "text": "Max width and min ",
+   "top": 169,
+   "bottom": 189,
+   "left": 125,
+   "right": 267.953
+  },
+  {
+   "owner": "b3",
+   "text": "height.",
+   "top": 189,
+   "bottom": 209,
+   "left": 125,
+   "right": 176.781
+  }
+ ],
+ "scrollHeight": 1000
+}

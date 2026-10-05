@@ -1,0 +1,123 @@
+{
+ "fixture": "inline-bold-italic",
+ "width": 400,
+ "height": 1000,
+ "sourceSha256": "d6cd57adc01c5cf301f844f63a97c4e08a2396570ba51890b3b064dd9c1ac10a",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "p1",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 400,
+   "h": 60
+  },
+  {
+   "id": "p2",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 68,
+   "w": 400,
+   "h": 47.172
+  },
+  {
+   "id": "p3",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 123.172,
+   "w": 400,
+   "h": 100
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "p1",
+   "text": "Plain text then bold words in the middle and italic ",
+   "top": 0,
+   "bottom": 20,
+   "left": 0,
+   "right": 374.547
+  },
+  {
+   "owner": "p1",
+   "text": "words after them and back to plain for the end of the ",
+   "top": 20,
+   "bottom": 40,
+   "left": 0,
+   "right": 397.703
+  },
+  {
+   "owner": "p1",
+   "text": "paragraph.",
+   "top": 40,
+   "bottom": 60,
+   "left": 0,
+   "right": 82.641
+  },
+  {
+   "owner": "p2",
+   "text": "Strong emphasis underline strike code small sub sup",
+   "top": 68,
+   "bottom": 94.516,
+   "left": 0,
+   "right": 385.234
+  },
+  {
+   "owner": "p2",
+   "text": " text.",
+   "top": 95.172,
+   "bottom": 115.172,
+   "left": 0,
+   "right": 32.938
+  },
+  {
+   "owner": "p3",
+   "text": "A whole paragraph in bold weight. Alpha bravo ",
+   "top": 123.172,
+   "bottom": 143.172,
+   "left": 0,
+   "right": 363.375
+  },
+  {
+   "owner": "p3",
+   "text": "charlie delta echo foxtrot golf hotel india juliet kilo ",
+   "top": 143.172,
+   "bottom": 163.172,
+   "left": 0,
+   "right": 388.922
+  },
+  {
+   "owner": "p3",
+   "text": "lima mike november oscar papa quebec romeo ",
+   "top": 163.172,
+   "bottom": 183.172,
+   "left": 0,
+   "right": 363.453
+  },
+  {
+   "owner": "p3",
+   "text": "sierra tango uniform victor whiskey xray yankee ",
+   "top": 183.172,
+   "bottom": 203.172,
+   "left": 0,
+   "right": 375.203
+  },
+  {
+   "owner": "p3",
+   "text": "zulu.",
+   "top": 203.172,
+   "bottom": 223.172,
+   "left": 0,
+   "right": 38.781
+  }
+ ],
+ "scrollHeight": 1000
+}

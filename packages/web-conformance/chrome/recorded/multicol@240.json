@@ -1,0 +1,275 @@
+{
+ "fixture": "multicol",
+ "width": 240,
+ "height": 1000,
+ "sourceSha256": "5b0285ceb54cb96ad3ebe783b2dccadd72260937cdddd565beb012ad0698cf3a",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "mc",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 240,
+   "h": 300
+  },
+  {
+   "id": "p1",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 112,
+   "h": 280
+  },
+  {
+   "id": "p2",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 128,
+   "y": 0,
+   "w": 112,
+   "h": 300
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "p1",
+   "text": "Column text. ",
+   "top": 0,
+   "bottom": 20,
+   "left": 0,
+   "right": 95.531
+  },
+  {
+   "owner": "p1",
+   "text": "Alpha bravo ",
+   "top": 20,
+   "bottom": 40,
+   "left": 0,
+   "right": 90.5
+  },
+  {
+   "owner": "p1",
+   "text": "charlie delta ",
+   "top": 40,
+   "bottom": 60,
+   "left": 0,
+   "right": 92.969
+  },
+  {
+   "owner": "p1",
+   "text": "echo foxtrot ",
+   "top": 60,
+   "bottom": 80,
+   "left": 0,
+   "right": 91.578
+  },
+  {
+   "owner": "p1",
+   "text": "golf hotel india ",
+   "top": 80,
+   "bottom": 100,
+   "left": 0,
+   "right": 111.531
+  },
+  {
+   "owner": "p1",
+   "text": "juliet kilo lima ",
+   "top": 100,
+   "bottom": 120,
+   "left": 0,
+   "right": 101.531
+  },
+  {
+   "owner": "p1",
+   "text": "mike ",
+   "top": 120,
+   "bottom": 140,
+   "left": 0,
+   "right": 35.641
+  },
+  {
+   "owner": "p1",
+   "text": "november ",
+   "top": 140,
+   "bottom": 160,
+   "left": 0,
+   "right": 75.906
+  },
+  {
+   "owner": "p1",
+   "text": "oscar papa ",
+   "top": 160,
+   "bottom": 180,
+   "left": 0,
+   "right": 84.719
+  },
+  {
+   "owner": "p1",
+   "text": "quebec romeo ",
+   "top": 180,
+   "bottom": 200,
+   "left": 0,
+   "right": 109.641
+  },
+  {
+   "owner": "p1",
+   "text": "sierra tango ",
+   "top": 200,
+   "bottom": 220,
+   "left": 0,
+   "right": 90.594
+  },
+  {
+   "owner": "p1",
+   "text": "uniform victor ",
+   "top": 220,
+   "bottom": 240,
+   "left": 0,
+   "right": 105.328
+  },
+  {
+   "owner": "p1",
+   "text": "whiskey xray ",
+   "top": 240,
+   "bottom": 260,
+   "left": 0,
+   "right": 98.313
+  },
+  {
+   "owner": "p1",
+   "text": "yankee zulu.",
+   "top": 260,
+   "bottom": 280,
+   "left": 0,
+   "right": 95.172
+  },
+  {
+   "owner": "p2",
+   "text": "More column ",
+   "top": 0,
+   "bottom": 20,
+   "left": 128,
+   "right": 227.172
+  },
+  {
+   "owner": "p2",
+   "text": "text. Alpha ",
+   "top": 20,
+   "bottom": 40,
+   "left": 128,
+   "right": 208.594
+  },
+  {
+   "owner": "p2",
+   "text": "bravo charlie ",
+   "top": 40,
+   "bottom": 60,
+   "left": 128,
+   "right": 226.281
+  },
+  {
+   "owner": "p2",
+   "text": "delta echo ",
+   "top": 60,
+   "bottom": 80,
+   "left": 128,
+   "right": 207.563
+  },
+  {
+   "owner": "p2",
+   "text": "foxtrot golf ",
+   "top": 80,
+   "bottom": 100,
+   "left": 128,
+   "right": 211.266
+  },
+  {
+   "owner": "p2",
+   "text": "hotel india ",
+   "top": 100,
+   "bottom": 120,
+   "left": 128,
+   "right": 205.828
+  },
+  {
+   "owner": "p2",
+   "text": "juliet kilo lima ",
+   "top": 120,
+   "bottom": 140,
+   "left": 128,
+   "right": 229.531
+  },
+  {
+   "owner": "p2",
+   "text": "mike ",
+   "top": 140,
+   "bottom": 160,
+   "left": 128,
+   "right": 163.641
+  },
+  {
+   "owner": "p2",
+   "text": "november ",
+   "top": 160,
+   "bottom": 180,
+   "left": 128,
+   "right": 203.906
+  },
+  {
+   "owner": "p2",
+   "text": "oscar papa ",
+   "top": 180,
+   "bottom": 200,
+   "left": 128,
+   "right": 212.719
+  },
+  {
+   "owner": "p2",
+   "text": "quebec romeo ",
+   "top": 200,
+   "bottom": 220,
+   "left": 128,
+   "right": 237.641
+  },
+  {
+   "owner": "p2",
+   "text": "sierra tango ",
+   "top": 220,
+   "bottom": 240,
+   "left": 128,
+   "right": 218.594
+  },
+  {
+   "owner": "p2",
+   "text": "uniform victor ",
+   "top": 240,
+   "bottom": 260,
+   "left": 128,
+   "right": 233.328
+  },
+  {
+   "owner": "p2",
+   "text": "whiskey xray ",
+   "top": 260,
+   "bottom": 280,
+   "left": 128,
+   "right": 226.313
+  },
+  {
+   "owner": "p2",
+   "text": "yankee zulu.",
+   "top": 280,
+   "bottom": 300,
+   "left": 128,
+   "right": 223.172
+  }
+ ],
+ "scrollHeight": 1000
+}

@@ -1,0 +1,139 @@
+{
+ "fixture": "text-align",
+ "width": 400,
+ "height": 1000,
+ "sourceSha256": "b5d8faf064ef29f723845e650d77305c24b0a2a65d7ff75e7a461f52e7c9d92d",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "l",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 400,
+   "h": 80
+  },
+  {
+   "id": "c",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 88,
+   "w": 400,
+   "h": 80
+  },
+  {
+   "id": "r",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 176,
+   "w": 400,
+   "h": 80
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "l",
+   "text": "Left aligned. Alpha bravo charlie delta echo foxtrot ",
+   "top": 0,
+   "bottom": 20,
+   "left": 0,
+   "right": 381.766
+  },
+  {
+   "owner": "l",
+   "text": "golf hotel india juliet kilo lima mike november oscar ",
+   "top": 20,
+   "bottom": 40,
+   "left": 0,
+   "right": 384.938
+  },
+  {
+   "owner": "l",
+   "text": "papa quebec romeo sierra tango uniform victor ",
+   "top": 40,
+   "bottom": 60,
+   "left": 0,
+   "right": 356.938
+  },
+  {
+   "owner": "l",
+   "text": "whiskey xray yankee zulu.",
+   "top": 60,
+   "bottom": 80,
+   "left": 0,
+   "right": 197.984
+  },
+  {
+   "owner": "c",
+   "text": "Centered text. Alpha bravo charlie delta echo foxtrot ",
+   "top": 88,
+   "bottom": 108,
+   "left": 2.125,
+   "right": 397.875
+  },
+  {
+   "owner": "c",
+   "text": "golf hotel india juliet kilo lima mike november oscar ",
+   "top": 108,
+   "bottom": 128,
+   "left": 7.531,
+   "right": 392.469
+  },
+  {
+   "owner": "c",
+   "text": "papa quebec romeo sierra tango uniform victor ",
+   "top": 128,
+   "bottom": 148,
+   "left": 21.531,
+   "right": 378.469
+  },
+  {
+   "owner": "c",
+   "text": "whiskey xray yankee zulu.",
+   "top": 148,
+   "bottom": 168,
+   "left": 101,
+   "right": 298.984
+  },
+  {
+   "owner": "r",
+   "text": "Right aligned. Alpha bravo charlie delta echo foxtrot ",
+   "top": 176,
+   "bottom": 196,
+   "left": 8.531,
+   "right": 400
+  },
+  {
+   "owner": "r",
+   "text": "golf hotel india juliet kilo lima mike november oscar ",
+   "top": 196,
+   "bottom": 216,
+   "left": 15.063,
+   "right": 400
+  },
+  {
+   "owner": "r",
+   "text": "papa quebec romeo sierra tango uniform victor ",
+   "top": 216,
+   "bottom": 236,
+   "left": 43.063,
+   "right": 400
+  },
+  {
+   "owner": "r",
+   "text": "whiskey xray yankee zulu.",
+   "top": 236,
+   "bottom": 256,
+   "left": 202.016,
+   "right": 400
+  }
+ ],
+ "scrollHeight": 1000
+}

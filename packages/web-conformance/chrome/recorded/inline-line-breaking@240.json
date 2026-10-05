@@ -1,0 +1,203 @@
+{
+ "fixture": "inline-line-breaking",
+ "width": 240,
+ "height": 1000,
+ "sourceSha256": "ff64962ce55ed4dd69fffd7d1a405d2a42d0b9430036a8bfe23b38a99b1623c5",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "p1",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 240,
+   "h": 240
+  },
+  {
+   "id": "p2",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 250,
+   "w": 240,
+   "h": 60
+  },
+  {
+   "id": "p3",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 320,
+   "w": 240,
+   "h": 100
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "p1",
+   "text": "Alpha bravo charlie delta echo ",
+   "top": 0,
+   "bottom": 20,
+   "left": 0,
+   "right": 230
+  },
+  {
+   "owner": "p1",
+   "text": "foxtrot golf hotel india juliet kilo ",
+   "top": 20,
+   "bottom": 40,
+   "left": 0,
+   "right": 236.359
+  },
+  {
+   "owner": "p1",
+   "text": "lima mike november oscar ",
+   "top": 40,
+   "bottom": 60,
+   "left": 0,
+   "right": 198.141
+  },
+  {
+   "owner": "p1",
+   "text": "papa quebec romeo sierra ",
+   "top": 60,
+   "bottom": 80,
+   "left": 0,
+   "right": 199.453
+  },
+  {
+   "owner": "p1",
+   "text": "tango uniform victor whiskey ",
+   "top": 80,
+   "bottom": 100,
+   "left": 0,
+   "right": 218.797
+  },
+  {
+   "owner": "p1",
+   "text": "xray yankee zulu. Alpha bravo ",
+   "top": 100,
+   "bottom": 120,
+   "left": 0,
+   "right": 227.172
+  },
+  {
+   "owner": "p1",
+   "text": "charlie delta echo foxtrot golf ",
+   "top": 120,
+   "bottom": 140,
+   "left": 0,
+   "right": 222.75
+  },
+  {
+   "owner": "p1",
+   "text": "hotel india juliet kilo lima mike ",
+   "top": 140,
+   "bottom": 160,
+   "left": 0,
+   "right": 223.984
+  },
+  {
+   "owner": "p1",
+   "text": "november oscar papa quebec ",
+   "top": 160,
+   "bottom": 180,
+   "left": 0,
+   "right": 226.484
+  },
+  {
+   "owner": "p1",
+   "text": "romeo sierra tango uniform ",
+   "top": 180,
+   "bottom": 200,
+   "left": 0,
+   "right": 206
+  },
+  {
+   "owner": "p1",
+   "text": "victor whiskey xray yankee ",
+   "top": 200,
+   "bottom": 220,
+   "left": 0,
+   "right": 204.438
+  },
+  {
+   "owner": "p1",
+   "text": "zulu.",
+   "top": 220,
+   "bottom": 240,
+   "left": 0,
+   "right": 36.25
+  },
+  {
+   "owner": "p2",
+   "text": "Short words: a b c d e f g h i j k ",
+   "top": 250,
+   "bottom": 270,
+   "left": 0,
+   "right": 234.609
+  },
+  {
+   "owner": "p2",
+   "text": "l m n o p q r s t u v w x y z a b c ",
+   "top": 270,
+   "bottom": 290,
+   "left": 0,
+   "right": 238.766
+  },
+  {
+   "owner": "p2",
+   "text": "d e f g h i j k l m n o p.",
+   "top": 290,
+   "bottom": 310,
+   "left": 0,
+   "right": 166.203
+  },
+  {
+   "owner": "p3",
+   "text": "Punctuation, commas; ",
+   "top": 320,
+   "bottom": 340,
+   "left": 0,
+   "right": 168.25
+  },
+  {
+   "owner": "p3",
+   "text": "semicolons: colons - dashes ",
+   "top": 340,
+   "bottom": 360,
+   "left": 0,
+   "right": 215.797
+  },
+  {
+   "owner": "p3",
+   "text": "(parentheses) [brackets] ",
+   "top": 360,
+   "bottom": 380,
+   "left": 0,
+   "right": 186.781
+  },
+  {
+   "owner": "p3",
+   "text": "\"quotes\" and so on until the ",
+   "top": 380,
+   "bottom": 400,
+   "left": 0,
+   "right": 210.125
+  },
+  {
+   "owner": "p3",
+   "text": "line wraps again.",
+   "top": 400,
+   "bottom": 420,
+   "left": 0,
+   "right": 127.594
+  }
+ ],
+ "scrollHeight": 1000
+}

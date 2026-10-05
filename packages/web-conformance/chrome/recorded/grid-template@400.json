@@ -1,0 +1,131 @@
+{
+ "fixture": "grid-template",
+ "width": 400,
+ "height": 1000,
+ "sourceSha256": "0f528fed63d9d5d394d7649ee3b579b2b46caab59134ecf5e730b02fa2f3be27",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "g",
+   "tag": "div",
+   "display": "grid",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 400,
+   "h": 64
+  },
+  {
+   "id": "a",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 110.656,
+   "h": 28
+  },
+  {
+   "id": "b",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 114.656,
+   "y": 0,
+   "w": 221.344,
+   "h": 28
+  },
+  {
+   "id": "c",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 340,
+   "y": 0,
+   "w": 60,
+   "h": 28
+  },
+  {
+   "id": "d",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 36,
+   "w": 110.656,
+   "h": 28
+  },
+  {
+   "id": "e",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 114.656,
+   "y": 36,
+   "w": 221.344,
+   "h": 28
+  },
+  {
+   "id": "f",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 340,
+   "y": 36,
+   "w": 60,
+   "h": 28
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "a",
+   "text": "A",
+   "top": 4,
+   "bottom": 24,
+   "left": 4,
+   "right": 15.047
+  },
+  {
+   "owner": "b",
+   "text": "B has more text to wrap",
+   "top": 4,
+   "bottom": 24,
+   "left": 118.656,
+   "right": 298.109
+  },
+  {
+   "owner": "c",
+   "text": "C",
+   "top": 4,
+   "bottom": 24,
+   "left": 344,
+   "right": 355.688
+  },
+  {
+   "owner": "d",
+   "text": "D",
+   "top": 40,
+   "bottom": 60,
+   "left": 4,
+   "right": 15.547
+  },
+  {
+   "owner": "e",
+   "text": "E",
+   "top": 40,
+   "bottom": 60,
+   "left": 118.656,
+   "right": 128.281
+  },
+  {
+   "owner": "f",
+   "text": "F",
+   "top": 40,
+   "bottom": 60,
+   "left": 344,
+   "right": 353.453
+  }
+ ],
+ "scrollHeight": 1000
+}

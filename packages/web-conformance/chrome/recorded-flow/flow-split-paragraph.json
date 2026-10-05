@@ -1,0 +1,25 @@
+{
+ "fixture": "flow-split-paragraph",
+ "frames": [
+  {
+   "widthPx": 240,
+   "heightPx": 160
+  },
+  {
+   "widthPx": 240,
+   "heightPx": 160
+  },
+  {
+   "widthPx": 240,
+   "heightPx": 160
+  }
+ ],
+ "sourceSha256": "e078acbeb72bf94f7a204981c228e327d725c65fbcec2af7646564ed7e1d90b2",
+ "chrome": "153.0.8010.12",
+ "frameText": [
+  "One long paragraph that must split mid-paragraph across frames. Alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee",
+  "zulu. Alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu. Alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo",
+  "lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu."
+ ],
+ "oversetText": ""
+}

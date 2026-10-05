@@ -1,0 +1,167 @@
+{
+ "fixture": "grid-areas",
+ "width": 240,
+ "height": 1000,
+ "sourceSha256": "7f148bc4ecf472cca1eb348e2545bdd216f0d2d90a0deaa82f527a7071156293",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "g",
+   "tag": "div",
+   "display": "grid",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 240,
+   "h": 98
+  },
+  {
+   "id": "h",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 80,
+   "y": 50,
+   "w": 160,
+   "h": 48
+  },
+  {
+   "id": "s",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 80,
+   "y": 50,
+   "w": 160,
+   "h": 48
+  },
+  {
+   "id": "m",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 80,
+   "y": 50,
+   "w": 160,
+   "h": 48
+  },
+  {
+   "id": "f",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 80,
+   "y": 50,
+   "w": 160,
+   "h": 48
+  },
+  {
+   "id": "g2",
+   "tag": "div",
+   "display": "grid",
+   "position": "static",
+   "x": 0,
+   "y": 98,
+   "w": 240,
+   "h": 40
+  },
+  {
+   "id": "x",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 98,
+   "w": 160,
+   "h": 20
+  },
+  {
+   "id": "y",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 160,
+   "y": 98,
+   "w": 80,
+   "h": 20
+  },
+  {
+   "id": "z",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 80,
+   "y": 118,
+   "w": 160,
+   "h": 20
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "h",
+   "text": "Header",
+   "top": 54,
+   "bottom": 74,
+   "left": 84,
+   "right": 139.516
+  },
+  {
+   "owner": "s",
+   "text": "Side",
+   "top": 54,
+   "bottom": 74,
+   "left": 84,
+   "right": 117.266
+  },
+  {
+   "owner": "m",
+   "text": "Main content with ",
+   "top": 54,
+   "bottom": 74,
+   "left": 84,
+   "right": 218.719
+  },
+  {
+   "owner": "m",
+   "text": "words",
+   "top": 74,
+   "bottom": 94,
+   "left": 84,
+   "right": 130.406
+  },
+  {
+   "owner": "f",
+   "text": "Footer",
+   "top": 54,
+   "bottom": 74,
+   "left": 84,
+   "right": 132.438
+  },
+  {
+   "owner": "x",
+   "text": "Spans two",
+   "top": 98,
+   "bottom": 118,
+   "left": 0,
+   "right": 79.469
+  },
+  {
+   "owner": "y",
+   "text": "One",
+   "top": 98,
+   "bottom": 118,
+   "left": 160,
+   "right": 191.016
+  },
+  {
+   "owner": "z",
+   "text": "Two to four",
+   "top": 118,
+   "bottom": 138,
+   "left": 80,
+   "right": 165.938
+  }
+ ],
+ "scrollHeight": 1000
+}

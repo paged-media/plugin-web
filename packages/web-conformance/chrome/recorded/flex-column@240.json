@@ -1,0 +1,85 @@
+{
+ "fixture": "flex-column",
+ "width": 240,
+ "height": 1000,
+ "sourceSha256": "0fb1ccf5a4afc8553ea317923f6140dcae3a96ba402d17ce2967c1b926897281",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "col",
+   "tag": "div",
+   "display": "flex",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 240,
+   "h": 200
+  },
+  {
+   "id": "a",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 81.109,
+   "y": 0,
+   "w": 77.766,
+   "h": 28
+  },
+  {
+   "id": "b",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 36,
+   "w": 240,
+   "h": 28
+  },
+  {
+   "id": "c",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 152,
+   "w": 240,
+   "h": 48
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "a",
+   "text": "Centered",
+   "top": 4,
+   "bottom": 24,
+   "left": 85.109,
+   "right": 154.875
+  },
+  {
+   "owner": "b",
+   "text": "Stretched across",
+   "top": 40,
+   "bottom": 60,
+   "left": 4,
+   "right": 132.266
+  },
+  {
+   "owner": "c",
+   "text": "Pushed by auto margin? no, ",
+   "top": 156,
+   "bottom": 176,
+   "left": 4,
+   "right": 214.047
+  },
+  {
+   "owner": "c",
+   "text": "last",
+   "top": 176,
+   "bottom": 196,
+   "left": 4,
+   "right": 30.547
+  }
+ ],
+ "scrollHeight": 1000
+}

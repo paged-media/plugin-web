@@ -1,0 +1,99 @@
+{
+ "fixture": "pseudo",
+ "width": 400,
+ "height": 1000,
+ "sourceSha256": "c4cc255bd7c4500197187a78e37a2b2ff028926a682e03fd16a36de7b1aa1758",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "q",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 400,
+   "h": 20
+  },
+  {
+   "id": "n",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 28,
+   "w": 400,
+   "h": 100
+  },
+  {
+   "id": "blk",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 136,
+   "w": 400,
+   "h": 20
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "q",
+   "text": "Bracketed by generated content.",
+   "top": 0,
+   "bottom": 20,
+   "left": 0,
+   "right": 247.578
+  },
+  {
+   "owner": "n",
+   "text": "A prefixed paragraph whose prefix is generated. ",
+   "top": 28,
+   "bottom": 48,
+   "left": 0,
+   "right": 365.641
+  },
+  {
+   "owner": "n",
+   "text": "Alpha bravo charlie delta echo foxtrot golf hotel ",
+   "top": 48,
+   "bottom": 68,
+   "left": 0,
+   "right": 359.594
+  },
+  {
+   "owner": "n",
+   "text": "india juliet kilo lima mike november oscar papa ",
+   "top": 68,
+   "bottom": 88,
+   "left": 0,
+   "right": 351.781
+  },
+  {
+   "owner": "n",
+   "text": "quebec romeo sierra tango uniform victor whiskey ",
+   "top": 88,
+   "bottom": 108,
+   "left": 0,
+   "right": 380.359
+  },
+  {
+   "owner": "n",
+   "text": "xray yankee zulu.",
+   "top": 108,
+   "bottom": 128,
+   "left": 0,
+   "right": 132.172
+  },
+  {
+   "owner": "blk",
+   "text": "Content after a block pseudo.",
+   "top": 136,
+   "bottom": 156,
+   "left": 0,
+   "right": 223.828
+  }
+ ],
+ "scrollHeight": 1000
+}

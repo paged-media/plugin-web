@@ -1,0 +1,139 @@
+{
+ "fixture": "inline-line-breaking",
+ "width": 400,
+ "height": 1000,
+ "sourceSha256": "ff64962ce55ed4dd69fffd7d1a405d2a42d0b9430036a8bfe23b38a99b1623c5",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "p1",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 400,
+   "h": 140
+  },
+  {
+   "id": "p2",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 150,
+   "w": 400,
+   "h": 40
+  },
+  {
+   "id": "p3",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 200,
+   "w": 400,
+   "h": 60
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "p1",
+   "text": "Alpha bravo charlie delta echo foxtrot golf hotel ",
+   "top": 0,
+   "bottom": 20,
+   "left": 0,
+   "right": 359.594
+  },
+  {
+   "owner": "p1",
+   "text": "india juliet kilo lima mike november oscar papa ",
+   "top": 20,
+   "bottom": 40,
+   "left": 0,
+   "right": 351.781
+  },
+  {
+   "owner": "p1",
+   "text": "quebec romeo sierra tango uniform victor whiskey ",
+   "top": 40,
+   "bottom": 60,
+   "left": 0,
+   "right": 380.359
+  },
+  {
+   "owner": "p1",
+   "text": "xray yankee zulu. Alpha bravo charlie delta echo ",
+   "top": 60,
+   "bottom": 80,
+   "left": 0,
+   "right": 366.672
+  },
+  {
+   "owner": "p1",
+   "text": "foxtrot golf hotel india juliet kilo lima mike november ",
+   "top": 80,
+   "bottom": 100,
+   "left": 0,
+   "right": 392.156
+  },
+  {
+   "owner": "p1",
+   "text": "oscar papa quebec romeo sierra tango uniform ",
+   "top": 100,
+   "bottom": 120,
+   "left": 0,
+   "right": 356.578
+  },
+  {
+   "owner": "p1",
+   "text": "victor whiskey xray yankee zulu.",
+   "top": 120,
+   "bottom": 140,
+   "left": 0,
+   "right": 245.188
+  },
+  {
+   "owner": "p2",
+   "text": "Short words: a b c d e f g h i j k l m n o p q r s t u v w ",
+   "top": 150,
+   "bottom": 170,
+   "left": 0,
+   "right": 396.391
+  },
+  {
+   "owner": "p2",
+   "text": "x y z a b c d e f g h i j k l m n o p.",
+   "top": 170,
+   "bottom": 190,
+   "left": 0,
+   "right": 247.688
+  },
+  {
+   "owner": "p3",
+   "text": "Punctuation, commas; semicolons: colons - dashes ",
+   "top": 200,
+   "bottom": 220,
+   "left": 0,
+   "right": 388.547
+  },
+  {
+   "owner": "p3",
+   "text": "(parentheses) [brackets] \"quotes\" and so on until ",
+   "top": 220,
+   "bottom": 240,
+   "left": 0,
+   "right": 372.875
+  },
+  {
+   "owner": "p3",
+   "text": "the line wraps again.",
+   "top": 240,
+   "bottom": 260,
+   "left": 0,
+   "right": 156.125
+  }
+ ],
+ "scrollHeight": 1000
+}

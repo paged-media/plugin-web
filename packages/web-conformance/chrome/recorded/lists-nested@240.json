@@ -1,0 +1,179 @@
+{
+ "fixture": "lists-nested",
+ "width": 240,
+ "height": 1000,
+ "sourceSha256": "246dcc8a50bcf897854eb89a11e9aa6db1fbb7350880102b775224c5156c20f7",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "ol",
+   "tag": "ol",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 240,
+   "h": 80
+  },
+  {
+   "id": "a",
+   "tag": "li",
+   "display": "list-item",
+   "position": "static",
+   "x": 24,
+   "y": 0,
+   "w": 216,
+   "h": 60
+  },
+  {
+   "id": "inner",
+   "tag": "ul",
+   "display": "block",
+   "position": "static",
+   "x": 24,
+   "y": 20,
+   "w": 216,
+   "h": 40
+  },
+  {
+   "id": "a1",
+   "tag": "li",
+   "display": "list-item",
+   "position": "static",
+   "x": 48,
+   "y": 20,
+   "w": 192,
+   "h": 20
+  },
+  {
+   "id": "a2",
+   "tag": "li",
+   "display": "list-item",
+   "position": "static",
+   "x": 48,
+   "y": 40,
+   "w": 192,
+   "h": 20
+  },
+  {
+   "id": "b",
+   "tag": "li",
+   "display": "list-item",
+   "position": "static",
+   "x": 24,
+   "y": 60,
+   "w": 216,
+   "h": 20
+  },
+  {
+   "id": "sq",
+   "tag": "ul",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 80,
+   "w": 240,
+   "h": 40
+  },
+  {
+   "id": "s1",
+   "tag": "li",
+   "display": "list-item",
+   "position": "static",
+   "x": 24,
+   "y": 80,
+   "w": 216,
+   "h": 20
+  },
+  {
+   "id": "s2",
+   "tag": "li",
+   "display": "list-item",
+   "position": "static",
+   "x": 24,
+   "y": 100,
+   "w": 216,
+   "h": 20
+  },
+  {
+   "id": "none",
+   "tag": "ul",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 120,
+   "w": 240,
+   "h": 20
+  },
+  {
+   "id": "n1",
+   "tag": "li",
+   "display": "list-item",
+   "position": "static",
+   "x": 0,
+   "y": 120,
+   "w": 240,
+   "h": 20
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "a",
+   "text": "Outer one",
+   "top": 0,
+   "bottom": 20,
+   "left": 24,
+   "right": 99
+  },
+  {
+   "owner": "a1",
+   "text": "Inner bullet one",
+   "top": 20,
+   "bottom": 40,
+   "left": 48,
+   "right": 165.5
+  },
+  {
+   "owner": "a2",
+   "text": "Inner bullet two",
+   "top": 40,
+   "bottom": 60,
+   "left": 48,
+   "right": 165
+  },
+  {
+   "owner": "b",
+   "text": "Outer two",
+   "top": 60,
+   "bottom": 80,
+   "left": 24,
+   "right": 98.5
+  },
+  {
+   "owner": "s1",
+   "text": "Inside square marker.",
+   "top": 80,
+   "bottom": 100,
+   "left": 46,
+   "right": 208.625
+  },
+  {
+   "owner": "s2",
+   "text": "Second inside item.",
+   "top": 100,
+   "bottom": 120,
+   "left": 46,
+   "right": 194.266
+  },
+  {
+   "owner": "n1",
+   "text": "No marker.",
+   "top": 120,
+   "bottom": 140,
+   "left": 0,
+   "right": 82.813
+  }
+ ],
+ "scrollHeight": 1000
+}

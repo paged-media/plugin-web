@@ -1,0 +1,25 @@
+{
+ "fixture": "flow-table-rows",
+ "frames": [
+  {
+   "widthPx": 240,
+   "heightPx": 150
+  },
+  {
+   "widthPx": 240,
+   "heightPx": 150
+  },
+  {
+   "widthPx": 240,
+   "heightPx": 150
+  }
+ ],
+ "sourceSha256": "ffe646a9b7e2f050fa72e5ffc98743faf842033bef878dcc5f943b0a03036218",
+ "chrome": "153.0.8010.12",
+ "frameText": [
+  "Row 1 Value 1 Row 2 Value 2 Row 3 Value 3 Row 4 Value 4 Row 5 Value 5",
+  "Row 6 Value 6 Row 7 Value 7 Row 8 Value 8 Row 9 Value 9 Row 10 Value 10",
+  "Row 11 Value 11 Row 12 Value 12 Row 13 Value 13 Row 14 Value 14 Row 15 Value 15"
+ ],
+ "oversetText": "Row 16 Value 16"
+}

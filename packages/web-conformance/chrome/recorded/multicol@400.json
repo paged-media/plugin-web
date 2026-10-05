@@ -1,0 +1,179 @@
+{
+ "fixture": "multicol",
+ "width": 400,
+ "height": 1000,
+ "sourceSha256": "5b0285ceb54cb96ad3ebe783b2dccadd72260937cdddd565beb012ad0698cf3a",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "mc",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 400,
+   "h": 180
+  },
+  {
+   "id": "p1",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 192,
+   "h": 160
+  },
+  {
+   "id": "p2",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 208,
+   "y": 0,
+   "w": 192,
+   "h": 180
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "p1",
+   "text": "Column text. Alpha bravo ",
+   "top": 0,
+   "bottom": 20,
+   "left": 0,
+   "right": 190.531
+  },
+  {
+   "owner": "p1",
+   "text": "charlie delta echo foxtrot ",
+   "top": 20,
+   "bottom": 40,
+   "left": 0,
+   "right": 189.047
+  },
+  {
+   "owner": "p1",
+   "text": "golf hotel india juliet kilo ",
+   "top": 40,
+   "bottom": 60,
+   "left": 0,
+   "right": 182.297
+  },
+  {
+   "owner": "p1",
+   "text": "lima mike november ",
+   "top": 60,
+   "bottom": 80,
+   "left": 0,
+   "right": 151.297
+  },
+  {
+   "owner": "p1",
+   "text": "oscar papa quebec ",
+   "top": 80,
+   "bottom": 100,
+   "left": 0,
+   "right": 146.078
+  },
+  {
+   "owner": "p1",
+   "text": "romeo sierra tango ",
+   "top": 100,
+   "bottom": 120,
+   "left": 0,
+   "right": 143.375
+  },
+  {
+   "owner": "p1",
+   "text": "uniform victor whiskey ",
+   "top": 120,
+   "bottom": 140,
+   "left": 0,
+   "right": 171.141
+  },
+  {
+   "owner": "p1",
+   "text": "xray yankee zulu.",
+   "top": 140,
+   "bottom": 160,
+   "left": 0,
+   "right": 132.172
+  },
+  {
+   "owner": "p2",
+   "text": "More column text. Alpha ",
+   "top": 0,
+   "bottom": 20,
+   "left": 208,
+   "right": 392.266
+  },
+  {
+   "owner": "p2",
+   "text": "bravo charlie delta echo ",
+   "top": 20,
+   "bottom": 40,
+   "left": 208,
+   "right": 390.344
+  },
+  {
+   "owner": "p2",
+   "text": "foxtrot golf hotel india ",
+   "top": 40,
+   "bottom": 60,
+   "left": 208,
+   "right": 373.578
+  },
+  {
+   "owner": "p2",
+   "text": "juliet kilo lima mike ",
+   "top": 60,
+   "bottom": 80,
+   "left": 208,
+   "right": 349.672
+  },
+  {
+   "owner": "p2",
+   "text": "november oscar papa ",
+   "top": 80,
+   "bottom": 100,
+   "left": 208,
+   "right": 373.125
+  },
+  {
+   "owner": "p2",
+   "text": "quebec romeo sierra ",
+   "top": 100,
+   "bottom": 120,
+   "left": 208,
+   "right": 365.078
+  },
+  {
+   "owner": "p2",
+   "text": "tango uniform victor ",
+   "top": 120,
+   "bottom": 140,
+   "left": 208,
+   "right": 360.984
+  },
+  {
+   "owner": "p2",
+   "text": "whiskey xray yankee ",
+   "top": 140,
+   "bottom": 160,
+   "left": 208,
+   "right": 365.234
+  },
+  {
+   "owner": "p2",
+   "text": "zulu.",
+   "top": 160,
+   "bottom": 180,
+   "left": 208,
+   "right": 244.25
+  }
+ ],
+ "scrollHeight": 1000
+}

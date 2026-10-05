@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+html { font-family: Inter; line-height: 1.25; font-optical-sizing: none; }
+body { margin: 0; }
+.rel { position: relative; height: 120px; background: #eee; } .abs { position: absolute; background: #fc9; }
+</style></head>
+<body>
+<div data-id="rel" class="rel"><div data-id="tl" class="abs" style="top: 10px; left: 10px; width: 50px; height: 20px;"></div><div data-id="br" class="abs" style="bottom: 5px; right: 5px;">Bottom right</div><div data-id="st" class="abs" style="top: 40px; left: 20%; right: 20%;">Stretched between</div></div>
+<div data-id="shift" style="position: relative; top: 6px; left: 12px;">Relatively shifted.</div>
+<div data-id="sticky" style="position: sticky; top: 0;">Sticky acts as static here.</div>
+</body></html>

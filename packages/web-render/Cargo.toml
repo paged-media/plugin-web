@@ -72,6 +72,24 @@ kurbo = { version = "0.13", optional = true }
 parley = { version = "0.9", optional = true }
 peniko = { version = "0.6", optional = true }
 
+# The Chrome conformance replay (packages/web-conformance/chrome) needs the
+# engine; `cargo test` without `--features blitz` skips it.
+[[test]]
+name = "chrome_parity"
+required-features = ["blitz"]
+
+[[test]]
+name = "flow_parity"
+required-features = ["blitz"]
+
+[[example]]
+name = "dump_geometry"
+required-features = ["blitz"]
+
+[[example]]
+name = "dump_flow"
+required-features = ["blitz"]
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
 
