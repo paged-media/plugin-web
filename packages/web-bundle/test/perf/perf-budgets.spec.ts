@@ -276,11 +276,12 @@ describe.skipIf(!bundledPresent)("web perf budgets (real host + real Blitz)", ()
 
 const BUDGET = {
   // bytesOut lowered by the engine (Wave 2): the transparent canvas fill no
-  // longer crosses the wire (frame 12 788 -> 12 564, flow 78 153 -> 75 467).
-  renderFrame: { doorCalls: 8, reads: 2, bytesIn: 8936, bytesOut: 12564 },
+  // longer crosses the wire (frame 12 788 -> 12 564, flow 78 153 -> 75 467),
+  // nor do zero-extent border subpaths (frame -> 6 302, flow -> 31 873).
+  renderFrame: { doorCalls: 8, reads: 2, bytesIn: 8936, bytesOut: 6302 },
   // 9 / 1 before the single source reader (ADR 409): it also reads the
   // pre-pointer part of a frame, so an old document's larger source wins.
-  renderFlow: { doorCalls: 11, reads: 3, bytesIn: 9309, bytesOut: 75467 },
+  renderFlow: { doorCalls: 11, reads: 3, bytesIn: 9309, bytesOut: 31873 },
   bake: {
     doorCalls: 1410,
     mutates: 801,

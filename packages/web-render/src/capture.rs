@@ -432,6 +432,54 @@ fn flatten_shape(shape: &impl Shape, transform: Affine) -> Vec<ScenePathSeg> {
     out
 }
 
+/// `path` without its ZERO-EXTENT subpaths: those whose points (control
+/// points included) all share one x or one y — a line or a point, which a
+/// fill covers no area of. Blitz paints every border side as a filled
+/// subpath, so a collapsed or zero-width border becomes four such subpaths per
+/// box (906 of the 1 215 fills of a 300-row table, 70 % of its wire bytes).
+/// A subpath with any extent in both axes is kept unchanged.
+fn drop_zero_extent_subpaths(path: Vec<ScenePathSeg>) -> Vec<ScenePathSeg> {
+    let mut out = Vec::with_capacity(path.len());
+    let mut start = 0;
+    while start < path.len() {
+        let end = path[start + 1..]
+            .iter()
+            .position(|s| matches!(s, ScenePathSeg::MoveTo { .. }))
+            .map_or(path.len(), |i| start + 1 + i);
+        let sub = &path[start..end];
+        let (mut x0, mut x1, mut y0, mut y1) = (f32::MAX, f32::MIN, f32::MAX, f32::MIN);
+        let mut see = |x: f32, y: f32| {
+            x0 = x0.min(x);
+            x1 = x1.max(x);
+            y0 = y0.min(y);
+            y1 = y1.max(y);
+        };
+        for seg in sub {
+            match *seg {
+                ScenePathSeg::MoveTo { x, y } | ScenePathSeg::LineTo { x, y } => see(x, y),
+                ScenePathSeg::CubicTo {
+                    cx1,
+                    cy1,
+                    cx2,
+                    cy2,
+                    x,
+                    y,
+                } => {
+                    see(cx1, cy1);
+                    see(cx2, cy2);
+                    see(x, y);
+                }
+                ScenePathSeg::Close => {}
+            }
+        }
+        if x1 > x0 && y1 > y0 {
+            out.extend_from_slice(sub);
+        }
+        start = end;
+    }
+    out
+}
+
 /// Whether a transformed shape is an axis-aligned rectangle — the common
 /// case (backgrounds, borders), fast-pathed to a [`WebDrawCmd::FillRect`]
 /// so the lowering emits a tidy box rather than a 5-segment path.
@@ -627,8 +675,13 @@ impl PaintScene for CapturingScene {
                 } else if let Some(rect) = as_axis_aligned_rect(shape, transform) {
                     self.dl.push(WebDrawCmd::FillRect { rect, paint });
                 } else {
-                    let path = flatten_shape(shape, transform);
-                    self.dl.push(WebDrawCmd::FillPath { path, paint });
+                    // Zero-extent subpaths fill nothing (Blitz paints every
+                    // border side, zero-width ones included); a fill left with
+                    // no subpath is not recorded.
+                    let path = drop_zero_extent_subpaths(flatten_shape(shape, transform));
+                    if !path.is_empty() {
+                        self.dl.push(WebDrawCmd::FillPath { path, paint });
+                    }
                 }
             }
             None => self.dl.push(WebDrawCmd::NonSolidPaint {
@@ -1327,6 +1380,52 @@ mod tests {
         let src_rect = kurbo::Rect::new(0.0, 0.0, 1.0, 1.0);
         let xf = Affine::rotate(0.4) * Affine::scale(40.0);
         assert!(scene.capture_image(&brush_ref, xf, &src_rect).is_none());
+    }
+
+    #[test]
+    fn zero_extent_subpaths_are_dropped_and_area_subpaths_kept() {
+        use ScenePathSeg::*;
+        let line = |x0, y0, x1, y1| {
+            vec![
+                MoveTo { x: x0, y: y0 },
+                LineTo { x: x0, y: y0 },
+                LineTo { x: x1, y: y1 },
+                LineTo { x: x1, y: y1 },
+            ]
+        };
+        // Four zero-width border sides: nothing left.
+        let mut border = line(0.0, 0.0, 300.0, 0.0);
+        border.extend(line(300.0, 0.0, 300.0, 50.0));
+        border.extend(line(300.0, 50.0, 0.0, 50.0));
+        border.extend(line(0.0, 50.0, 0.0, 0.0));
+        assert!(drop_zero_extent_subpaths(border).is_empty());
+        // A real quad between two degenerate ones survives unchanged.
+        let quad = vec![
+            MoveTo { x: 0.0, y: 0.0 },
+            LineTo { x: 10.0, y: 0.0 },
+            LineTo { x: 10.0, y: 0.75 },
+            LineTo { x: 0.0, y: 0.75 },
+            Close,
+        ];
+        let mut mixed = line(0.0, 0.0, 5.0, 0.0);
+        mixed.extend(quad.clone());
+        mixed.extend(line(0.0, 9.0, 0.0, 20.0));
+        assert_eq!(drop_zero_extent_subpaths(mixed), quad);
+        // A curve whose end points are collinear but whose controls bulge
+        // has area: kept.
+        let bulge = vec![
+            MoveTo { x: 0.0, y: 0.0 },
+            CubicTo {
+                cx1: 3.0,
+                cy1: 5.0,
+                cx2: 7.0,
+                cy2: 5.0,
+                x: 10.0,
+                y: 0.0,
+            },
+            Close,
+        ];
+        assert_eq!(drop_zero_extent_subpaths(bulge.clone()), bulge);
     }
 
     #[test]
