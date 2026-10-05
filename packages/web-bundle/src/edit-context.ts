@@ -48,6 +48,7 @@ import {
   type WebSourceEnvelope,
 } from "../../web-model/src";
 
+import type { InFrameEditSession } from "./in-frame-edit";
 import type { DraftSession } from "./panels/draft-store";
 
 export const WEB_FRAME_TYPE = "webFrame";
@@ -76,6 +77,7 @@ export const webFrameObjectType: ObjectTypeContribution = {
 export function makeWebFrameEditContext(
   panelId: string,
   session?: DraftSession,
+  inFrame?: InFrameEditSession,
 ): EditContextContribution {
   // ADR 012 — while the context is active, the host routes Cmd+Z /
   // Shift+Cmd+Z here: they step the source DRAFT of the frame the context
@@ -102,8 +104,47 @@ export function makeWebFrameEditContext(
         redoLabel: () => "Redo source edit",
       }
     : {};
+  // In-frame text editing (in-frame-edit.ts): a click on rendered text opens
+  // an edit of that text node; while one is open the context is dirty, so
+  // the host routes every key here, and Cmd+Z steps the edit's keystrokes
+  // before the draft history. Enter commits, Esc cancels — the edit first,
+  // the context only when no edit is open. A press outside the frame
+  // commits the edit and leaves the context (the host's K-1 rule).
+  const inFrameHooks: Partial<EditContextContribution> = inFrame
+    ? {
+        onEnter: (ctx) => {
+          undoHooks.onEnter?.(ctx);
+          inFrame.enter(ctx.id);
+        },
+        onExit: (ctx) => {
+          undoHooks.onExit?.(ctx);
+          inFrame.exit();
+        },
+        onContentPointerDown: (e) => {
+          if (e.button !== 0) return;
+          void inFrame.pointerDown(e.contentPoint[0], e.contentPoint[1]);
+        },
+        onContentKey: (e) => {
+          if (inFrame.key(e)) e.preventDefault?.();
+        },
+        isDirty: () => inFrame.isEditing(),
+        onCommit: () => {
+          void inFrame.commit();
+        },
+        onCancel: () => {
+          void inFrame.cancel();
+        },
+        onUndo: () => (inFrame.isEditing() ? inFrame.undo() : (undoHooks.onUndo?.() ?? false)),
+        onRedo: () => (inFrame.isEditing() ? inFrame.redo() : (undoHooks.onRedo?.() ?? false)),
+        onCanUndo: () => (inFrame.isEditing() ? inFrame.canUndo() : (undoHooks.onCanUndo?.() ?? false)),
+        onCanRedo: () => (inFrame.isEditing() ? inFrame.canRedo() : (undoHooks.onCanRedo?.() ?? false)),
+        undoLabel: () => (inFrame.isEditing() ? "Undo typing" : "Undo source edit"),
+        redoLabel: () => (inFrame.isEditing() ? "Redo typing" : "Redo source edit"),
+      }
+    : {};
   return {
     ...undoHooks,
+    ...inFrameHooks,
     type: WEB_FRAME_TYPE,
     entry: "doubleClick",
     // No `matches` here: the OBJECT TYPE already routes the double-click

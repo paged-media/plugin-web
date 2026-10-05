@@ -172,3 +172,20 @@ export {
   type EnginePin,
 } from "./engine";
 
+// In-frame editing + the outline highlight: the inspected render's maps
+// (painted text → DOM text nodes, element boxes) and the source's text
+// nodes located in the source string.
+export {
+  boxesForOutline,
+  caretAt,
+  hitText,
+  outlineIndexAt,
+  parseInspected,
+  type InspectBox,
+  type InspectCluster,
+  type InspectedRender,
+  type InspectLine,
+  type InspectTextMap,
+  type TextPosition,
+} from "./inspect";
+export { editTextNode, escapeText, scanTextNodes, type SourceTextNode } from "./source-text";

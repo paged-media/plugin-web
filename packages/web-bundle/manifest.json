@@ -10,7 +10,8 @@
       "write": "scoped"
     },
     "rendering": [
-      "sceneLayer"
+      "sceneLayer",
+      "overlay"
     ],
     "editContext": [
       "webFrame"
