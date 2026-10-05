@@ -176,6 +176,32 @@ fn article_flowed_into_12_frames__feat__plugin_web_perf_budgets() {
     check(&c, &ARTICLE_12_ORPHANS_WIDOWS);
 }
 
+/// The inspected render (in-frame editing, the outline highlight): one
+/// parse, resolve and paint like a plain frame render; what it adds is the
+/// maps it returns (bytes out).
+#[test]
+fn article_inspected_in_one_frame__feat__plugin_web_perf_budgets() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let html = article(ARTICLE_PARAS);
+    let (json, c) = measure(|| {
+        web_render::inspect::render_web_frame_inspect_json(&html, FRAME_W, ARTICLE_ONE_FRAME_H)
+    });
+    show("article/1-frame-inspected", &c);
+    let v: Value = serde_json::from_str(&json).expect("inspect JSON");
+    let ws = words(&layer_texts(&v["layer"]));
+    assert_eq!(
+        ws.len(),
+        ARTICLE_PARAS * article_words(),
+        "every word painted once"
+    );
+    assert_eq!(
+        v["text"]["nodes"].as_array().map(Vec::len),
+        Some(ARTICLE_PARAS),
+        "one text node per paragraph"
+    );
+    check(&c, &ARTICLE_1_INSPECTED);
+}
+
 #[test]
 fn table_300_rows_in_one_frame__feat__plugin_web_perf_budgets() {
     let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -375,6 +401,18 @@ const ARTICLE_12_ORPHANS_WIDOWS: Budget = Budget {
     run_match_comparisons: 252,
     bytes_in: 9267,
     bytes_out: 31873,
+};
+/// The inspected render's own budget (in-frame editing), pinned as measured
+/// 2026-10-05: the same work as `ARTICLE_1`, plus the maps in bytes out.
+const ARTICLE_1_INSPECTED: Budget = Budget {
+    html_parses: 1,
+    resolves: 1,
+    paint_captures: 1,
+    font_context_builds: 0,
+    painted_commands: 200,
+    run_match_comparisons: 200,
+    bytes_in: 8894,
+    bytes_out: 236678,
 };
 const TABLE_300: Budget = Budget {
     html_parses: 1,

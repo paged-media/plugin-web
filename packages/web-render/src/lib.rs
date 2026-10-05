@@ -81,6 +81,11 @@ pub mod fonts;
 #[cfg(feature = "blitz")]
 pub mod geometry;
 
+// One frame's render plus the map from paint back to the DOM (text clusters
+// to text nodes, element boxes) — in-frame editing and the outline highlight.
+#[cfg(feature = "blitz")]
+pub mod inspect;
+
 // Fragmentation rules the pinned Stylo does not compute (`break-*`,
 // `orphans`, `widows`, `@page` margins), read from the document's CSS.
 #[cfg(feature = "blitz")]
@@ -110,6 +115,15 @@ pub use wire::{
 #[wasm_bindgen::prelude::wasm_bindgen]
 pub fn render_web_frame(html: &str, width_px: u32, height_px: u32) -> String {
     render_web_frame_json(html, width_px, height_px)
+}
+
+/// The wasm entry for an INSPECTED frame render: the same layer as
+/// `render_web_frame`, plus the text map (clusters → DOM text nodes) and the
+/// element boxes, as `{ layer, text, boxes }` JSON (see [`inspect`]).
+#[cfg(all(feature = "blitz", target_arch = "wasm32"))]
+#[wasm_bindgen::prelude::wasm_bindgen]
+pub fn render_web_frame_inspect(html: &str, width_px: u32, height_px: u32) -> String {
+    inspect::render_web_frame_inspect_json(html, width_px, height_px)
 }
 
 /// The wasm entry for a THREADED web flow (ADR-020 scoped extension, rung 2).
