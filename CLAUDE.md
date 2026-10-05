@@ -7,10 +7,11 @@ GmbH; license headers on every source file).
 ## What this is
 
 HTML/CSS as a content type for the Paged editor (concept:
-`docs/concept.md`; architecture, status and decisions are in `docs/`; v0 = the
-source lane, see README). Two packages: `web-model` (pure source model + diagnostics
-linter) and `web-bundle` (manifest + `activate(host)` + the source
-panel).
+`docs/concept.md`; architecture, status, decisions and the latest analysis are in
+`docs/`). Three packages: `web-model` (pure source model, storage envelope,
+linter), `web-bundle` (manifest + `activate(host)`: commands, panel, importer,
+render/flow/bake) and `web-render` (Rust: Blitz capture, lowering, flow
+fragmentation → the bundle's engine wasm).
 
 ## Hard rules
 
@@ -56,19 +57,35 @@ panel).
   emits no such layers yet (accept-dormant per the ADR-011 addendum;
   the reachability tests flip to live the day Blitz implements them).
 - **Preview ≠ persistence.** Keystrokes refresh the sandboxed preview +
-  diagnostics behind the ~300 ms debounce; the document is written ONLY
-  by the explicit "Save to document" action (`persistDraft` — one
-  undoable metadata mutation per save). Don't re-conflate them.
+  diagnostics behind the ~300 ms debounce and never write the document.
+  The panel writes it only on "Save to document" (and "Make web frame");
+  outside the panel, insert/import and the thread/unthread commands write
+  it. Unsaved drafts are kept per frame in the panel (`draft-store.ts`).
+- **One reader, one writer for the source** (`source-part.ts`):
+  `loadWebSource` / `writeWebSource` (insert uses `prepareSourceLabel`). A
+  source that fits stays inline in the metadata LABEL (undoable, 64 KiB
+  engine cap); a larger one goes to a content-addressed container PART
+  (`sources/<hash>.json`, never overwritten — parts are not undoable) and
+  the label holds a pointer. The label is the truth undo restores; never
+  read metadata or parts anywhere else (a spec enforces it), never send a
+  label over the cap, and surface a refusal as a diagnostic.
 - **Styling = the token layer** (`--pg-*`, `--status-*`, `--font-mono`,
   `--space-*`, `--radius-*`, `--tracking-wide`): sentence case labels,
   uppercase kickers, mono tabular code, hairline borders, no hardcoded
   chrome hexes. Content colours (the preview's paper white) stay
   literal by design.
-- **Install order:** editor → plugin-sdk → plugin-web (`link:` chain).
+- **Contract pins:** `@paged-media/plugin-api` / `plugin-sdk` are exact npm
+  devDependency pins (peers keep a `>=` floor); `sdk-pin.spec.ts` checks it.
+- **Engine wasm freshness:** after any Rust change run
+  `bash scripts/build-wasm.sh --engine` (wasm-bindgen-cli must equal the
+  version in `packages/web-render/Cargo.lock`); `wasm-fresh.spec.ts` fails on
+  a stale artifact. A source change needs a version bump to publish
+  (`scripts/package-hash.mjs --check`).
 
 ## Commands
 
 ```bash
-pnpm install && pnpm -r test && pnpm -r typecheck
-node ../plugin-sdk/packages/plugin-cli/bin/paged-plugin.mjs validate packages/web-bundle/manifest.json
+pnpm install && bash scripts/build-wasm.sh --engine
+pnpm -r typecheck && REQUIRE_REAL_ENGINE=1 pnpm -r test
+(cd packages/web-render && cargo fmt --check && cargo clippy --all-targets --features blitz -- -D warnings && cargo test --features blitz)
 ```

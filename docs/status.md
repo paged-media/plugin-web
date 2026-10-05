@@ -1,18 +1,22 @@
 # Status
 
-What `paged.web` ships and what it does not, read from the code at commit `40792fa`
-(`@paged-media/web` 0.1.0-canary.8). How the parts fit is in [`architecture.md`](architecture.md).
+What `paged.web` ships and what it does not, read from the code on 2026-10-05
+(`@paged-media/web` 0.1.0-canary.9, not yet published). How the parts fit is in
+[`architecture.md`](architecture.md); the gaps against Chrome and InDesign, the test baseline
+and the performance reading are in [`design/analysis-2026-10-05.md`](design/analysis-2026-10-05.md).
 
 ## Shipped
 
 - **Web frames.** "Insert web frame" creates a rectangle and its source in one undoable
   batch; the panel can also turn a selected frame into a web frame, from a default source or
-  one of four starter templates. The source is saved as frame metadata and as a container
-  part. A double-click enters the `webFrame` edit context.
+  one of four starter templates. The source is saved in the frame's metadata label when it
+  fits, otherwise in a content-addressed container part the label points to; undo of a save
+  restores the previous source everywhere. A double-click enters the `webFrame` edit context.
 - **Source panel.** HTML and CSS editors, a sandboxed browser preview refreshed 300 ms after
   typing stops, an HTML linter, font diagnostics, template variables (`{{name}}` plus four
   filters), a tag outline, sanitised clipboard paste, an explicit "Save to document", and a
-  readout of the last render, flow render or flatten.
+  readout of the last render, flow render or flatten. Unsaved edits are kept per frame while
+  the panel is open and come back, still marked unsaved, when the frame is selected again.
 - **Import.** A `.html` or `.htm` file opens as a new web frame: `<style>` blocks become the
   CSS, the content of `<body>` becomes the HTML, and the sanitiser runs on it.
 - **Render to canvas.** One command renders the selected frame through the wasm engine to a
@@ -58,10 +62,11 @@ What `paged.web` ships and what it does not, read from the code at commit `40792
   by kind (rectangles, paths, then text), not in paint order, and are offset from the
   frame's top-left corner with no rotation or scale. Of a flow, only the primary chain is
   flattened. Nothing is removed: the web frame, its source and earlier flatten items stay.
-- **Storage.** Per `packages/web-bundle/src/source-part.ts` the host caps the metadata copy
-  at 64 KiB; the container part needs a host that supports parts. The engine versions
-  stamped into each envelope are a constant that nothing reads back, and its `anyrender`
-  value (0.11.0) differs from the lockfile (0.10.0).
+- **Storage.** The engine caps a metadata label at 64 KiB; a larger source needs a host with
+  container parts, and without one the save is refused with a visible message. Every saved
+  version of a large source stays as a part (that is what lets undo return to it); nothing
+  removes unreachable ones yet. The engine versions stamped into each envelope match the
+  lockfile (a spec checks it) but nothing reads them back.
 - **Import** reads the one file. Linked stylesheets, images and fonts are not brought in.
 
 ## Not built
@@ -76,7 +81,13 @@ What `paged.web` ships and what it does not, read from the code at commit `40792
   work on the source text.
 - The engine-neutral `renderWebFrame` and `renderWebFlow` in `packages/web-model/src/render.ts`:
   they always answer "not loaded", and the bundle calls the engine object directly.
-- A CI gate on tests: no workflow runs the Rust tests, and the vitest job uploads its results
-  without failing on a failed test.
 
 The as-built detail of the flow lane is in [`design/flow-fragmentation.md`](design/flow-fragmentation.md).
+
+## CI
+
+`vitest` (push, pull request) builds the engine wasm from the checkout and fails on a red
+spec; `rust` (push, pull request) runs `cargo fmt --check`, clippy with `-D warnings` for both
+feature sets and `cargo test` with and without `blitz`; `publish` runs only after a green
+`vitest` push run, waits for `rust` on the same commit, tests again, and fails when the
+sources changed since the published version without a version bump.
