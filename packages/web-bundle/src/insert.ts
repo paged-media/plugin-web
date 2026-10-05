@@ -16,10 +16,13 @@
  *  @license    AGPL-3.0-only OR Paged Media Enterprise License (PMEL)
  */
 
-// "Insert web frame" — ONE undoable batch: insertFrame + the default
-// source written as DOCUMENT METADATA on the batch-created element
-// (the protocol v34 `$created` sentinel; metadata round-trips IDML
-// since v33). The new frame is selected and the source panel opened.
+// "Insert web frame" — ONE undoable batch: insertFrame + the source label
+// written as DOCUMENT METADATA on the batch-created element (the protocol
+// v34 `$created` sentinel; metadata round-trips IDML since v33). A source
+// too large for a label (the .html importer can hand in any size) is first
+// written to a content-addressed container part and the label carries the
+// pointer (source-part.ts). The new frame is selected and the source panel
+// opened. A refusal is published as a diagnostic, not only logged.
 // The frame itself is an ordinary rectangle (the manifest's declared
 // baked fallback); what makes it a webFrame is the metadata attached
 // to it — the §5 model. A single undo removes frame AND source.
@@ -28,9 +31,13 @@ import type { BundleHost, PageId } from "@paged-media/plugin-api";
 import {
   asFrameTarget,
   DEFAULT_SOURCE,
-  envelopeFor,
   type WebFrameSource,
 } from "../../web-model/src";
+
+import { describeRefusal, prepareSourceLabel } from "./source-part";
+
+/** Diagnostics key for insert/import refusals. */
+export const INSERT_DIAG_KEY = "media.paged.web#insert";
 
 /** Default frame bounds, page-local pt: [top, left, bottom, right]. */
 const DEFAULT_BOUNDS: [number, number, number, number] = [60, 60, 240, 300];
@@ -58,9 +65,20 @@ export async function insertWebFrame(
   // starter default.
   source: WebFrameSource = DEFAULT_SOURCE,
 ): Promise<void> {
+  const refuse = (message: string, detail?: unknown): void => {
+    host.log.warn(`insertWebFrame: ${message}`, detail);
+    host.diagnostics.set(INSERT_DIAG_KEY, [
+      { severity: "error", message: `Web frame not inserted: ${message}`, source: "insert" },
+    ]);
+  };
   const pageId = await activePageId(host);
   if (!pageId) {
-    host.log.warn("insertWebFrame: no page to insert into");
+    refuse("there is no page to insert into");
+    return;
+  }
+  const prepared = await prepareSourceLabel(host, source);
+  if ("refused" in prepared) {
+    refuse(prepared.refused);
     return;
   }
   const outcome = await host.document.mutate({
@@ -76,20 +94,21 @@ export async function insertWebFrame(
             // key is this plugin's own namespace.
             elementId: { kind: "rectangle", id: "$created" },
             key: METADATA_KEY,
-            value: JSON.stringify(envelopeFor(source)),
+            value: JSON.stringify(prepared.label),
           },
         },
       ],
     },
   });
   if (!outcome.applied || !outcome.createdId) {
-    host.log.warn("insertWebFrame rejected by engine", outcome);
+    refuse(outcome.applied ? "the document created no frame" : describeRefusal(outcome.error), outcome);
     return;
   }
   if (!asFrameTarget(outcome.createdId)) {
-    host.log.warn("insertWebFrame: created element is not a frame target");
+    refuse("the created element is not a frame");
     return;
   }
+  host.diagnostics.set(INSERT_DIAG_KEY, []);
   await host.selection.set([outcome.createdId]);
   host.shell.openPanel(panelId);
 }

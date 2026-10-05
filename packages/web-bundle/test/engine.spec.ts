@@ -261,7 +261,7 @@ describe.skipIf(!artifactPresent)(
       const host = {
         log: silent,
         document: {
-          // No parts → readSourcePart falls back to this label source.
+          // A small source: loadWebSource reads it inline from the label.
           getMetadata: async () => envelopeFor(flowSource),
           elementGeometry: async (ids: ElementId[]) =>
             ids.map((id) => ({ id, pageId: "p1", bounds: [0, 0, 120, 240] })),

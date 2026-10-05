@@ -50,7 +50,6 @@ import {
   namedFlowDiagnostics,
   renderWebFrame,
   renderWebFrameSource,
-  sourceFromEnvelope,
   ENGINE_NOT_LOADED_MESSAGE,
   type SceneLayer,
   type WebDiagnostic,
@@ -59,7 +58,7 @@ import {
 } from "../../web-model/src";
 
 import type { WebEngine } from "./engine-loader";
-import { readSourcePart } from "./source-part";
+import { loadWebSource } from "./source-part";
 
 /** Points per inch — frame bounds are in points already; `dpi` only
  *  drives a raster escape hatch, defaulted at the page's print
@@ -147,12 +146,7 @@ export async function bakeWebFrame(
     ]);
   }
 
-  // Prefer the portable .paged container part (the uncapped source-of-truth),
-  // falling back to the metadata label for documents written before the part
-  // migration (or a host with no container writer).
-  const source =
-    (await readSourcePart(host, id)) ??
-    sourceFromEnvelope(await host.document.getMetadata(id));
+  const source = await loadWebSource(host, id);
   if (!source) {
     return notRendered([
       {
@@ -335,9 +329,7 @@ export async function bakeWebFlow(
   }
 
   const sourceId = chain[0];
-  const source =
-    (await readSourcePart(host, sourceId)) ??
-    sourceFromEnvelope(await host.document.getMetadata(sourceId));
+  const source = await loadWebSource(host, sourceId);
   if (!source) {
     return notRendered(
       "the first selected frame is not a web frame — make it one in the Web frame panel",
@@ -468,9 +460,7 @@ export async function bakeWebFlows(
   if (!sourceTarget) {
     return notRendered("select a web frame to render its flow");
   }
-  const source =
-    (await readSourcePart(host, sourceId)) ??
-    sourceFromEnvelope(await host.document.getMetadata(sourceId));
+  const source = await loadWebSource(host, sourceId);
   if (!source) {
     return notRendered(
       "the selected frame is not a web frame — make it one in the Web frame panel",

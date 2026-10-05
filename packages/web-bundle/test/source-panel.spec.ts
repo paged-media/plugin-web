@@ -53,7 +53,7 @@ import {
   persistDraft,
   PREVIEW_DEBOUNCE_MS,
 } from "../src/panels/web-source-panel";
-import { readSourcePart } from "../src/source-part";
+import { loadWebSource } from "../src/source-part";
 
 const manifest = webBundle.manifest;
 const silent = { debug() {}, info() {}, warn() {}, error() {} };
@@ -193,7 +193,7 @@ describe("persistDraft (the explicit save — the panel's only document write)",
       parts: { write: async () => {}, read: async () => null, list: async () => [] },
       supports: () => false, // no container writer → the part write no-ops
     } as unknown as Pick<BundleHost, "document" | "parts" | "supports">;
-    await expect(persistDraft(host, id, draft)).resolves.toBe(true);
+    await expect(persistDraft(host, id, draft)).resolves.toEqual({ applied: true });
     expect(writes).toHaveLength(1);
     expect(writes[0].id).toBe(id);
     // The envelope path is web-model's single (de)serialization point —
@@ -201,26 +201,30 @@ describe("persistDraft (the explicit save — the panel's only document write)",
     expect(writes[0].envelope).toEqual(envelopeFor(draft));
   });
 
-  it("reports an engine rejection as false (caller keeps the dirty state)", async () => {
+  it("reports an engine rejection with its reason (caller keeps the dirty state)", async () => {
     const host = {
       document: {
-        setMetadata: async () => ({ applied: false }),
+        setMetadata: async () => ({ applied: false, error: "refused for a reason" }),
       },
       parts: { write: async () => {}, read: async () => null, list: async () => [] },
       supports: () => false,
     } as unknown as Pick<BundleHost, "document" | "parts" | "supports">;
-    await expect(persistDraft(host, id, draft)).resolves.toBe(false);
+    await expect(persistDraft(host, id, draft)).resolves.toEqual({
+      applied: false,
+      reason: "refused for a reason",
+    });
   });
 
-  it("write-throughs the source to a portable .paged container part", async () => {
-    // Against a host WITH a container writer, persistDraft also writes the
-    // source as a paged/ part — the uncapped, portable source-of-truth — and
-    // readSourcePart reads it back (the migration round-trip).
+  it("a draft too large for a label goes to a content-addressed part behind a pointer", async () => {
     const store = new Map<string, Uint8Array>();
+    let label: unknown = null;
     const host = {
       document: {
-        setMetadata: async () => ({ applied: true }),
-        getMetadata: async () => null,
+        setMetadata: async (_id: unknown, env: unknown) => {
+          label = env;
+          return { applied: true };
+        },
+        getMetadata: async () => label,
       },
       parts: {
         write: async (p: string, b: Uint8Array) => void store.set(p, b),
@@ -229,12 +233,15 @@ describe("persistDraft (the explicit save — the panel's only document write)",
       },
       supports: (f: string) => f === "storage.parts@1",
     } as unknown as BundleHost;
+    const large = { ...draft, html: "<p>x</p>".repeat(20000) };
 
-    await expect(persistDraft(host, id, draft)).resolves.toBe(true);
-    // The part landed under the frame-id-keyed relative path (the host
-    // prepends the plugin namespace; this layer speaks relative paths).
-    expect([...store.keys()]).toEqual([`${(id as { id: string }).id}/source.json`]);
-    // And it round-trips back to the exact source.
-    expect(await readSourcePart(host, id)).toEqual(draft);
+    await expect(persistDraft(host, id, large)).resolves.toEqual({ applied: true });
+    // One part, at a content-addressed path (the host prepends the plugin
+    // namespace; this layer speaks relative paths)…
+    expect([...store.keys()]).toHaveLength(1);
+    expect([...store.keys()][0]).toMatch(/^sources\/[0-9a-f]{16}\.json$/);
+    // …a small pointer label, and the exact source back through the reader.
+    expect(JSON.stringify(label).length).toBeLessThan(512);
+    expect(await loadWebSource(host, id)).toEqual(large);
   });
 });

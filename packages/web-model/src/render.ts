@@ -17,29 +17,16 @@
  */
 
 // The web RENDER CONTRACT — the engine-agnostic seam ADR-011 ratifies:
-// "HTML/CSS in, scene layer out." This is the drop-in point for the
-// Blitz/WASM rendering lane (docs/concept.md §4; the W0 spike proved the
-// Blitz/Stylo/Taffy/Parley stack compiles to wasm32 — ~2.2 MB brotli —
-// and paints in core's exact vello/wgpu versions). It is NOT that lane:
-// compiling Blitz to wasm is a multi-week fork, and this module never
-// pretends to do it.
-//
-// ===================== LOUD SEAM — READ THIS =====================
-// `renderWebFrame` today returns the HONEST not-loaded path:
+// "HTML/CSS in, scene layer out." The Blitz engine (packages/web-render,
+// compiled to the bundle's wasm and loaded by web-bundle's
+// engine-loader.ts) answers these types; the functions here are the
+// fallback when that engine cannot load:
 //   { sceneLayer: null, diagnostics: [<engine not loaded — source-lane
-//     preview only (W-01)>] }
-// When the Blitz engine artifact (manifest `capabilities.wasm` ∋
-// `blitz`, purpose:"engine") is built and loaded, the lane fills in a
-// real SceneLayer (C-1 IR: filled paths + multi-run, transform-correct
-// text + axis-aligned raster images), lowered from Blitz's display list.
-// The CONTRACT shape never changes: the bundle's bake path (web-bundle) and
-// the determinism envelope are written against THIS seam, so the engine
-// drops in behind it without touching the caller. Per ADR-011 the paint
-// output lowers to the plugin `sceneLayer` rail (C-1), NOT a core paint
-// hook — the engine lives entirely in the plugin, behind the boundary.
+//     preview only>] }
+// Per ADR-011 the paint output lowers to the plugin `sceneLayer` rail
+// (C-1), NOT a core paint hook — the engine lives entirely in the plugin.
 // Do NOT fake a SceneLayer here; an empty/placeholder layer would be the
 // exact dishonesty this seam exists to avoid.
-// =================================================================
 
 import type { WebDiagnostic } from "./diagnose";
 import type { TemplateVars } from "./source";
@@ -171,13 +158,12 @@ export const ENGINE_NOT_LOADED_MESSAGE =
   "web rendering engine not loaded — source-lane preview only (W-01)";
 
 /**
- * Render a web frame to the C-1 scene IR. **The drop-in seam for the
- * Blitz lane.** Today it is the HONEST not-loaded path: no engine wasm
- * is bundled (the `blitz` artifact is declared in the manifest but not
- * yet built — a multi-week Blitz/Stylo→wasm fork), so it returns no
- * scene layer and the not-loaded diagnostic. Pure + total: same request
- * → same result, never throws. When the engine lands it fills
- * `sceneLayer` and the caller (the bake path) is unchanged.
+ * Render a web frame to the C-1 scene IR WITHOUT an engine: the honest
+ * not-loaded result the bundle falls back to when its Blitz engine wasm
+ * cannot load (no artifact, or a realm that cannot fetch it) — no scene
+ * layer, plus the not-loaded diagnostic. The loaded engine
+ * (web-bundle `engine-loader.ts`) answers the same result type. Pure +
+ * total: same request → same result, never throws.
  */
 export function renderWebFrame(_request: WebRenderRequest): WebRenderResult {
   return {
@@ -262,13 +248,11 @@ export interface WebRenderFlowResult {
 }
 
 /**
- * Render a threaded web flow to per-frame C-1 scene layers. **The drop-in
- * seam for the Blitz flow lane** (engine `render_web_flow`, ADR-020 rung 2).
- * Today the HONEST not-loaded path: no engine wasm is bundled, so every
- * frame's `sceneLayer` is `null`, `overset` is `false`, and the not-loaded
- * diagnostic is attached. Pure + total: same request → same result, never
- * throws, frames returned in chain order. When the engine lands it fills each
- * `sceneLayer` and the caller (the bundle flow command) is unchanged.
+ * Render a threaded web flow WITHOUT an engine: the not-loaded fallback
+ * for the flow lane (the loaded engine's `render_web_flow` answers the same
+ * type). Every frame's `sceneLayer` is `null`, `overset` is `false`, and the
+ * not-loaded diagnostic is attached. Pure + total: same request → same
+ * result, never throws, frames returned in chain order.
  */
 export function renderWebFlow(request: WebRenderFlowRequest): WebRenderFlowResult {
   return {

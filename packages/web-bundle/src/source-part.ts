@@ -16,82 +16,145 @@
  *  @license    AGPL-3.0-only OR Paged Media Enterprise License (PMEL)
  */
 
-// `.paged` CONTAINER persistence for the web source (file-format.md §4/§8).
+// Where a web frame's source lives — the ONE reader and the ONE writer.
 //
-// The HTML/CSS source is the web frame's SPEC. Historically it lived in the
-// frame's `x-paged:media.paged.web` metadata LABEL — but a Label is capped at
-// 64 KiB (BREAKAGE D-08), too small for real pages. The source now ALSO rides
-// the document as a `.paged` container part (`paged/media.paged.web/<id>/
-// source.json`) via `host.parts`: uncapped, binary-friendly, and it travels
-// WITH the file (unlike per-browser OPFS). The label stays as the webFrame
-// MARKER (edit-context detection keys off it) + a backward-compat read source;
-// the part is the portable home + the read PREFERENCE.
+// The host offers two homes with different rules:
+//   · the metadata LABEL (`host.document.setMetadata`): undoable, IDML-
+//     portable, capped at 64 KiB by the engine;
+//   · the container PART (`host.parts`): uncapped, travels with the
+//     `.paged` file, but NOT undoable.
 //
-// Forward/backward-safe: a host with no container writer
-// (`supports("storage.parts@1")` is false — an older editor) is a clean no-op,
-// and a document with no part falls back to the label, so existing documents
-// keep working unchanged.
+// A source that fits stays inline in the label. A larger one is written to
+// a CONTENT-ADDRESSED part (`sources/<hash>.json`) and the label carries a
+// pointer `{ ref: { hash, bytes } }`. Because a new save writes a new part
+// path and never overwrites one, undo of the label returns to a pointer
+// whose part still exists — the label, which undo restores, always names
+// the live source, and every reader (panel, render, flow, bake) goes
+// through `loadWebSource`.
+//
+// Legacy documents wrote the source to BOTH homes, the part at
+// `<frame-id>/source.json`. That part is read only when it cannot have been
+// mirrored by the label (its envelope is over the label cap, so the label
+// write was refused), or when there is no label source at all.
+//
+// Content-addressed parts accumulate: one per saved version of a large
+// source. Removing the ones no label and no undo step can reach is a
+// host-side question (parts do not take part in undo) and is not done here.
 
 import type { BundleHost, ElementId } from "@paged-media/plugin-api";
 import {
-  envelopeFor,
+  LABEL_INLINE_MAX_BYTES,
   sourceFromEnvelope,
+  sourceFromPartText,
+  sourcePartPath,
+  sourceRefOf,
+  storeSource,
+  utf8Length,
   type WebFrameSource,
+  type WebSourceEnvelope,
 } from "../../web-model/src";
 
-type PartsHost = Pick<BundleHost, "parts" | "supports">;
+type PersistHost = Pick<BundleHost, "document" | "parts" | "supports">;
 
-/** The container part path for a frame's source, relative to this plugin's
- *  `paged/media.paged.web/` namespace (the host prepends it). `null` when the
- *  element id has no string id (web frames are always rectangles). */
-function partPath(id: ElementId): string | null {
+const decoder = new TextDecoder();
+
+/** The legacy (pre-pointer) part path for a frame's source. */
+function legacyPartPath(id: ElementId): string | null {
   const raw = (id as { id?: unknown }).id;
   return typeof raw === "string" ? `${raw}/source.json` : null;
 }
 
-/** Write the web source to the container part (the portable, uncapped home).
- *  Best-effort: no container writer ⇒ no-op (the label remains the source). */
-export async function writeSourcePart(
-  host: PartsHost,
-  id: ElementId,
-  source: WebFrameSource,
-): Promise<void> {
-  const path = partPath(id);
-  if (!path || !host.supports("storage.parts@1")) return;
-  const bytes = new TextEncoder().encode(JSON.stringify(envelopeFor(source)));
-  await host.parts.write(path, bytes);
+async function readPartText(host: PersistHost, path: string): Promise<string | null> {
+  if (!host.supports("storage.parts@1")) return null;
+  const bytes = await host.parts.read(path);
+  return bytes ? decoder.decode(bytes) : null;
 }
 
-/** Persist a source to BOTH homes — the metadata LABEL (`setMetadata`, the
- *  webFrame marker + backward-compat read) and the portable container PART —
- *  matching the panel's `persistDraft`. The single write path for a source
- *  mutation OUTSIDE the panel (e.g. the flow-chain thread command). */
-export async function persistSource(
-  host: Pick<BundleHost, "document" | "parts" | "supports">,
-  id: ElementId,
-  source: WebFrameSource,
-): Promise<void> {
-  await host.document.setMetadata(id, envelopeFor(source));
-  await writeSourcePart(host, id, source);
-}
-
-/** Read the web source from the container part, or `null` when absent / no
- *  container writer — the caller then falls back to the metadata label. */
-export async function readSourcePart(
-  host: PartsHost,
+/** THE reader: a frame's web source as every surface (panel, render, flow,
+ *  bake) sees it, or `null` when the frame is not a web frame (or its
+ *  pointer names a part this document does not carry). */
+export async function loadWebSource(
+  host: PersistHost,
   id: ElementId,
 ): Promise<WebFrameSource | null> {
-  const path = partPath(id);
-  if (!path || !host.supports("storage.parts@1")) return null;
-  const bytes = await host.parts.read(path);
-  if (!bytes) return null;
-  try {
-    return sourceFromEnvelope(
-      JSON.parse(new TextDecoder().decode(bytes)) as unknown as Parameters<
-        typeof sourceFromEnvelope
-      >[0],
-    );
-  } catch {
-    return null;
+  const label = (await host.document.getMetadata(id)) as WebSourceEnvelope | null;
+  const ref = sourceRefOf(label);
+  if (ref) {
+    const text = await readPartText(host, sourcePartPath(ref));
+    return text === null ? null : sourceFromPartText(text, ref);
   }
+  const inline = sourceFromEnvelope(label);
+  const legacyPath = legacyPartPath(id);
+  const legacyText = legacyPath ? await readPartText(host, legacyPath) : null;
+  if (legacyText !== null && (!inline || utf8Length(legacyText) > LABEL_INLINE_MAX_BYTES)) {
+    try {
+      const legacy = sourceFromEnvelope(JSON.parse(legacyText) as WebSourceEnvelope);
+      if (legacy) return legacy;
+    } catch {
+      // a corrupt legacy part reads as absent
+    }
+  }
+  return inline;
+}
+
+/** A readable reason from a refused mutation's `error` (any shape). */
+export function describeRefusal(error: unknown): string {
+  if (typeof error === "string" && error.length > 0) return error;
+  if (error && typeof error === "object") {
+    const m = (error as { message?: unknown }).message;
+    if (typeof m === "string" && m.length > 0) return m;
+    try {
+      return JSON.stringify(error);
+    } catch {
+      // fall through
+    }
+  }
+  return "the document refused the change";
+}
+
+/** The outcome of a source write. `reason` is set when it was refused. */
+export interface WriteOutcome {
+  applied: boolean;
+  reason?: string;
+}
+
+/** Prepare a source for a label write: writes the content-addressed part
+ *  first when the source is too large for a label, and answers the label
+ *  envelope to set — or a refusal when it cannot be stored. Used directly
+ *  by the insert batch (which sets the label itself). */
+export async function prepareSourceLabel(
+  host: PersistHost,
+  source: WebFrameSource,
+): Promise<{ label: WebSourceEnvelope } | { refused: string }> {
+  const stored = storeSource(source);
+  if (stored.kind === "inline") return { label: stored.label };
+  const kib = Math.ceil(stored.ref.bytes / 1024);
+  if (!host.supports("storage.parts@1")) {
+    return {
+      refused:
+        `the web source is ${kib} KiB; a document label holds at most 64 KiB ` +
+        "and this host has no container parts to store it in",
+    };
+  }
+  try {
+    await host.parts.write(sourcePartPath(stored.ref), new TextEncoder().encode(stored.partText));
+  } catch (err) {
+    return { refused: `the web source (${kib} KiB) could not be stored: ${String(err)}` };
+  }
+  return { label: stored.label };
+}
+
+/** THE writer: persist a source for a frame — one undoable label write
+ *  (inline, or a pointer to a part written just before). */
+export async function writeWebSource(
+  host: PersistHost,
+  id: ElementId,
+  source: WebFrameSource,
+): Promise<WriteOutcome> {
+  const prepared = await prepareSourceLabel(host, source);
+  if ("refused" in prepared) return { applied: false, reason: prepared.refused };
+  const outcome = await host.document.setMetadata(id, prepared.label);
+  return outcome.applied
+    ? { applied: true }
+    : { applied: false, reason: describeRefusal(outcome.error) };
 }

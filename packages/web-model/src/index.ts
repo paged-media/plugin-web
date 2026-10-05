@@ -19,17 +19,24 @@
 // @paged-media/web-model — the webFrame source model + diagnostics,
 // pure TS, zero dependencies, host-free. The distillation layer of
 // paged.web (the same role draw-geometry/draw-tools play for
-// paged.draw): everything here survives unchanged when the engine
-// rendering lane (Blitz/WASM, concept §4) and document metadata
-// (§5) land.
+// paged.draw): no host, no DOM, no engine.
 
 export {
   DEFAULT_SOURCE,
+  LABEL_INLINE_MAX_BYTES,
+  LABEL_MAX_BYTES,
   MAX_VIEWPORT_WIDTH,
   SOURCE_METADATA_VERSION,
   asFrameTarget,
   composeSrcdoc,
+  contentHash,
   envelopeFor,
+  isWebFrameEnvelope,
+  sourceFromPartText,
+  sourcePartPath,
+  sourceRefOf,
+  storeSource,
+  utf8Length,
   flowChainOf,
   flowGroups,
   normalizeFlowChain,
@@ -45,8 +52,10 @@ export {
   type WebFlowGroup,
   type WebFlowRecipient,
   type WebFrameOptions,
+  type StoredSource,
   type WebFrameSource,
   type WebSourceEnvelope,
+  type WebSourceRef,
 } from "./source";
 
 export { diagnoseHtml, type WebDiagnostic } from "./diagnose";
@@ -102,10 +111,11 @@ export {
   type TemplateResult,
 } from "./transform";
 
-// The W-01 RENDER CONTRACT — the engine-agnostic seam (ADR-011: "HTML/CSS
-// in, scene layer out"). Today `renderWebFrame` returns the HONEST
-// not-loaded path; the Blitz/WASM lane drops in behind this contract. The
-// SceneLayer types are the C-1 IR (filled paths, multi-run text, and
+// The RENDER CONTRACT — the engine-agnostic seam (ADR-011: "HTML/CSS in,
+// scene layer out"). `renderWebFrame` / `renderWebFlow` here are the
+// fallback the bundle uses when its Blitz engine wasm cannot load (the
+// honest not-loaded result); the loaded engine answers the same types.
+// The SceneLayer types are the C-1 IR (filled paths, multi-run text, and
 // axis-aligned raster images).
 export {
   ENGINE_NOT_LOADED_MESSAGE,

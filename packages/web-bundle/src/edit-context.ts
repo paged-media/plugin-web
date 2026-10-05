@@ -34,15 +34,15 @@
 // The matcher reads ONLY this plugin's own-namespace metadata envelope
 // (the host pre-resolves it from the host-stamped `x-paged:media.paged
 // .web` key and passes it as `candidate.metadata`). Validation reuses
-// web-model's `sourceFromEnvelope` so "is a webFrame" matches exactly
-// "has a loadable source" — no second predicate to drift.
+// web-model's `isWebFrameEnvelope` (an inline source, or a pointer to a
+// large source's container part) — no second predicate to drift.
 
 import type {
   EditContextContribution,
   ObjectTypeContribution,
 } from "@paged-media/plugin-api";
 import {
-  sourceFromEnvelope,
+  isWebFrameEnvelope,
   type WebSourceEnvelope,
 } from "../../web-model/src";
 
@@ -55,8 +55,9 @@ export const webFrameObjectType: ObjectTypeContribution = {
   // Metadata-claimed: a rectangle carrying a loadable source envelope IS
   // a webFrame. `candidate.metadata` is this plugin's own envelope,
   // pre-resolved by the host.
+  // An inline source or a pointer to a large source's part both count.
   matches: (candidate) =>
-    sourceFromEnvelope(candidate.metadata as WebSourceEnvelope | null) !== null,
+    isWebFrameEnvelope(candidate.metadata as WebSourceEnvelope | null),
   // A double-click enters the source edit context (NOT group descent).
   editContextType: WEB_FRAME_TYPE,
   // The baked IDML form is a rectangle (the manifest's declared fallback)

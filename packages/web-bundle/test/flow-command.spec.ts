@@ -45,16 +45,18 @@ const silent = { debug() {}, info() {}, warn() {}, error() {} };
 
 /** A host whose `getMetadata` returns `metadata` for any id, records every
  *  `setMetadata` write, and has no container parts (so the source rides the
- *  label — `readSourcePart` → null, `writeSourcePart` → no-op). */
+ *  label inline — the sources here are small). */
 function makeHost(opts: { selection: ElementId[]; metadata: unknown }) {
   const writes: { id: ElementId; envelope: { data: WebFrameSource } }[] = [];
   const host = {
     log: silent,
     selection: { get: () => opts.selection },
+    diagnostics: { set: () => {} },
     document: {
       getMetadata: async () => opts.metadata,
       setMetadata: async (id: ElementId, envelope: unknown) => {
         writes.push({ id, envelope: envelope as { data: WebFrameSource } });
+        return { applied: true, createdId: null, pageIds: [] };
       },
     },
     parts: { read: async () => null, write: async () => {} },

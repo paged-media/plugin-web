@@ -17,20 +17,23 @@
  */
 
 // The webFrame source model — the concept paper's §5 shape, pure and
-// host-free. Since core protocol v33 (W-02 carrier) the source
-// persists as DOCUMENT METADATA — an `x-paged:paged.web` Label entry
-// that round-trips IDML and survives foreign opens; the envelope
-// helpers below are the bundle's single (de)serialization point.
-// `sourceKeyFor` remains for the one-time legacy-storage migration
-// and as the diagnostics key.
+// host-free. The source persists as DOCUMENT METADATA — an
+// `x-paged:media.paged.web` Label entry that round-trips IDML, survives
+// foreign opens and takes part in undo. A source too large for a label
+// (the engine caps one at 64 KiB) is written to a content-addressed
+// container part instead, and the label carries a small POINTER to it
+// (`labelEnvelopeFor` / `sourceRefOf` below) — so the label, which undo
+// restores, always names the live source. The envelope helpers below are
+// the bundle's single (de)serialization point. `sourceKeyFor` remains
+// for the one-time legacy-storage migration and as the diagnostics key.
 
 import { engineStamp } from "./engine";
 
 export interface WebFrameOptions {
   /** CSS media the frame renders under (§9: a DTP-native switch). */
   media: "print" | "screen";
-  /** Overflow policy — v0 clips (the only honest option before the
-   *  engine renders web frames on canvas). */
+  /** Overflow policy — content past the frame is clipped (the only
+   *  policy implemented; the others are not built yet). */
   overflow: "clip";
   /** Layout viewport width in CSS px. Absent = natural width (the
    *  frame/panel decides). In the source panel this is honestly real:
@@ -208,14 +211,123 @@ export interface WebSourceEnvelope {
 /** Wrap a source for `host.document.setMetadata`. Stamps the pinned
  *  web-engine stack into the envelope's `engine` record (ADR-011
  *  determinism — a re-render can detect when the document was last
- *  rendered under an older stack). The stamp is forward-declared today
- *  (the engine isn't built); recording it now keeps the door honest. */
+ *  rendered under an older stack). */
 export function envelopeFor(source: WebFrameSource): WebSourceEnvelope {
   return {
     v: SOURCE_METADATA_VERSION,
     data: { ...source },
     engine: engineStamp(),
   };
+}
+
+// ------------------------------------------------------------ large sources
+
+/** The engine's cap on one metadata value, in UTF-8 bytes. */
+export const LABEL_MAX_BYTES = 64 * 1024;
+
+/** A source envelope larger than this (UTF-8 bytes of its JSON) goes to a
+ *  container part behind a pointer label. Kept below `LABEL_MAX_BYTES` so
+ *  a host that re-serializes the envelope slightly differently never
+ *  meets the cap. */
+export const LABEL_INLINE_MAX_BYTES = 60 * 1024;
+
+/** A pointer from a label to a content-addressed source part. */
+export interface WebSourceRef {
+  /** `contentHash` of the part's text. */
+  hash: string;
+  /** UTF-8 byte length of the part's text. */
+  bytes: number;
+}
+
+/** UTF-8 byte length of a string (no allocation). */
+export function utf8Length(text: string): number {
+  let n = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (c < 0x80) n += 1;
+    else if (c < 0x800) n += 2;
+    else if (c >= 0xd800 && c <= 0xdbff && i + 1 < text.length) {
+      n += 4;
+      i++;
+    } else n += 3;
+  }
+  return n;
+}
+
+/** A 64-bit content hash (two independent 32-bit FNV-1a/murmur-mixed
+ *  lanes) as 16 hex digits. Identifies a source part's text; pure and
+ *  synchronous so it runs anywhere (no Web Crypto). Not a security hash. */
+export function contentHash(text: string): string {
+  let h1 = 0xdeadbeef ^ text.length;
+  let h2 = 0x41c6ce57 ^ text.length;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 2654435761);
+    h2 = Math.imul(h2 ^ c, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  const hex = (n: number) => (n >>> 0).toString(16).padStart(8, "0");
+  return hex(h2) + hex(h1);
+}
+
+/** The container part path (relative to the plugin's namespace) of a
+ *  content-addressed source. Content addressing keeps every saved version
+ *  that a label can name — including the ones undo returns to — because
+ *  container parts themselves do not take part in undo. */
+export function sourcePartPath(ref: WebSourceRef): string {
+  return `sources/${ref.hash}.json`;
+}
+
+/** How a source is stored: inline in the label, or as a part + pointer. */
+export type StoredSource =
+  | { kind: "inline"; label: WebSourceEnvelope }
+  | { kind: "part"; label: WebSourceEnvelope; ref: WebSourceRef; partText: string };
+
+/** Decide where a source goes. Small sources stay inline in the label
+ *  (undoable, IDML-portable, readable without the plugin's parts); a
+ *  source whose envelope exceeds `LABEL_INLINE_MAX_BYTES` becomes a part
+ *  with a pointer label `{ v, data: { ref }, engine }`. Pure. */
+export function storeSource(source: WebFrameSource): StoredSource {
+  const envelope = envelopeFor(source);
+  const text = JSON.stringify(envelope);
+  const bytes = utf8Length(text);
+  if (bytes <= LABEL_INLINE_MAX_BYTES) return { kind: "inline", label: envelope };
+  const ref: WebSourceRef = { hash: contentHash(text), bytes };
+  return {
+    kind: "part",
+    label: { v: SOURCE_METADATA_VERSION, data: { ref }, engine: envelope.engine },
+    ref,
+    partText: text,
+  };
+}
+
+/** The part pointer a label carries, or `null` for an inline/legacy label. */
+export function sourceRefOf(envelope: WebSourceEnvelope | null): WebSourceRef | null {
+  if (!envelope || envelope.v !== SOURCE_METADATA_VERSION) return null;
+  const ref = (envelope.data as { ref?: unknown }).ref;
+  if (typeof ref !== "object" || ref === null) return null;
+  const { hash, bytes } = ref as { hash?: unknown; bytes?: unknown };
+  if (typeof hash !== "string" || !/^[0-9a-f]{16}$/.test(hash)) return null;
+  if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes < 0) return null;
+  return { hash, bytes };
+}
+
+/** Decode a part's text, verifying it is the content the pointer names.
+ *  `null` when it is not (a mismatched or corrupt part is never read as
+ *  the live source). */
+export function sourceFromPartText(text: string, ref: WebSourceRef): WebFrameSource | null {
+  if (contentHash(text) !== ref.hash) return null;
+  try {
+    return sourceFromEnvelope(JSON.parse(text) as WebSourceEnvelope);
+  } catch {
+    return null;
+  }
+}
+
+/** Whether a label marks a web frame: an inline source or a part pointer. */
+export function isWebFrameEnvelope(envelope: WebSourceEnvelope | null): boolean {
+  return sourceFromEnvelope(envelope) !== null || sourceRefOf(envelope) !== null;
 }
 
 /** Unwrap + validate a `getMetadata` envelope. Unknown versions and

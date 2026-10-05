@@ -41,7 +41,6 @@ import {
   asFrameTarget,
   composeSrcdoc,
   renderWebFrameSource,
-  sourceFromEnvelope,
   type WebDiagnostic,
 } from "../../web-model/src";
 
@@ -50,7 +49,7 @@ import { sceneLayerToBakePlan, type BakePlan, type BakeText } from "./bake-plan"
 import { loadWebEngine, type WebEngine } from "./engine-loader";
 import { publishRenderReport } from "./render-report";
 import { resolveFlowChain } from "./render-flow-command";
-import { readSourcePart } from "./source-part";
+import { loadWebSource } from "./source-part";
 
 /** CSS px per point (the engine lays out in px; frame geometry is in pt). */
 const PX_PER_PT = 96 / 72;
@@ -150,9 +149,7 @@ export async function bakeWebFrameToDocument(
   const target = asFrameTarget(id);
   if (!target) return fail("select a single web frame to bake to the document");
 
-  const source =
-    (await readSourcePart(host, id)) ??
-    sourceFromEnvelope(await host.document.getMetadata(id));
+  const source = await loadWebSource(host, id);
   if (!source) return fail("the selected frame is not a web frame");
 
   const [geo] = await host.document.elementGeometry([id]);

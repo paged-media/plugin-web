@@ -67,14 +67,12 @@ import {
   DEFAULT_SOURCE,
   diagnoseFonts,
   diagnoseHtml,
-  envelopeFor,
   flowThreadOptions,
   fontParity,
   MAX_VIEWPORT_WIDTH,
   namedFlowDiagnostics,
   normalizeViewportWidth,
   renderWebFrameSource,
-  sourceFromEnvelope,
   sourceFromTemplate,
   sourceKeyFor,
   tagOutline,
@@ -97,7 +95,8 @@ import {
   lastRenderReport,
   subscribeRenderReport,
 } from "../render-report";
-import { readSourcePart, writeSourcePart } from "../source-part";
+import { loadWebSource, writeWebSource } from "../source-part";
+import { createDraftStore, type DraftStore } from "./draft-store";
 
 import { createDebouncer } from "./debounce";
 import {
@@ -284,21 +283,18 @@ function TemplatePicker({
 
 // ------------------------------------------------------------ persistence
 
-/** Persist a draft as the element's source metadata — the panel's ONLY
- *  document write, fired by the explicit "Save to document" action
- *  (never by the preview debounce). One call = one undoable metadata
- *  mutation. Returns whether the engine applied it. */
+/** Persist a draft as the element's source — the panel's ONLY document
+ *  write, fired by the explicit "Save to document" action (never by the
+ *  preview debounce). One call = one undoable metadata mutation (plus, for a
+ *  source too large for the label, one content-addressed container part —
+ *  see `writeWebSource`). Resolves to whether it applied and, when refused,
+ *  why. */
 export async function persistDraft(
   host: Pick<BundleHost, "document" | "parts" | "supports">,
   id: ElementId,
   draft: WebFrameSource,
-): Promise<boolean> {
-  const outcome = await host.document.setMetadata(id, envelopeFor(draft));
-  // Write-through to the portable .paged container part (uncapped; the label
-  // above stays the webFrame marker + backward-compat read source). No-op on a
-  // host without a container writer (older editor).
-  await writeSourcePart(host, id, draft);
-  return outcome.applied;
+): Promise<{ applied: boolean; reason?: string }> {
+  return writeWebSource(host, id, draft);
 }
 
 // ---------------------------------------------------------------- hooks
@@ -392,6 +388,8 @@ function FlowPicker({
 // ----------------------------------------------------------------- panel
 
 export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
+  // Unsaved drafts per frame — they outlive the editor's remounts.
+  const drafts = createDraftStore();
   // The lane is stable for the host's lifetime — probe once.
   const lane = resolveEditorLane(host);
   return function WebSourcePanel(): ReactElement {
@@ -445,8 +443,7 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
       const first = selection[0];
       void (async () => {
         const src =
-          (await readSourcePart(host, first)) ??
-          sourceFromEnvelope(await host.document.getMetadata(first));
+          await loadWebSource(host, first);
         if (!stale) setFlowSource(src);
       })();
       return () => {
@@ -491,16 +488,12 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
         // Prefer the portable .paged container part, then the metadata label,
         // then the legacy host.storage entry below.
         let src =
-          (await readSourcePart(host, id)) ??
-          sourceFromEnvelope(await host.document.getMetadata(id));
+          await loadWebSource(host, id);
         if (!src) {
           const legacy = host.storage.get<WebFrameSource>(storageKey);
           if (legacy) {
             src = legacy;
-            const out = await host.document.setMetadata(
-              id,
-              envelopeFor(legacy),
-            );
+            const out = await writeWebSource(host, id, legacy);
             if (out.applied) host.storage.delete(storageKey);
           }
         }
@@ -572,8 +565,10 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
     }
     if (!source) {
       const makeFrom = (src: WebFrameSource): void => {
-        void host.document.setMetadata(selection[0], envelopeFor(src));
-        setSource(src);
+        void writeWebSource(host, selection[0], src).then((out) => {
+          if (out.applied) setSource(src);
+          else host.log.warn(`Make web frame: ${out.reason ?? "refused"}`);
+        });
       };
       return (
         <div data-web-panel="convert" style={{ padding: "var(--space-3, 12px)", font: "12px var(--font-sans, sans-serif)" }}>
@@ -619,6 +614,7 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
         id={selection[0]}
         sourceKey={key}
         initial={source}
+        drafts={drafts}
         fontFamilies={fontFamilies}
         onPersisted={setSource}
       />
@@ -635,6 +631,8 @@ interface SourceEditorProps {
   sourceKey: string;
   /** The persisted source this editor session starts from. */
   initial: WebFrameSource;
+  /** Unsaved drafts per frame — the editor starts from a kept one. */
+  drafts: DraftStore;
   fontFamilies: string[];
   /** Reports a successful save so the owner's persisted state tracks. */
   onPersisted(next: WebFrameSource): void;
@@ -646,6 +644,7 @@ function SourceEditor({
   id,
   sourceKey,
   initial,
+  drafts,
   fontFamilies,
   onPersisted,
 }: SourceEditorProps): ReactElement {
@@ -653,8 +652,15 @@ function SourceEditor({
   // by itself. `persisted` mirrors the last successful save for the
   // dirty flag; `preview` is the draft's debounced shadow and drives
   // the iframe + diagnostics (task 2: preview refresh ≠ document write).
-  const [draft, setDraft] = useState<WebFrameSource>(initial);
+  // A draft kept from an earlier visit (or from before an undo remount)
+  // wins over the persisted source, and shows as unsaved.
+  const [draft, setDraft] = useState<WebFrameSource>(() => drafts.get(sourceKey) ?? initial);
   const [persisted, setPersisted] = useState<WebFrameSource>(initial);
+  useEffect(() => {
+    drafts.track(sourceKey, draft, persisted);
+  }, [draft, persisted, sourceKey]);
+  // Why the last save was refused (shown beside the save button).
+  const [saveError, setSaveError] = useState<string | null>(null);
   const preview = useDebouncedValue(draft, PREVIEW_DEBOUNCE_MS);
   // The bundle-owned HTML <textarea> (fallback lane only) — the target
   // the "Find in source" affordance drives the caret in. The host
@@ -782,8 +788,17 @@ function SourceEditor({
   );
   const commit = useCallback(() => {
     const next = draft;
-    void persistDraft(host, id, next).then((applied) => {
-      if (!applied) return;
+    void persistDraft(host, id, next).then(({ applied, reason }) => {
+      if (!applied) {
+        const message = `Not saved: ${reason ?? "the document refused the change"}`;
+        setSaveError(message);
+        host.diagnostics.set(`${sourceKey}#save`, [
+          { severity: "error", message, source: "save" },
+        ]);
+        return;
+      }
+      setSaveError(null);
+      host.diagnostics.set(`${sourceKey}#save`, []);
       setPersisted(next);
       onPersisted(next);
     });
@@ -1115,15 +1130,15 @@ function SourceEditor({
       </label>
       <label style={optionRow}>
         Overflow
-        {/* Declared but FIXED: "clip" is the only honest policy before
-            the engine renders web frames on canvas (W0). A disabled
-            single-option control is the visible seam — never a fake
-            choice. */}
+        {/* Declared but FIXED: "clip" is the only policy implemented
+            (content past the last frame of a flow is reported as overset).
+            A disabled single-option control is the visible seam — never
+            a fake choice. */}
         <select data-web-overflow value="clip" disabled style={{ ...field, opacity: 0.6 }}>
           <option value="clip">clip</option>
         </select>
         <span style={mutedNote}>
-          other policies ship with the engine rendering lane
+          content past the frame is clipped; to continue it, thread the frame into more frames
         </span>
       </label>
       <div style={kicker}>Variables</div>
@@ -1244,6 +1259,11 @@ function SourceEditor({
             ? "Unsaved edits — live in the preview only"
             : "Saved to the document"}
         </span>
+        {saveError && (
+          <span data-web-save-error role="alert" style={{ ...mutedNote, color: "var(--status-error, var(--pg-fg))" }}>
+            {saveError}
+          </span>
+        )}
       </div>
       <div style={kicker}>Preview</div>
       {/* Font badge: W1 honesty + the W-06 flip. When the asset store

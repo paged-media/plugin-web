@@ -22,7 +22,17 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  contentHash,
+  DEFAULT_SOURCE,
   envelopeFor,
+  isWebFrameEnvelope,
+  LABEL_INLINE_MAX_BYTES,
+  LABEL_MAX_BYTES,
+  sourceFromPartText,
+  sourcePartPath,
+  sourceRefOf,
+  storeSource,
+  utf8Length,
   flowChainOf,
   flowGroups,
   MAX_VIEWPORT_WIDTH,
@@ -259,5 +269,58 @@ describe("flow chain — persisted region chain (ADR-020 rung 2)", () => {
   it("a named-flow recipient round-trips through the envelope", () => {
     const s: WebFrameSource = { ...base, flow: { recipients: [{ ...B, flow: "notes" }] } };
     expect(sourceFromEnvelope(envelopeFor(s))).toEqual(s);
+  });
+});
+
+describe("large sources: label pointer + content-addressed part", () => {
+  const small = { ...DEFAULT_SOURCE };
+  const large = { ...DEFAULT_SOURCE, html: "<p>é😀</p>".repeat(12000) };
+
+  it("utf8Length counts UTF-8 bytes (BMP, astral, ASCII)", () => {
+    expect(utf8Length("a")).toBe(1);
+    expect(utf8Length("é")).toBe(2);
+    expect(utf8Length("€")).toBe(3);
+    expect(utf8Length("😀")).toBe(4);
+    expect(utf8Length("<p>é😀</p>")).toBe(new TextEncoder().encode("<p>é😀</p>").length);
+  });
+
+  it("contentHash is 16 hex digits, deterministic, and content-sensitive", () => {
+    expect(contentHash("abc")).toMatch(/^[0-9a-f]{16}$/);
+    expect(contentHash("abc")).toBe(contentHash("abc"));
+    expect(contentHash("abc")).not.toBe(contentHash("abd"));
+  });
+
+  it("a small source stays inline; its label decodes to the source", () => {
+    const stored = storeSource(small);
+    expect(stored.kind).toBe("inline");
+    expect(sourceFromEnvelope(stored.label)).toEqual(small);
+    expect(sourceRefOf(stored.label)).toBeNull();
+    expect(isWebFrameEnvelope(stored.label)).toBe(true);
+  });
+
+  it("a large source becomes a part + a small pointer label that names it", () => {
+    const stored = storeSource(large);
+    expect(stored.kind).toBe("part");
+    if (stored.kind !== "part") return;
+    expect(utf8Length(JSON.stringify(stored.label))).toBeLessThan(LABEL_INLINE_MAX_BYTES);
+    expect(utf8Length(JSON.stringify(stored.label))).toBeLessThan(LABEL_MAX_BYTES);
+    expect(sourceFromEnvelope(stored.label)).toBeNull(); // not an inline source
+    expect(isWebFrameEnvelope(stored.label)).toBe(true); // but still a web frame
+    expect(sourceRefOf(stored.label)).toEqual(stored.ref);
+    expect(sourcePartPath(stored.ref)).toBe(`sources/${stored.ref.hash}.json`);
+    expect(sourceFromPartText(stored.partText, stored.ref)).toEqual(large);
+  });
+
+  it("a part whose content does not match the pointer is never read", () => {
+    const stored = storeSource(large);
+    if (stored.kind !== "part") throw new Error("expected a part");
+    expect(sourceFromPartText(stored.partText.replace("é", "e"), stored.ref)).toBeNull();
+  });
+
+  it("a malformed pointer reads as no pointer", () => {
+    expect(sourceRefOf({ v: 1, data: { ref: { hash: "zz", bytes: 1 } } })).toBeNull();
+    expect(sourceRefOf({ v: 1, data: { ref: "x" } })).toBeNull();
+    expect(sourceRefOf({ v: 2, data: { ref: { hash: "0123456789abcdef", bytes: 1 } } })).toBeNull();
+    expect(isWebFrameEnvelope(null)).toBe(false);
   });
 });

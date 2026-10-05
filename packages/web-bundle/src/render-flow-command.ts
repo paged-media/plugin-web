@@ -36,32 +36,44 @@ import {
   asFrameTarget,
   flowChainOf,
   parseFlowInto,
-  sourceFromEnvelope,
   sourceKeyFor,
   withRecipient,
   withoutRecipient,
+  type FrameTarget,
   type WebFrameSource,
 } from "../../web-model/src";
 
 import { bakeWebFlow, bakeWebFlows, type FlowBakeOutcome } from "./bake";
 import { loadWebEngine } from "./engine-loader";
 import { publishRenderReport } from "./render-report";
-import { persistSource, readSourcePart } from "./source-part";
+import { loadWebSource, writeWebSource } from "./source-part";
 
 /** Diagnostics key suffix for the flow render lane — distinct from the
  *  single-frame render key + the panel lint key so notes don't clobber. */
 const FLOW_DIAG_SUFFIX = "#renderFlow";
 
-/** Read a frame's web source — the container part (preferred) then the
- *  metadata label — or `null` when the frame is not a web frame. */
-async function readFlowSource(
+/** A refused chain write: log it AND publish it where the user sees it. */
+function reportRefusal(
+  host: BundleHost,
+  target: FrameTarget | null,
+  op: string,
+  reason: string | undefined,
+): void {
+  const message = `${op}: the flow chain was not saved — ${reason ?? "refused"}`;
+  host.log.warn(message);
+  if (target) {
+    host.diagnostics.set(sourceKeyFor(target) + FLOW_DIAG_SUFFIX, [
+      { severity: "error", message, source: "render" },
+    ]);
+  }
+}
+
+/** Read a frame's web source, or `null` when the frame is not a web frame. */
+function readFlowSource(
   host: BundleHost,
   id: ElementId,
 ): Promise<WebFrameSource | null> {
-  return (
-    (await readSourcePart(host, id)) ??
-    sourceFromEnvelope(await host.document.getMetadata(id))
-  );
+  return loadWebSource(host, id);
 }
 
 /**
@@ -211,7 +223,11 @@ export async function threadSelectedIntoFlow(
     return;
   }
 
-  await persistSource(host, sourceId, next);
+  const written = await writeWebSource(host, sourceId, next);
+  if (!written.applied) {
+    reportRefusal(host, sourceTarget, "threadWebFlow", written.reason);
+    return;
+  }
   const chainLength = (next.flow?.recipients.length ?? 0) + 1;
   host.log.info(
     `threadWebFlow: threaded ${added} frame(s) — flow chain length ${chainLength}`,
@@ -300,6 +316,10 @@ export async function unthreadSelectedFromFlow(
     return;
   }
 
-  await persistSource(host, sourceId, next);
+  const written = await writeWebSource(host, sourceId, next);
+  if (!written.applied) {
+    reportRefusal(host, asFrameTarget(sourceId), "unthreadWebFlow", written.reason);
+    return;
+  }
   host.log.info(`unthreadWebFlow: removed ${removed} frame(s) from the flow`);
 }

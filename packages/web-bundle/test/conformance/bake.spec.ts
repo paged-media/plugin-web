@@ -38,7 +38,7 @@ import { webBundle } from "../../src";
 import { sceneLayerToBakePlan } from "../../src/bake-plan";
 import { bakeWebFrameToDocument, bakeWebFlowToDocument } from "../../src/bake-to-document";
 import { parseSceneLayer, parseFlowResult, type WebEngine } from "../../src/engine-loader";
-import { persistSource } from "../../src/source-part";
+import { writeWebSource } from "../../src/source-part";
 import { W1_EMPTY_PAGE } from "../fixtures/corpus";
 import { openHost } from "./host";
 
@@ -92,7 +92,7 @@ describe.skipIf(!artifactPresent)(
       );
       await (c!.value as { handler: (a: unknown) => unknown }).handler(undefined);
       frame = h.host.selection.get()[0];
-      await persistSource(h.host, frame, SOURCE);
+      await writeWebSource(h.host, frame, SOURCE);
 
       // Load the REAL Blitz engine (Node has no relative fetch → initSync).
       const glue = (await import(new URL("../../bin/blitz_web.js", import.meta.url).href)) as {
@@ -173,7 +173,7 @@ describe.skipIf(!artifactPresent)(
       const rcp = h.host.selection.get()[0];
 
       const many = Array.from({ length: 24 }, (_v, i) => `<p>Row ${i}</p>`).join("");
-      await persistSource(h.host, src, {
+      await writeWebSource(h.host, src, {
         ...SOURCE,
         html: many,
         css: "body{margin:0}p{margin:0;font-size:14px;line-height:20px}",
