@@ -1,0 +1,149 @@
+{
+ "items": [
+  {
+   "kind": "rectangle",
+   "bounds": [
+    42,
+    42,
+    162,
+    330
+   ],
+   "fill": "Color/wb-ffffff",
+   "shadow": true
+  },
+  {
+   "kind": "rectangle",
+   "bounds": [
+    67.5,
+    49.5,
+    79.5,
+    139.5
+   ],
+   "fill": "Gradient/wb-ae553a67"
+  },
+  {
+   "kind": "rectangle",
+   "bounds": [
+    85.5,
+    49.5,
+    97.5,
+    79.5
+   ],
+   "fill": "Color/wb-0000ff",
+   "opacity": 50
+  },
+  {
+   "kind": "polygon",
+   "bounds": [
+    103.5,
+    49.5,
+    130.5,
+    99
+   ],
+   "subpaths": 4,
+   "stroke": "Swatch/None",
+   "fill": "Color/wb-333333"
+  },
+  {
+   "kind": "rectangle",
+   "bounds": [
+    136.5,
+    49.5,
+    154.5,
+    67.5
+   ],
+   "image": true
+  },
+  {
+   "kind": "textFrame",
+   "bounds": [
+    49.8046875,
+    49.5,
+    61.601806640625,
+    86.1962890625
+   ],
+   "text": "Slanted",
+   "pointSize": 9.75,
+   "textFill": "Color/wb-222222",
+   "family": "Inter",
+   "fontStyle": "Italic"
+  },
+  {
+   "kind": "textFrame",
+   "bounds": [
+    49.8046875,
+    84.101074,
+    61.601806640625,
+    108.790771265625
+   ],
+   "text": " and ",
+   "pointSize": 9.75,
+   "textFill": "Color/wb-222222",
+   "family": "Inter"
+  },
+  {
+   "kind": "textFrame",
+   "bounds": [
+    49.8046875,
+    106.79077,
+    61.601806640625,
+    163.68689
+   ],
+   "text": "heavy slant",
+   "pointSize": 9.75,
+   "textFill": "Color/wb-222222",
+   "family": "Inter",
+   "fontStyle": "Bold Italic"
+  }
+ ],
+ "swatches": [
+  {
+   "name": "Color/wb-000000",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "name": "Color/wb-ffffff",
+   "rgb": [
+    255,
+    255,
+    255
+   ]
+  },
+  {
+   "name": "Color/wb-222222",
+   "rgb": [
+    34,
+    34,
+    34
+   ]
+  },
+  {
+   "name": "Color/wb-ff0000",
+   "rgb": [
+    255,
+    0,
+    0
+   ]
+  },
+  {
+   "name": "Color/wb-0000ff",
+   "rgb": [
+    0,
+    0,
+    255
+   ]
+  },
+  {
+   "name": "Color/wb-333333",
+   "rgb": [
+    51,
+    51,
+    51
+   ]
+  }
+ ]
+}

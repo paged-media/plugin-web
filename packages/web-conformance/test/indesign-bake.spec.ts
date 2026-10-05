@@ -33,6 +33,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
+import { engineExtras } from "../../web-bundle/src/engine-loader";
 import { expectedFrom, frameOf, loadInter, recordBake, toPagedScript, type Expected } from "../indesign/bake-lane";
 
 const HERE = fileURLToPath(new URL("../indesign/", import.meta.url));
@@ -43,7 +44,8 @@ const TOL_PT = 0.5;
 
 /** Pinned disagreements with InDesign: `<fixture>/<check>` -> defect. */
 const DEFECTS: Record<string, string> = {
-  "card/source intent: font style": "IB-01 the bake drops font weight and style: an <h1> (bold) arrives in InDesign as Inter Regular",
+  "fidelity/each run in its own face":
+    "IB-02 a bold italic run arrives in InDesign as Inter Italic: the staged Inter face offers InDesign no Bold Italic",
 };
 
 /** What the SOURCE asked for, beyond what the bake plan records. */
@@ -67,13 +69,15 @@ function split(doc: string): { html: string; css: string } {
   return { html: html.trim(), css: css.trim() };
 }
 
-async function render(): Promise<(h: string, w: number, ht: number) => string> {
-  const glue = (await import(new URL("../../web-bundle/bin/blitz_web.js", import.meta.url).href)) as {
-    initSync: (m: { module: Uint8Array }) => unknown;
-    render_web_frame: (h: string, w: number, ht: number) => string;
-  };
-  glue.initSync({ module: readFileSync(BIN + "blitz_web_bg.wasm") });
-  return glue.render_web_frame;
+interface Glue {
+  initSync: (m: { module: Uint8Array }) => unknown;
+  render_web_frame: (h: string, w: number, ht: number) => string;
+}
+
+async function glue(): Promise<Glue> {
+  const g = (await import(new URL("../../web-bundle/bin/blitz_web.js", import.meta.url).href)) as Glue;
+  g.initSync({ module: readFileSync(BIN + "blitz_web_bg.wasm") });
+  return g;
 }
 
 if (process.env.REQUIRE_REAL_ENGINE === "1" && !present) {
@@ -89,7 +93,8 @@ describe.skipIf(!present)("InDesign lane: bake -> paged script -> IDML", () => {
     const doc = readFileSync(join(HERE, "fixtures", `${name}.html`), "utf8");
     const { widthPt, heightPt } = frameOf(doc);
     const { html, css } = split(doc);
-    const ops = await recordBake(html, css, widthPt, heightPt, await render(), loadInter(FONT));
+    const g = await glue();
+    const ops = await recordBake(html, css, widthPt, heightPt, g.render_web_frame, loadInter(FONT), engineExtras(g as never));
     const script = toPagedScript(ops, `${name}: ${widthPt}x${heightPt} pt web frame at (36, 36), baked`);
     const scriptPath = join(HERE, "scripts", `${name}.js`);
     const expectedPath = join(HERE, "scripts", `${name}.expected.json`);
@@ -116,6 +121,13 @@ interface Answer {
     textFill?: string;
     fontStyle?: string;
     baseline?: number;
+    font?: string;
+    stroke?: string;
+    strokeWeight?: number;
+    opacity?: number;
+    shadow?: string;
+    paths?: number;
+    graphics?: number;
   }[];
   swatches: { name: string; space: string; value: number[] }[];
 }
@@ -165,6 +177,25 @@ describe("InDesign lane: InDesign's answer matches the bake", () => {
         if (e.kind !== "textFrame") return;
         const want = e.bounds[0] + INTER_ASCENT * (e.pointSize ?? 0);
         expect(Math.abs((ans.items[i].baseline ?? NaN) - want), `${e.text}: ${ans.items[i].baseline} vs ${want}`).toBeLessThanOrEqual(TOL_PT);
+      });
+    });
+    check("each run in its own face", () => {
+      exp.items.forEach((e, i) => {
+        if (e.kind !== "textFrame" || !e.family) return;
+        expect(ans.items[i].font?.split("\t")[0], e.text).toBe(e.family);
+        expect(ans.items[i].fontStyle, e.text).toBe(e.fontStyle ?? "Regular");
+      });
+    });
+    check("strokes, opacity, shadows, subpaths and images survive", () => {
+      exp.items.forEach((e, i) => {
+        const a = ans.items[i];
+        const what = `item ${i} (${e.kind})`;
+        expect(a.stroke, what).toBe((e.stroke ?? "None").replace(/^Swatch\//, ""));
+        if (e.strokeWeight !== undefined) expect(a.strokeWeight, what).toBeCloseTo(e.strokeWeight, 2);
+        expect(a.opacity ?? 100, what).toBeCloseTo(e.opacity ?? 100, 0);
+        if (e.shadow) expect(a.shadow, what).toBe("DROP");
+        if (e.subpaths) expect(a.paths, what).toBe(e.subpaths);
+        if (e.image) expect(a.graphics, what).toBe(1);
       });
     });
     if (INTENT[name]) {

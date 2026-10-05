@@ -26,11 +26,13 @@
     44.71875,
     45,
     62.8681640625,
-    160.115234375
+    165.75488
    ],
    "text": "Quarterly report",
    "pointSize": 15,
-   "textFill": "Color/wb-1d3557"
+   "textFill": "Color/wb-1d3557",
+   "family": "Inter",
+   "fontStyle": "Bold"
   },
   {
    "kind": "textFrame",
@@ -42,7 +44,8 @@
    ],
    "text": "Revenue grew in every region.",
    "pointSize": 9.75,
-   "textFill": "Color/wb-333333"
+   "textFill": "Color/wb-333333",
+   "family": "Inter"
   },
   {
    "kind": "textFrame",
@@ -54,7 +57,8 @@
    ],
    "text": "Costs stayed flat.",
    "pointSize": 9.75,
-   "textFill": "Color/wb-333333"
+   "textFill": "Color/wb-333333",
+   "family": "Inter"
   }
  ],
  "swatches": [
