@@ -158,10 +158,19 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
 
 The as-built detail of the flow lane is in [`design/flow-fragmentation.md`](design/flow-fragmentation.md).
 
+Work counts before and after the optimisations (one batch per bake, linear run matching,
+band-only flow paint, one font context per engine) are in
+[`design/perf-baseline-2026-10-05.md`](design/perf-baseline-2026-10-05.md); layout parity with
+Chrome, with every open defect and its upstream cause, is in
+`packages/web-conformance/chrome/PARITY.md` and `UPSTREAM.md`.
+
 ## CI
 
 `vitest` (push, pull request) builds the engine wasm from the checkout and fails on a red
-spec; `rust` (push, pull request) runs `cargo fmt --check`, clippy with `-D warnings` for both
-feature sets and `cargo test` with and without `blitz`; `publish` runs only after a green
+spec — that includes the count budgets of the host side (`test/perf`), the replay of the Chrome
+recordings and the InDesign lane's committed scripts and answers (`packages/web-conformance`);
+`rust` (push, pull request) runs `cargo fmt --check`, clippy with `-D warnings` for every
+feature set, `cargo test` with and without `blitz` (the Chrome and flow parity replays, break
+rules, faces and resources) and the engine count budgets (`--features blitz,perf-counters`); `publish` runs only after a green
 `vitest` push run, waits for `rust` on the same commit, tests again, and fails when the
 sources changed since the published version without a version bump.
