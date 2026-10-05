@@ -1,0 +1,95 @@
+{
+ "fixture": "paint-borders-radius",
+ "width": 240,
+ "height": 1000,
+ "sourceSha256": "84edb076f866fed4e2b182bb51df1a08892d6d549319f825e933583e744e96c2",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "r",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 8,
+   "y": 8,
+   "w": 224,
+   "h": 48
+  },
+  {
+   "id": "mixed",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 8,
+   "y": 64,
+   "w": 224,
+   "h": 47
+  },
+  {
+   "id": "circle",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 8,
+   "y": 119,
+   "w": 60,
+   "h": 60
+  },
+  {
+   "id": "grad",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 8,
+   "y": 187,
+   "w": 224,
+   "h": 40
+  },
+  {
+   "id": "shadow",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 8,
+   "y": 235,
+   "w": 224,
+   "h": 40
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "r",
+   "text": "Rounded with border.",
+   "top": 22,
+   "bottom": 42,
+   "left": 22,
+   "right": 184.063
+  },
+  {
+   "owner": "mixed",
+   "text": "Mixed borders.",
+   "top": 80,
+   "bottom": 100,
+   "left": 20,
+   "right": 133.688
+  },
+  {
+   "owner": "grad",
+   "text": "Gradient background.",
+   "top": 197,
+   "bottom": 217,
+   "left": 18,
+   "right": 182.125
+  },
+  {
+   "owner": "shadow",
+   "text": "Box shadow.",
+   "top": 245,
+   "bottom": 265,
+   "left": 18,
+   "right": 113.453
+  }
+ ],
+ "scrollHeight": 1000
+}

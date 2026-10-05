@@ -1,0 +1,113 @@
+{
+ "fixture": "text-justify",
+ "width": 400,
+ "height": 1000,
+ "sourceSha256": "123c73f4d714761ef3f5ab7b378c0fde84960dafc58eafdaae3850b0b9a45d22",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "j1",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 400,
+   "h": 100
+  },
+  {
+   "id": "j2",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 108,
+   "w": 400,
+   "h": 100
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "j1",
+   "text": "Justified text spreads the spaces of every line but ",
+   "top": 0,
+   "bottom": 20,
+   "left": 0,
+   "right": 400
+  },
+  {
+   "owner": "j1",
+   "text": "the last. Alpha bravo charlie delta echo foxtrot golf ",
+   "top": 20,
+   "bottom": 40,
+   "left": 0,
+   "right": 400
+  },
+  {
+   "owner": "j1",
+   "text": "hotel india juliet kilo lima mike november oscar papa ",
+   "top": 40,
+   "bottom": 60,
+   "left": 0,
+   "right": 400
+  },
+  {
+   "owner": "j1",
+   "text": "quebec romeo sierra tango uniform victor whiskey ",
+   "top": 60,
+   "bottom": 80,
+   "left": 0,
+   "right": 400
+  },
+  {
+   "owner": "j1",
+   "text": "xray yankee zulu.",
+   "top": 80,
+   "bottom": 100,
+   "left": 0,
+   "right": 132.172
+  },
+  {
+   "owner": "j2",
+   "text": "Justified with the last line justified too. Alpha bravo ",
+   "top": 108,
+   "bottom": 128,
+   "left": 0,
+   "right": 400
+  },
+  {
+   "owner": "j2",
+   "text": "charlie delta echo foxtrot golf hotel india juliet kilo ",
+   "top": 128,
+   "bottom": 148,
+   "left": 0,
+   "right": 400
+  },
+  {
+   "owner": "j2",
+   "text": "lima mike november oscar papa quebec romeo ",
+   "top": 148,
+   "bottom": 168,
+   "left": 0,
+   "right": 400
+  },
+  {
+   "owner": "j2",
+   "text": "sierra tango uniform victor whiskey xray yankee ",
+   "top": 168,
+   "bottom": 188,
+   "left": 0,
+   "right": 400
+  },
+  {
+   "owner": "j2",
+   "text": "zulu.",
+   "top": 188,
+   "bottom": 208,
+   "left": 0,
+   "right": 36.25
+  }
+ ],
+ "scrollHeight": 1000
+}

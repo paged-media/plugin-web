@@ -1,0 +1,155 @@
+{
+ "fixture": "inline-bold-italic",
+ "width": 240,
+ "height": 1000,
+ "sourceSha256": "d6cd57adc01c5cf301f844f63a97c4e08a2396570ba51890b3b064dd9c1ac10a",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "p1",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 240,
+   "h": 80
+  },
+  {
+   "id": "p2",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 88,
+   "w": 240,
+   "h": 47.172
+  },
+  {
+   "id": "p3",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 143.172,
+   "w": 240,
+   "h": 160
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "p1",
+   "text": "Plain text then bold words in ",
+   "top": 0,
+   "bottom": 20,
+   "left": 0,
+   "right": 216.297
+  },
+  {
+   "owner": "p1",
+   "text": "the middle and italic words ",
+   "top": 20,
+   "bottom": 40,
+   "left": 0,
+   "right": 205.375
+  },
+  {
+   "owner": "p1",
+   "text": "after them and back to plain for ",
+   "top": 40,
+   "bottom": 60,
+   "left": 0,
+   "right": 236.656
+  },
+  {
+   "owner": "p1",
+   "text": "the end of the paragraph.",
+   "top": 60,
+   "bottom": 80,
+   "left": 0,
+   "right": 192.781
+  },
+  {
+   "owner": "p2",
+   "text": "Strong emphasis underline",
+   "top": 88,
+   "bottom": 108,
+   "left": 0,
+   "right": 204.547
+  },
+  {
+   "owner": "p2",
+   "text": "strike code small sub sup text.",
+   "top": 108,
+   "bottom": 134.516,
+   "left": 0,
+   "right": 213.625
+  },
+  {
+   "owner": "p3",
+   "text": "A whole paragraph in bold ",
+   "top": 143.172,
+   "bottom": 163.172,
+   "left": 0,
+   "right": 203.844
+  },
+  {
+   "owner": "p3",
+   "text": "weight. Alpha bravo charlie ",
+   "top": 163.172,
+   "bottom": 183.172,
+   "left": 0,
+   "right": 213.188
+  },
+  {
+   "owner": "p3",
+   "text": "delta echo foxtrot golf hotel ",
+   "top": 183.172,
+   "bottom": 203.172,
+   "left": 0,
+   "right": 215.969
+  },
+  {
+   "owner": "p3",
+   "text": "india juliet kilo lima mike ",
+   "top": 203.172,
+   "bottom": 223.172,
+   "left": 0,
+   "right": 189.266
+  },
+  {
+   "owner": "p3",
+   "text": "november oscar papa quebec ",
+   "top": 223.172,
+   "bottom": 243.172,
+   "left": 0,
+   "right": 232.25
+  },
+  {
+   "owner": "p3",
+   "text": "romeo sierra tango uniform ",
+   "top": 243.172,
+   "bottom": 263.172,
+   "left": 0,
+   "right": 212.75
+  },
+  {
+   "owner": "p3",
+   "text": "victor whiskey xray yankee ",
+   "top": 263.172,
+   "bottom": 283.172,
+   "left": 0,
+   "right": 212.344
+  },
+  {
+   "owner": "p3",
+   "text": "zulu.",
+   "top": 283.172,
+   "bottom": 303.172,
+   "left": 0,
+   "right": 38.781
+  }
+ ],
+ "scrollHeight": 1000
+}

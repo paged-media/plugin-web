@@ -1,0 +1,25 @@
+{
+ "fixture": "flow-headings-margins",
+ "frames": [
+  {
+   "widthPx": 300,
+   "heightPx": 180
+  },
+  {
+   "widthPx": 300,
+   "heightPx": 180
+  },
+  {
+   "widthPx": 300,
+   "heightPx": 180
+  }
+ ],
+ "sourceSha256": "4283741241d8780be2d223d8220ffbb32000d369a3b833ad951eb6a437eb1c42",
+ "chrome": "153.0.8010.12",
+ "frameText": [
+  "Section 1 Section 1 body. Alpha bravo charlie delta echo foxtrot golf hotel. Alpha bravo charlie delta echo foxtrot golf hotel. Section 2",
+  "Section 2 body. Alpha bravo charlie delta echo foxtrot golf hotel. Alpha bravo charlie delta echo foxtrot golf hotel. Section 3 Section 3 body. Alpha bravo charlie delta echo foxtrot golf hotel. Alpha",
+  "bravo charlie delta echo foxtrot golf hotel. Section 4 Section 4 body. Alpha bravo charlie delta echo foxtrot golf hotel. Alpha bravo charlie delta echo foxtrot golf hotel."
+ ],
+ "oversetText": ""
+}

@@ -1,0 +1,247 @@
+{
+ "fixture": "inline-font-sizes",
+ "width": 240,
+ "height": 1000,
+ "sourceSha256": "936f119595b378674bb91bd4709e828a36d458f037e70f77b240877d002a2d48",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "p1",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 12,
+   "w": 240,
+   "h": 75
+  },
+  {
+   "id": "p2",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 111,
+   "w": 240,
+   "h": 60
+  },
+  {
+   "id": "p3",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 195,
+   "w": 240,
+   "h": 201.578
+  },
+  {
+   "id": "p4",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 412.578,
+   "w": 240,
+   "h": 210
+  },
+  {
+   "id": "p5",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 638.578,
+   "w": 240,
+   "h": 50
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "p1",
+   "text": "Twelve pixel text. Alpha bravo charlie ",
+   "top": 12,
+   "bottom": 27,
+   "left": 0,
+   "right": 210.797
+  },
+  {
+   "owner": "p1",
+   "text": "delta echo foxtrot golf hotel india juliet ",
+   "top": 27,
+   "bottom": 42,
+   "left": 0,
+   "right": 217.344
+  },
+  {
+   "owner": "p1",
+   "text": "kilo lima mike november oscar papa ",
+   "top": 42,
+   "bottom": 57,
+   "left": 0,
+   "right": 203.359
+  },
+  {
+   "owner": "p1",
+   "text": "quebec romeo sierra tango uniform victor ",
+   "top": 57,
+   "bottom": 72,
+   "left": 0,
+   "right": 235.922
+  },
+  {
+   "owner": "p1",
+   "text": "whiskey xray yankee zulu.",
+   "top": 72,
+   "bottom": 87,
+   "left": 0,
+   "right": 148.484
+  },
+  {
+   "owner": "p2",
+   "text": "Twenty-four pixel ",
+   "top": 111,
+   "bottom": 140,
+   "left": 0,
+   "right": 198.703
+  },
+  {
+   "owner": "p2",
+   "text": "text wraps sooner.",
+   "top": 141,
+   "bottom": 170,
+   "left": 0,
+   "right": 209.578
+  },
+  {
+   "owner": "p3",
+   "text": "Line height one point eight. ",
+   "top": 199,
+   "bottom": 219,
+   "left": 0,
+   "right": 205.531
+  },
+  {
+   "owner": "p3",
+   "text": "Alpha bravo charlie delta echo ",
+   "top": 227.797,
+   "bottom": 247.797,
+   "left": 0,
+   "right": 230
+  },
+  {
+   "owner": "p3",
+   "text": "foxtrot golf hotel india juliet kilo ",
+   "top": 256.594,
+   "bottom": 276.594,
+   "left": 0,
+   "right": 236.359
+  },
+  {
+   "owner": "p3",
+   "text": "lima mike november oscar ",
+   "top": 285.391,
+   "bottom": 305.391,
+   "left": 0,
+   "right": 198.141
+  },
+  {
+   "owner": "p3",
+   "text": "papa quebec romeo sierra ",
+   "top": 314.188,
+   "bottom": 334.188,
+   "left": 0,
+   "right": 199.453
+  },
+  {
+   "owner": "p3",
+   "text": "tango uniform victor whiskey ",
+   "top": 342.984,
+   "bottom": 362.984,
+   "left": 0,
+   "right": 218.797
+  },
+  {
+   "owner": "p3",
+   "text": "xray yankee zulu.",
+   "top": 371.781,
+   "bottom": 391.781,
+   "left": 0,
+   "right": 132.172
+  },
+  {
+   "owner": "p4",
+   "text": "Line height thirty pixels. Alpha ",
+   "top": 417.578,
+   "bottom": 437.578,
+   "left": 0,
+   "right": 227.719
+  },
+  {
+   "owner": "p4",
+   "text": "bravo charlie delta echo foxtrot ",
+   "top": 447.578,
+   "bottom": 467.578,
+   "left": 0,
+   "right": 236.391
+  },
+  {
+   "owner": "p4",
+   "text": "golf hotel india juliet kilo lima ",
+   "top": 477.578,
+   "bottom": 497.578,
+   "left": 0,
+   "right": 217.547
+  },
+  {
+   "owner": "p4",
+   "text": "mike november oscar papa ",
+   "top": 507.578,
+   "bottom": 527.578,
+   "left": 0,
+   "right": 205.266
+  },
+  {
+   "owner": "p4",
+   "text": "quebec romeo sierra tango ",
+   "top": 537.578,
+   "bottom": 557.578,
+   "left": 0,
+   "right": 204.734
+  },
+  {
+   "owner": "p4",
+   "text": "uniform victor whiskey xray ",
+   "top": 567.578,
+   "bottom": 587.578,
+   "left": 0,
+   "right": 208.141
+  },
+  {
+   "owner": "p4",
+   "text": "yankee zulu.",
+   "top": 597.578,
+   "bottom": 617.578,
+   "left": 0,
+   "right": 95.172
+  },
+  {
+   "owner": "p5",
+   "text": "Mixed large and small inline ",
+   "top": 638.578,
+   "bottom": 667.578,
+   "left": 0,
+   "right": 217.969
+  },
+  {
+   "owner": "p5",
+   "text": "sizes on one line.",
+   "top": 668.578,
+   "bottom": 688.578,
+   "left": 0,
+   "right": 130.766
+  }
+ ],
+ "scrollHeight": 1000
+}

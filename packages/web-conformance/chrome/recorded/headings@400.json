@@ -1,0 +1,139 @@
+{
+ "fixture": "headings",
+ "width": 400,
+ "height": 1000,
+ "sourceSha256": "c3a08468bf33ab77cdc71a993bec04eb1d3f9abc10db1724c67cfb9e7a04b6db",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "h1",
+   "tag": "h1",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 21.438,
+   "w": 400,
+   "h": 40
+  },
+  {
+   "id": "h2",
+   "tag": "h2",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 82.875,
+   "w": 400,
+   "h": 30
+  },
+  {
+   "id": "h3",
+   "tag": "h3",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 132.781,
+   "w": 400,
+   "h": 23.391
+  },
+  {
+   "id": "p",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 174.891,
+   "w": 400,
+   "h": 40
+  },
+  {
+   "id": "bq",
+   "tag": "blockquote",
+   "display": "block",
+   "position": "static",
+   "x": 40,
+   "y": 230.891,
+   "w": 320,
+   "h": 20
+  },
+  {
+   "id": "hr",
+   "tag": "hr",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 266.891,
+   "w": 400,
+   "h": 2
+  },
+  {
+   "id": "pre",
+   "tag": "pre",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 284.891,
+   "w": 400,
+   "h": 20
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "h1",
+   "text": "Heading one",
+   "top": 21.438,
+   "bottom": 60.438,
+   "left": 0,
+   "right": 197.031
+  },
+  {
+   "owner": "h2",
+   "text": "Heading two",
+   "top": 82.875,
+   "bottom": 111.875,
+   "left": 0,
+   "right": 147.875
+  },
+  {
+   "owner": "h3",
+   "text": "Heading three",
+   "top": 132.781,
+   "bottom": 155.781,
+   "left": 0,
+   "right": 128.938
+  },
+  {
+   "owner": "p",
+   "text": "Body paragraph under default user-agent heading ",
+   "top": 174.891,
+   "bottom": 194.891,
+   "left": 0,
+   "right": 379.766
+  },
+  {
+   "owner": "p",
+   "text": "margins and sizes.",
+   "top": 194.891,
+   "bottom": 214.891,
+   "left": 0,
+   "right": 140.891
+  },
+  {
+   "owner": "bq",
+   "text": "A blockquote with default indentation.",
+   "top": 230.891,
+   "bottom": 250.891,
+   "left": 40,
+   "right": 326.344
+  },
+  {
+   "owner": "pre",
+   "text": "pre text",
+   "top": 284.891,
+   "bottom": 304.891,
+   "left": 0,
+   "right": 57.719
+  }
+ ],
+ "scrollHeight": 1000
+}

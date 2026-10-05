@@ -1,0 +1,25 @@
+{
+ "fixture": "flow-forced-break",
+ "frames": [
+  {
+   "widthPx": 240,
+   "heightPx": 200
+  },
+  {
+   "widthPx": 240,
+   "heightPx": 200
+  },
+  {
+   "widthPx": 240,
+   "heightPx": 200
+  }
+ ],
+ "sourceSha256": "96c3bd27d6cae540106fd1400b45d5738a8fc8317be40b32ed87dede726a3c22",
+ "chrome": "153.0.8010.12",
+ "frameText": [
+  "Paragraph 1 of 3. Alpha bravo charlie delta echo foxtrot golf hotel. Paragraph 2 of 3. Alpha bravo charlie delta echo foxtrot golf hotel. Paragraph 3 of 3. Alpha bravo charlie delta echo foxtrot golf hotel.",
+  "Forced break before this paragraph. Paragraph 1 of 2. Alpha bravo charlie delta echo foxtrot golf hotel. Paragraph 2 of 2. Alpha bravo charlie delta echo foxtrot golf hotel.",
+  ""
+ ],
+ "oversetText": ""
+}

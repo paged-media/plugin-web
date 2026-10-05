@@ -1,0 +1,143 @@
+{
+ "fixture": "floats",
+ "width": 240,
+ "height": 1000,
+ "sourceSha256": "9762f15c0df4c407689d05b2bc2d6bd498bc7292f82bf8ca6cfc96a2dfd91cc6",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "wrap",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 240,
+   "h": 180
+  },
+  {
+   "id": "fl",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 80,
+   "h": 50
+  },
+  {
+   "id": "fr",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 180,
+   "y": 0,
+   "w": 60,
+   "h": 30
+  },
+  {
+   "id": "p",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 240,
+   "h": 180
+  },
+  {
+   "id": "clear",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 180,
+   "w": 240,
+   "h": 20
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "p",
+   "text": "Text flows ",
+   "top": 0,
+   "bottom": 20,
+   "left": 88,
+   "right": 165.469
+  },
+  {
+   "owner": "p",
+   "text": "around both ",
+   "top": 20,
+   "bottom": 40,
+   "left": 88,
+   "right": 179.641
+  },
+  {
+   "owner": "p",
+   "text": "floats. Alpha bravo ",
+   "top": 40,
+   "bottom": 60,
+   "left": 88,
+   "right": 229.672
+  },
+  {
+   "owner": "p",
+   "text": "charlie delta echo foxtrot golf ",
+   "top": 60,
+   "bottom": 80,
+   "left": 0,
+   "right": 222.75
+  },
+  {
+   "owner": "p",
+   "text": "hotel india juliet kilo lima mike ",
+   "top": 80,
+   "bottom": 100,
+   "left": 0,
+   "right": 223.984
+  },
+  {
+   "owner": "p",
+   "text": "november oscar papa quebec ",
+   "top": 100,
+   "bottom": 120,
+   "left": 0,
+   "right": 226.484
+  },
+  {
+   "owner": "p",
+   "text": "romeo sierra tango uniform ",
+   "top": 120,
+   "bottom": 140,
+   "left": 0,
+   "right": 206
+  },
+  {
+   "owner": "p",
+   "text": "victor whiskey xray yankee ",
+   "top": 140,
+   "bottom": 160,
+   "left": 0,
+   "right": 204.438
+  },
+  {
+   "owner": "p",
+   "text": "zulu.",
+   "top": 160,
+   "bottom": 180,
+   "left": 0,
+   "right": 36.25
+  },
+  {
+   "owner": "clear",
+   "text": "Cleared below.",
+   "top": 180,
+   "bottom": 200,
+   "left": 0,
+   "right": 112.25
+  }
+ ],
+ "scrollHeight": 1000
+}

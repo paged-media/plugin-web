@@ -1,0 +1,187 @@
+{
+ "fixture": "lists",
+ "width": 240,
+ "height": 1000,
+ "sourceSha256": "e7375eb90e8814832544e8cb170e8e0c1518c93fb4c47a9d714ac62625eb5193",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "ul",
+   "tag": "ul",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 240,
+   "h": 220
+  },
+  {
+   "id": "u1",
+   "tag": "li",
+   "display": "list-item",
+   "position": "static",
+   "x": 28,
+   "y": 0,
+   "w": 212,
+   "h": 20
+  },
+  {
+   "id": "u2",
+   "tag": "li",
+   "display": "list-item",
+   "position": "static",
+   "x": 28,
+   "y": 20,
+   "w": 212,
+   "h": 180
+  },
+  {
+   "id": "u3",
+   "tag": "li",
+   "display": "list-item",
+   "position": "static",
+   "x": 28,
+   "y": 200,
+   "w": 212,
+   "h": 20
+  },
+  {
+   "id": "ol",
+   "tag": "ol",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 228,
+   "w": 240,
+   "h": 40
+  },
+  {
+   "id": "o1",
+   "tag": "li",
+   "display": "list-item",
+   "position": "static",
+   "x": 28,
+   "y": 228,
+   "w": 212,
+   "h": 20
+  },
+  {
+   "id": "o2",
+   "tag": "li",
+   "display": "list-item",
+   "position": "static",
+   "x": 28,
+   "y": 248,
+   "w": 212,
+   "h": 20
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "u1",
+   "text": "First bullet item.",
+   "top": 0,
+   "bottom": 20,
+   "left": 28,
+   "right": 148.5
+  },
+  {
+   "owner": "u2",
+   "text": "Second bullet item wraps ",
+   "top": 20,
+   "bottom": 40,
+   "left": 28,
+   "right": 219.297
+  },
+  {
+   "owner": "u2",
+   "text": "onto a second line because ",
+   "top": 40,
+   "bottom": 60,
+   "left": 28,
+   "right": 235.641
+  },
+  {
+   "owner": "u2",
+   "text": "it is long enough. Alpha ",
+   "top": 60,
+   "bottom": 80,
+   "left": 28,
+   "right": 205.047
+  },
+  {
+   "owner": "u2",
+   "text": "bravo charlie delta echo ",
+   "top": 80,
+   "bottom": 100,
+   "left": 28,
+   "right": 210.344
+  },
+  {
+   "owner": "u2",
+   "text": "foxtrot golf hotel india juliet ",
+   "top": 100,
+   "bottom": 120,
+   "left": 28,
+   "right": 233.734
+  },
+  {
+   "owner": "u2",
+   "text": "kilo lima mike november ",
+   "top": 120,
+   "bottom": 140,
+   "left": 28,
+   "right": 209.922
+  },
+  {
+   "owner": "u2",
+   "text": "oscar papa quebec romeo ",
+   "top": 140,
+   "bottom": 160,
+   "left": 28,
+   "right": 226.859
+  },
+  {
+   "owner": "u2",
+   "text": "sierra tango uniform victor ",
+   "top": 160,
+   "bottom": 180,
+   "left": 28,
+   "right": 228.422
+  },
+  {
+   "owner": "u2",
+   "text": "whiskey xray yankee zulu.",
+   "top": 180,
+   "bottom": 200,
+   "left": 28,
+   "right": 225.984
+  },
+  {
+   "owner": "u3",
+   "text": "Third.",
+   "top": 200,
+   "bottom": 220,
+   "left": 28,
+   "right": 71.828
+  },
+  {
+   "owner": "o1",
+   "text": "Numbered one.",
+   "top": 228,
+   "bottom": 248,
+   "left": 28,
+   "right": 145.031
+  },
+  {
+   "owner": "o2",
+   "text": "Numbered two.",
+   "top": 248,
+   "bottom": 268,
+   "left": 28,
+   "right": 144.516
+  }
+ ],
+ "scrollHeight": 1000
+}

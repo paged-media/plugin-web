@@ -1,0 +1,167 @@
+{
+ "fixture": "lists-long",
+ "width": 400,
+ "height": 1000,
+ "sourceSha256": "965583af170a09b059f220b96191cfc902488bbfbdb91f4bf8428c0fd0b321f2",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "ul",
+   "tag": "ul",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 400,
+   "h": 160
+  },
+  {
+   "id": "i1",
+   "tag": "li",
+   "display": "list-item",
+   "position": "static",
+   "x": 24,
+   "y": 0,
+   "w": 376,
+   "h": 20
+  },
+  {
+   "id": "i2",
+   "tag": "li",
+   "display": "list-item",
+   "position": "static",
+   "x": 24,
+   "y": 20,
+   "w": 376,
+   "h": 20
+  },
+  {
+   "id": "i3",
+   "tag": "li",
+   "display": "list-item",
+   "position": "static",
+   "x": 24,
+   "y": 40,
+   "w": 376,
+   "h": 20
+  },
+  {
+   "id": "i4",
+   "tag": "li",
+   "display": "list-item",
+   "position": "static",
+   "x": 24,
+   "y": 60,
+   "w": 376,
+   "h": 20
+  },
+  {
+   "id": "i5",
+   "tag": "li",
+   "display": "list-item",
+   "position": "static",
+   "x": 24,
+   "y": 80,
+   "w": 376,
+   "h": 20
+  },
+  {
+   "id": "i6",
+   "tag": "li",
+   "display": "list-item",
+   "position": "static",
+   "x": 24,
+   "y": 100,
+   "w": 376,
+   "h": 20
+  },
+  {
+   "id": "i7",
+   "tag": "li",
+   "display": "list-item",
+   "position": "static",
+   "x": 24,
+   "y": 120,
+   "w": 376,
+   "h": 20
+  },
+  {
+   "id": "i8",
+   "tag": "li",
+   "display": "list-item",
+   "position": "static",
+   "x": 24,
+   "y": 140,
+   "w": 376,
+   "h": 20
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "i1",
+   "text": "List item 1 of eight with a few words.",
+   "top": 0,
+   "bottom": 20,
+   "left": 24,
+   "right": 297.875
+  },
+  {
+   "owner": "i2",
+   "text": "List item 2 of eight with a few words.",
+   "top": 20,
+   "bottom": 40,
+   "left": 24,
+   "right": 301.125
+  },
+  {
+   "owner": "i3",
+   "text": "List item 3 of eight with a few words.",
+   "top": 40,
+   "bottom": 60,
+   "left": 24,
+   "right": 301.25
+  },
+  {
+   "owner": "i4",
+   "text": "List item 4 of eight with a few words.",
+   "top": 60,
+   "bottom": 80,
+   "left": 24,
+   "right": 301.703
+  },
+  {
+   "owner": "i5",
+   "text": "List item 5 of eight with a few words.",
+   "top": 80,
+   "bottom": 100,
+   "left": 24,
+   "right": 300.859
+  },
+  {
+   "owner": "i6",
+   "text": "List item 6 of eight with a few words.",
+   "top": 100,
+   "bottom": 120,
+   "left": 24,
+   "right": 301.297
+  },
+  {
+   "owner": "i7",
+   "text": "List item 7 of eight with a few words.",
+   "top": 120,
+   "bottom": 140,
+   "left": 24,
+   "right": 300.422
+  },
+  {
+   "owner": "i8",
+   "text": "List item 8 of eight with a few words.",
+   "top": 140,
+   "bottom": 160,
+   "left": 24,
+   "right": 301.266
+  }
+ ],
+ "scrollHeight": 1000
+}

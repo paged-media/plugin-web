@@ -1,0 +1,161 @@
+{
+ "fixture": "text-justify",
+ "width": 240,
+ "height": 1000,
+ "sourceSha256": "123c73f4d714761ef3f5ab7b378c0fde84960dafc58eafdaae3850b0b9a45d22",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "j1",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 240,
+   "h": 160
+  },
+  {
+   "id": "j2",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 168,
+   "w": 240,
+   "h": 160
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "j1",
+   "text": "Justified text spreads the ",
+   "top": 0,
+   "bottom": 20,
+   "left": 0,
+   "right": 240
+  },
+  {
+   "owner": "j1",
+   "text": "spaces of every line but the ",
+   "top": 20,
+   "bottom": 40,
+   "left": 0,
+   "right": 240
+  },
+  {
+   "owner": "j1",
+   "text": "last. Alpha bravo charlie delta ",
+   "top": 40,
+   "bottom": 60,
+   "left": 0,
+   "right": 240
+  },
+  {
+   "owner": "j1",
+   "text": "echo foxtrot golf hotel india ",
+   "top": 60,
+   "bottom": 80,
+   "left": 0,
+   "right": 240
+  },
+  {
+   "owner": "j1",
+   "text": "juliet kilo lima mike november ",
+   "top": 80,
+   "bottom": 100,
+   "left": 0,
+   "right": 240
+  },
+  {
+   "owner": "j1",
+   "text": "oscar papa quebec romeo ",
+   "top": 100,
+   "bottom": 120,
+   "left": 0,
+   "right": 240
+  },
+  {
+   "owner": "j1",
+   "text": "sierra tango uniform victor ",
+   "top": 120,
+   "bottom": 140,
+   "left": 0,
+   "right": 240
+  },
+  {
+   "owner": "j1",
+   "text": "whiskey xray yankee zulu.",
+   "top": 140,
+   "bottom": 160,
+   "left": 0,
+   "right": 197.984
+  },
+  {
+   "owner": "j2",
+   "text": "Justified with the last line ",
+   "top": 168,
+   "bottom": 188,
+   "left": 0,
+   "right": 240
+  },
+  {
+   "owner": "j2",
+   "text": "justified too. Alpha bravo ",
+   "top": 188,
+   "bottom": 208,
+   "left": 0,
+   "right": 240
+  },
+  {
+   "owner": "j2",
+   "text": "charlie delta echo foxtrot golf ",
+   "top": 208,
+   "bottom": 228,
+   "left": 0,
+   "right": 240
+  },
+  {
+   "owner": "j2",
+   "text": "hotel india juliet kilo lima mike ",
+   "top": 228,
+   "bottom": 248,
+   "left": 0,
+   "right": 240
+  },
+  {
+   "owner": "j2",
+   "text": "november oscar papa quebec ",
+   "top": 248,
+   "bottom": 268,
+   "left": 0,
+   "right": 240
+  },
+  {
+   "owner": "j2",
+   "text": "romeo sierra tango uniform ",
+   "top": 268,
+   "bottom": 288,
+   "left": 0,
+   "right": 240
+  },
+  {
+   "owner": "j2",
+   "text": "victor whiskey xray yankee ",
+   "top": 288,
+   "bottom": 308,
+   "left": 0,
+   "right": 240
+  },
+  {
+   "owner": "j2",
+   "text": "zulu.",
+   "top": 308,
+   "bottom": 328,
+   "left": 0,
+   "right": 36.25
+  }
+ ],
+ "scrollHeight": 1000
+}

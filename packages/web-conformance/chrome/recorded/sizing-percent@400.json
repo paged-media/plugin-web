@@ -1,0 +1,87 @@
+{
+ "fixture": "sizing-percent",
+ "width": 400,
+ "height": 1000,
+ "sourceSha256": "175413c991f3e9297e8f762614221a98bb03f5b9eb9a53fce6997549ddc5233e",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "outer",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 360,
+   "h": 100
+  },
+  {
+   "id": "inner",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 100,
+   "y": 20,
+   "w": 160,
+   "h": 40
+  },
+  {
+   "id": "calc",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 20,
+   "y": 60,
+   "w": 300,
+   "h": 20
+  },
+  {
+   "id": "inl",
+   "tag": "div",
+   "display": "inline-block",
+   "position": "static",
+   "x": 0,
+   "y": 100,
+   "w": 180,
+   "h": 20
+  },
+  {
+   "id": "inl2",
+   "tag": "div",
+   "display": "inline-block",
+   "position": "static",
+   "x": 184.5,
+   "y": 100,
+   "w": 180,
+   "h": 20
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "calc",
+   "text": "calc width",
+   "top": 60,
+   "bottom": 80,
+   "left": 20,
+   "right": 97.5
+  },
+  {
+   "owner": "inl",
+   "text": "Inline block one",
+   "top": 100,
+   "bottom": 120,
+   "left": 0,
+   "right": 118.844
+  },
+  {
+   "owner": "inl2",
+   "text": "Inline block two",
+   "top": 100,
+   "bottom": 120,
+   "left": 184.5,
+   "right": 302.844
+  }
+ ],
+ "scrollHeight": 1000
+}

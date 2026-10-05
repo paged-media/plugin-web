@@ -1,0 +1,125 @@
+{
+ "fixture": "inline-white-space",
+ "width": 240,
+ "height": 1000,
+ "sourceSha256": "3052a079c1bf556f52651ce5fcc8e38d4ef55ef735e2513a66cb9512002bbe0f",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "pre",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 240,
+   "h": 60
+  },
+  {
+   "id": "prewrap",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 68,
+   "w": 240,
+   "h": 60
+  },
+  {
+   "id": "nowrap",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 136,
+   "w": 240,
+   "h": 20
+  },
+  {
+   "id": "normal",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 164,
+   "w": 240,
+   "h": 40
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "pre",
+   "text": "Pre   keeps   spaces\n",
+   "top": 0,
+   "bottom": 20,
+   "left": 0,
+   "right": 151.922
+  },
+  {
+   "owner": "pre",
+   "text": "and newlines\n",
+   "top": 20,
+   "bottom": 40,
+   "left": 0,
+   "right": 99.297
+  },
+  {
+   "owner": "pre",
+   "text": "    and indentation.",
+   "top": 40,
+   "bottom": 60,
+   "left": 18,
+   "right": 139.703
+  },
+  {
+   "owner": "prewrap",
+   "text": "Pre-wrap   keeps   spaces but ",
+   "top": 68,
+   "bottom": 88,
+   "left": 0,
+   "right": 226.172
+  },
+  {
+   "owner": "prewrap",
+   "text": "still wraps when the line gets ",
+   "top": 88,
+   "bottom": 108,
+   "left": 0,
+   "right": 218.703
+  },
+  {
+   "owner": "prewrap",
+   "text": "too long for the frame width.",
+   "top": 108,
+   "bottom": 128,
+   "left": 0,
+   "right": 215.172
+  },
+  {
+   "owner": "nowrap",
+   "text": "Nowrap keeps everything on one line even past the edge of the frame.",
+   "top": 136,
+   "bottom": 156,
+   "left": 0,
+   "right": 532.703
+  },
+  {
+   "owner": "normal",
+   "text": "Normal    collapses\n   whitespace ",
+   "top": 164,
+   "bottom": 184,
+   "left": 0,
+   "right": 221.969
+  },
+  {
+   "owner": "normal",
+   "text": "   runs.",
+   "top": 184,
+   "bottom": 204,
+   "left": 0,
+   "right": 38
+  }
+ ],
+ "scrollHeight": 1000
+}

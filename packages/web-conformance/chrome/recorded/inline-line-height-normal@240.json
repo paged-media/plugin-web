@@ -1,0 +1,163 @@
+{
+ "fixture": "inline-line-height-normal",
+ "width": 240,
+ "height": 1000,
+ "sourceSha256": "ede59cfc1bf6e7c4a2a72771de5940f5ace304fd6b9e0f2b9db1146069efc52a",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "p16",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 240,
+   "h": 160
+  },
+  {
+   "id": "p12",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 168,
+   "w": 240,
+   "h": 75
+  },
+  {
+   "id": "p24",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 251,
+   "w": 240,
+   "h": 58
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "p16",
+   "text": "Sixteen pixel text at line-height ",
+   "top": 0,
+   "bottom": 20,
+   "left": 0,
+   "right": 233.234
+  },
+  {
+   "owner": "p16",
+   "text": "normal. Alpha bravo charlie ",
+   "top": 20,
+   "bottom": 40,
+   "left": 0,
+   "right": 207.25
+  },
+  {
+   "owner": "p16",
+   "text": "delta echo foxtrot golf hotel ",
+   "top": 40,
+   "bottom": 60,
+   "left": 0,
+   "right": 209.156
+  },
+  {
+   "owner": "p16",
+   "text": "india juliet kilo lima mike ",
+   "top": 60,
+   "bottom": 80,
+   "left": 0,
+   "right": 182.156
+  },
+  {
+   "owner": "p16",
+   "text": "november oscar papa quebec ",
+   "top": 80,
+   "bottom": 100,
+   "left": 0,
+   "right": 226.484
+  },
+  {
+   "owner": "p16",
+   "text": "romeo sierra tango uniform ",
+   "top": 100,
+   "bottom": 120,
+   "left": 0,
+   "right": 206
+  },
+  {
+   "owner": "p16",
+   "text": "victor whiskey xray yankee ",
+   "top": 120,
+   "bottom": 140,
+   "left": 0,
+   "right": 204.438
+  },
+  {
+   "owner": "p16",
+   "text": "zulu.",
+   "top": 140,
+   "bottom": 160,
+   "left": 0,
+   "right": 36.25
+  },
+  {
+   "owner": "p12",
+   "text": "Twelve pixel text at line-height normal. ",
+   "top": 168,
+   "bottom": 183,
+   "left": 0,
+   "right": 218.703
+  },
+  {
+   "owner": "p12",
+   "text": "Alpha bravo charlie delta echo foxtrot golf ",
+   "top": 183,
+   "bottom": 198,
+   "left": 0,
+   "right": 238.313
+  },
+  {
+   "owner": "p12",
+   "text": "hotel india juliet kilo lima mike november ",
+   "top": 198,
+   "bottom": 213,
+   "left": 0,
+   "right": 228.297
+  },
+  {
+   "owner": "p12",
+   "text": "oscar papa quebec romeo sierra tango ",
+   "top": 213,
+   "bottom": 228,
+   "left": 0,
+   "right": 220.469
+  },
+  {
+   "owner": "p12",
+   "text": "uniform victor whiskey xray yankee zulu.",
+   "top": 228,
+   "bottom": 243,
+   "left": 0,
+   "right": 230.859
+  },
+  {
+   "owner": "p24",
+   "text": "Twenty-four pixel ",
+   "top": 251,
+   "bottom": 280,
+   "left": 0,
+   "right": 198.703
+  },
+  {
+   "owner": "p24",
+   "text": "text at normal.",
+   "top": 280,
+   "bottom": 309,
+   "left": 0,
+   "right": 162.531
+  }
+ ],
+ "scrollHeight": 1000
+}

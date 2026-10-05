@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+html { font-family: Inter; line-height: 1.25; font-optical-sizing: none; }
+body { margin: 0; }
+.g { display: grid; grid-template-columns: 80px 1fr; grid-template-rows: auto 50px auto; grid-template-areas: \"h h\" \"s m\" \"f f\"; } .g > div { padding: 4px; }
+</style></head>
+<body>
+<div data-id="g" class="g"><div data-id="h" style="grid-area: h; background: #fcc;">Header</div><div data-id="s" style="grid-area: s; background: #cfc;">Side</div><div data-id="m" style="grid-area: m; background: #ccf;">Main content with words</div><div data-id="f" style="grid-area: f; background: #ffc;">Footer</div></div>
+<div data-id="g2" style="display: grid; grid-template-columns: repeat(3, 1fr);"><div data-id="x" style="grid-column: span 2;">Spans two</div><div data-id="y">One</div><div data-id="z" style="grid-column: 2 / 4;">Two to four</div></div>
+</body></html>

@@ -1,0 +1,109 @@
+{
+ "fixture": "inline-white-space",
+ "width": 400,
+ "height": 1000,
+ "sourceSha256": "3052a079c1bf556f52651ce5fcc8e38d4ef55ef735e2513a66cb9512002bbe0f",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "pre",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 400,
+   "h": 60
+  },
+  {
+   "id": "prewrap",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 68,
+   "w": 400,
+   "h": 40
+  },
+  {
+   "id": "nowrap",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 116,
+   "w": 400,
+   "h": 20
+  },
+  {
+   "id": "normal",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 144,
+   "w": 400,
+   "h": 20
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "pre",
+   "text": "Pre   keeps   spaces\n",
+   "top": 0,
+   "bottom": 20,
+   "left": 0,
+   "right": 151.922
+  },
+  {
+   "owner": "pre",
+   "text": "and newlines\n",
+   "top": 20,
+   "bottom": 40,
+   "left": 0,
+   "right": 99.297
+  },
+  {
+   "owner": "pre",
+   "text": "    and indentation.",
+   "top": 40,
+   "bottom": 60,
+   "left": 18,
+   "right": 139.703
+  },
+  {
+   "owner": "prewrap",
+   "text": "Pre-wrap   keeps   spaces but still wraps when the ",
+   "top": 68,
+   "bottom": 88,
+   "left": 0,
+   "right": 381.188
+  },
+  {
+   "owner": "prewrap",
+   "text": "line gets too long for the frame width.",
+   "top": 88,
+   "bottom": 108,
+   "left": 0,
+   "right": 283.375
+  },
+  {
+   "owner": "nowrap",
+   "text": "Nowrap keeps everything on one line even past the edge of the frame.",
+   "top": 116,
+   "bottom": 136,
+   "left": 0,
+   "right": 532.703
+  },
+  {
+   "owner": "normal",
+   "text": "Normal    collapses\n   whitespace    runs.",
+   "top": 144,
+   "bottom": 164,
+   "left": 0,
+   "right": 264.469
+  }
+ ],
+ "scrollHeight": 1000
+}

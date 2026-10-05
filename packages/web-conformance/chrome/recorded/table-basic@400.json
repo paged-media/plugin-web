@@ -1,0 +1,161 @@
+{
+ "fixture": "table-basic",
+ "width": 400,
+ "height": 1000,
+ "sourceSha256": "35badfbd89527ef1d209f80780e86c580c808d4fb8842568726cd737b36971ab",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "t",
+   "tag": "table",
+   "display": "table",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 330.859,
+   "h": 98
+  },
+  {
+   "id": "hr",
+   "tag": "tr",
+   "display": "table-row",
+   "position": "static",
+   "x": 2,
+   "y": 2,
+   "w": 326.859,
+   "h": 30
+  },
+  {
+   "id": "h1",
+   "tag": "th",
+   "display": "table-cell",
+   "position": "static",
+   "x": 2,
+   "y": 2,
+   "w": 270.734,
+   "h": 30
+  },
+  {
+   "id": "h2",
+   "tag": "th",
+   "display": "table-cell",
+   "position": "static",
+   "x": 274.734,
+   "y": 2,
+   "w": 54.125,
+   "h": 30
+  },
+  {
+   "id": "r1",
+   "tag": "tr",
+   "display": "table-row",
+   "position": "static",
+   "x": 2,
+   "y": 34,
+   "w": 326.859,
+   "h": 30
+  },
+  {
+   "id": "c11",
+   "tag": "td",
+   "display": "table-cell",
+   "position": "static",
+   "x": 2,
+   "y": 34,
+   "w": 270.734,
+   "h": 30
+  },
+  {
+   "id": "c12",
+   "tag": "td",
+   "display": "table-cell",
+   "position": "static",
+   "x": 274.734,
+   "y": 34,
+   "w": 54.125,
+   "h": 30
+  },
+  {
+   "id": "r2",
+   "tag": "tr",
+   "display": "table-row",
+   "position": "static",
+   "x": 2,
+   "y": 66,
+   "w": 326.859,
+   "h": 30
+  },
+  {
+   "id": "c21",
+   "tag": "td",
+   "display": "table-cell",
+   "position": "static",
+   "x": 2,
+   "y": 66,
+   "w": 270.734,
+   "h": 30
+  },
+  {
+   "id": "c22",
+   "tag": "td",
+   "display": "table-cell",
+   "position": "static",
+   "x": 274.734,
+   "y": 66,
+   "w": 54.125,
+   "h": 30
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "h1",
+   "text": "Name",
+   "top": 7,
+   "bottom": 27,
+   "left": 114.547,
+   "right": 160.172
+  },
+  {
+   "owner": "h2",
+   "text": "Value",
+   "top": 7,
+   "bottom": 27,
+   "left": 279.734,
+   "right": 323.859
+  },
+  {
+   "owner": "c11",
+   "text": "Alpha",
+   "top": 39,
+   "bottom": 59,
+   "left": 7,
+   "right": 50.156
+  },
+  {
+   "owner": "c12",
+   "text": "One",
+   "top": 39,
+   "bottom": 59,
+   "left": 279.734,
+   "right": 310.75
+  },
+  {
+   "owner": "c21",
+   "text": "Bravo with a longer cell that wraps",
+   "top": 71,
+   "bottom": 91,
+   "left": 7,
+   "right": 267.734
+  },
+  {
+   "owner": "c22",
+   "text": "Two",
+   "top": 71,
+   "bottom": 91,
+   "left": 279.734,
+   "right": 311.469
+  }
+ ],
+ "scrollHeight": 1000
+}

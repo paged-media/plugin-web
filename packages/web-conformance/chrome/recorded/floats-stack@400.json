@@ -1,0 +1,99 @@
+{
+ "fixture": "floats-stack",
+ "width": 400,
+ "height": 1000,
+ "sourceSha256": "a55e1bea02a8e78bfc39cd16058bb0cad9ed5df3402249105aaa579e9c338e5b",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "wrap",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 400,
+   "h": 24
+  },
+  {
+   "id": "f1",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 2,
+   "y": 2,
+   "w": 50,
+   "h": 20
+  },
+  {
+   "id": "f2",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 56,
+   "y": 2,
+   "w": 50,
+   "h": 20
+  },
+  {
+   "id": "f3",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 110,
+   "y": 2,
+   "w": 50,
+   "h": 20
+  },
+  {
+   "id": "f4",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 164,
+   "y": 2,
+   "w": 50,
+   "h": 20
+  },
+  {
+   "id": "f5",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 218,
+   "y": 2,
+   "w": 50,
+   "h": 20
+  },
+  {
+   "id": "after",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 28,
+   "w": 400,
+   "h": 40
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "after",
+   "text": "The wrapper contains its floats (block formatting ",
+   "top": 28,
+   "bottom": 48,
+   "left": 0,
+   "right": 367.828
+  },
+  {
+   "owner": "after",
+   "text": "context).",
+   "top": 48,
+   "bottom": 68,
+   "left": 0,
+   "right": 66.969
+  }
+ ],
+ "scrollHeight": 1000
+}

@@ -1,0 +1,123 @@
+{
+ "fixture": "text-optical-sizing",
+ "width": 400,
+ "height": 1000,
+ "sourceSha256": "40ce9b1af7ec134d987a3bfc0cc95290d08a7c22bbe89c4b8f8b28c4fb673e34",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "auto16",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 400,
+   "h": 80
+  },
+  {
+   "id": "auto28",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 88,
+   "w": 400,
+   "h": 70
+  },
+  {
+   "id": "none16",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 166,
+   "w": 400,
+   "h": 80
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "auto16",
+   "text": "Optical sizing auto at sixteen pixels. Alpha bravo ",
+   "top": 0,
+   "bottom": 20,
+   "left": 0,
+   "right": 361.609
+  },
+  {
+   "owner": "auto16",
+   "text": "charlie delta echo foxtrot golf hotel india juliet kilo ",
+   "top": 20,
+   "bottom": 40,
+   "left": 0,
+   "right": 371.906
+  },
+  {
+   "owner": "auto16",
+   "text": "lima mike november oscar papa quebec romeo sierra ",
+   "top": 40,
+   "bottom": 60,
+   "left": 0,
+   "right": 398.203
+  },
+  {
+   "owner": "auto16",
+   "text": "tango uniform victor whiskey xray yankee zulu.",
+   "top": 60,
+   "bottom": 80,
+   "left": 0,
+   "right": 351.797
+  },
+  {
+   "owner": "auto28",
+   "text": "Optical size auto at twenty-",
+   "top": 88,
+   "bottom": 122,
+   "left": 0,
+   "right": 340.406
+  },
+  {
+   "owner": "auto28",
+   "text": "eight.",
+   "top": 123,
+   "bottom": 157,
+   "left": 0,
+   "right": 68.406
+  },
+  {
+   "owner": "none16",
+   "text": "Optical sizing none. Alpha bravo charlie delta echo ",
+   "top": 166,
+   "bottom": 186,
+   "left": 0,
+   "right": 383.531
+  },
+  {
+   "owner": "none16",
+   "text": "foxtrot golf hotel india juliet kilo lima mike november ",
+   "top": 186,
+   "bottom": 206,
+   "left": 0,
+   "right": 392.156
+  },
+  {
+   "owner": "none16",
+   "text": "oscar papa quebec romeo sierra tango uniform ",
+   "top": 206,
+   "bottom": 226,
+   "left": 0,
+   "right": 356.578
+  },
+  {
+   "owner": "none16",
+   "text": "victor whiskey xray yankee zulu.",
+   "top": 226,
+   "bottom": 246,
+   "left": 0,
+   "right": 245.188
+  }
+ ],
+ "scrollHeight": 1000
+}

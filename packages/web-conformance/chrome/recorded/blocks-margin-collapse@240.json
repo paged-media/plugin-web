@@ -1,0 +1,141 @@
+{
+ "fixture": "blocks-margin-collapse",
+ "width": 240,
+ "height": 1000,
+ "sourceSha256": "503014309643adde977913aa1b0614ae2a212d3e98e7e6f3bbde271932f01f5f",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "wrap",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 16,
+   "w": 240,
+   "h": 276
+  },
+  {
+   "id": "p1",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 16,
+   "w": 240,
+   "h": 140
+  },
+  {
+   "id": "p2",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 196,
+   "w": 240,
+   "h": 60
+  },
+  {
+   "id": "p3",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 272,
+   "w": 240,
+   "h": 20
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "p1",
+   "text": "First paragraph. Alpha bravo ",
+   "top": 16,
+   "bottom": 36,
+   "left": 0,
+   "right": 215.156
+  },
+  {
+   "owner": "p1",
+   "text": "charlie delta echo foxtrot golf ",
+   "top": 36,
+   "bottom": 56,
+   "left": 0,
+   "right": 222.75
+  },
+  {
+   "owner": "p1",
+   "text": "hotel india juliet kilo lima mike ",
+   "top": 56,
+   "bottom": 76,
+   "left": 0,
+   "right": 223.984
+  },
+  {
+   "owner": "p1",
+   "text": "november oscar papa quebec ",
+   "top": 76,
+   "bottom": 96,
+   "left": 0,
+   "right": 226.484
+  },
+  {
+   "owner": "p1",
+   "text": "romeo sierra tango uniform ",
+   "top": 96,
+   "bottom": 116,
+   "left": 0,
+   "right": 206
+  },
+  {
+   "owner": "p1",
+   "text": "victor whiskey xray yankee ",
+   "top": 116,
+   "bottom": 136,
+   "left": 0,
+   "right": 204.438
+  },
+  {
+   "owner": "p1",
+   "text": "zulu.",
+   "top": 136,
+   "bottom": 156,
+   "left": 0,
+   "right": 36.25
+  },
+  {
+   "owner": "p2",
+   "text": "Second paragraph collapses its ",
+   "top": 196,
+   "bottom": 216,
+   "left": 0,
+   "right": 237.984
+  },
+  {
+   "owner": "p2",
+   "text": "forty pixel top margin with the ",
+   "top": 216,
+   "bottom": 236,
+   "left": 0,
+   "right": 225.672
+  },
+  {
+   "owner": "p2",
+   "text": "twenty-four above.",
+   "top": 236,
+   "bottom": 256,
+   "left": 0,
+   "right": 144.031
+  },
+  {
+   "owner": "p3",
+   "text": "Third paragraph.",
+   "top": 272,
+   "bottom": 292,
+   "left": 0,
+   "right": 126.359
+  }
+ ],
+ "scrollHeight": 1000
+}

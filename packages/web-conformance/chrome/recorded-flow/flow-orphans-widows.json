@@ -1,0 +1,25 @@
+{
+ "fixture": "flow-orphans-widows",
+ "frames": [
+  {
+   "widthPx": 240,
+   "heightPx": 160
+  },
+  {
+   "widthPx": 240,
+   "heightPx": 160
+  },
+  {
+   "widthPx": 240,
+   "heightPx": 160
+  }
+ ],
+ "sourceSha256": "665835d772ab863a9d76854b0fb8dbbd0f3225ac5ff2212e48bb13a69c7b407b",
+ "chrome": "153.0.8010.12",
+ "frameText": [
+  "Default orphans and widows of two. Alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu. Alpha bravo charlie delta echo",
+  "foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu. Alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec",
+  "romeo sierra tango uniform victor whiskey xray yankee zulu."
+ ],
+ "oversetText": ""
+}

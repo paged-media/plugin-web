@@ -1,0 +1,109 @@
+{
+ "fixture": "blocks-margin-collapse",
+ "width": 400,
+ "height": 1000,
+ "sourceSha256": "503014309643adde977913aa1b0614ae2a212d3e98e7e6f3bbde271932f01f5f",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "wrap",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 16,
+   "w": 400,
+   "h": 196
+  },
+  {
+   "id": "p1",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 16,
+   "w": 400,
+   "h": 80
+  },
+  {
+   "id": "p2",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 136,
+   "w": 400,
+   "h": 40
+  },
+  {
+   "id": "p3",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 192,
+   "w": 400,
+   "h": 20
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "p1",
+   "text": "First paragraph. Alpha bravo charlie delta echo ",
+   "top": 16,
+   "bottom": 36,
+   "left": 0,
+   "right": 354.656
+  },
+  {
+   "owner": "p1",
+   "text": "foxtrot golf hotel india juliet kilo lima mike november ",
+   "top": 36,
+   "bottom": 56,
+   "left": 0,
+   "right": 392.156
+  },
+  {
+   "owner": "p1",
+   "text": "oscar papa quebec romeo sierra tango uniform ",
+   "top": 56,
+   "bottom": 76,
+   "left": 0,
+   "right": 356.578
+  },
+  {
+   "owner": "p1",
+   "text": "victor whiskey xray yankee zulu.",
+   "top": 76,
+   "bottom": 96,
+   "left": 0,
+   "right": 245.188
+  },
+  {
+   "owner": "p2",
+   "text": "Second paragraph collapses its forty pixel top ",
+   "top": 136,
+   "bottom": 156,
+   "left": 0,
+   "right": 347.063
+  },
+  {
+   "owner": "p2",
+   "text": "margin with the twenty-four above.",
+   "top": 156,
+   "bottom": 176,
+   "left": 0,
+   "right": 265.125
+  },
+  {
+   "owner": "p3",
+   "text": "Third paragraph.",
+   "top": 192,
+   "bottom": 212,
+   "left": 0,
+   "right": 126.359
+  }
+ ],
+ "scrollHeight": 1000
+}

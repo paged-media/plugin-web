@@ -1,0 +1,113 @@
+{
+ "fixture": "blocks-parent-collapse",
+ "width": 240,
+ "height": 1000,
+ "sourceSha256": "f5f3e5a2878b55b9ec1c6f42704bb2d549ad3dbc9b35b9df28ea22f60bfe12a5",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "outer",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 30,
+   "w": 240,
+   "h": 40
+  },
+  {
+   "id": "inner",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 30,
+   "w": 240,
+   "h": 40
+  },
+  {
+   "id": "pad",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 90,
+   "w": 240,
+   "h": 51
+  },
+  {
+   "id": "inner2",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 121,
+   "w": 240,
+   "h": 20
+  },
+  {
+   "id": "empty",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 161,
+   "w": 240,
+   "h": 0
+  },
+  {
+   "id": "after",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 161,
+   "w": 240,
+   "h": 40
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "inner",
+   "text": "Inner margin collapses through ",
+   "top": 30,
+   "bottom": 50,
+   "left": 0,
+   "right": 234.219
+  },
+  {
+   "owner": "inner",
+   "text": "the parent.",
+   "top": 50,
+   "bottom": 70,
+   "left": 0,
+   "right": 81.844
+  },
+  {
+   "owner": "inner2",
+   "text": "Padding stops the collapse.",
+   "top": 121,
+   "bottom": 141,
+   "left": 0,
+   "right": 208.469
+  },
+  {
+   "owner": "after",
+   "text": "After an empty block whose ",
+   "top": 161,
+   "bottom": 181,
+   "left": 0,
+   "right": 212.078
+  },
+  {
+   "owner": "after",
+   "text": "margins collapse through it.",
+   "top": 181,
+   "bottom": 201,
+   "left": 0,
+   "right": 209.391
+  }
+ ],
+ "scrollHeight": 1000
+}

@@ -1,0 +1,115 @@
+{
+ "fixture": "inline-line-height-normal",
+ "width": 400,
+ "height": 1000,
+ "sourceSha256": "ede59cfc1bf6e7c4a2a72771de5940f5ace304fd6b9e0f2b9db1146069efc52a",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "p16",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 400,
+   "h": 100
+  },
+  {
+   "id": "p12",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 108,
+   "w": 400,
+   "h": 45
+  },
+  {
+   "id": "p24",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 161,
+   "w": 400,
+   "h": 29
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "p16",
+   "text": "Sixteen pixel text at line-height normal. Alpha bravo ",
+   "top": 0,
+   "bottom": 20,
+   "left": 0,
+   "right": 389.547
+  },
+  {
+   "owner": "p16",
+   "text": "charlie delta echo foxtrot golf hotel india juliet kilo ",
+   "top": 20,
+   "bottom": 40,
+   "left": 0,
+   "right": 375.844
+  },
+  {
+   "owner": "p16",
+   "text": "lima mike november oscar papa quebec romeo ",
+   "top": 40,
+   "bottom": 60,
+   "left": 0,
+   "right": 354.656
+  },
+  {
+   "owner": "p16",
+   "text": "sierra tango uniform victor whiskey xray yankee ",
+   "top": 60,
+   "bottom": 80,
+   "left": 0,
+   "right": 362.156
+  },
+  {
+   "owner": "p16",
+   "text": "zulu.",
+   "top": 80,
+   "bottom": 100,
+   "left": 0,
+   "right": 36.25
+  },
+  {
+   "owner": "p12",
+   "text": "Twelve pixel text at line-height normal. Alpha bravo charlie delta echo ",
+   "top": 108,
+   "bottom": 123,
+   "left": 0,
+   "right": 394.563
+  },
+  {
+   "owner": "p12",
+   "text": "foxtrot golf hotel india juliet kilo lima mike november oscar papa ",
+   "top": 123,
+   "bottom": 138,
+   "left": 0,
+   "right": 361.031
+  },
+  {
+   "owner": "p12",
+   "text": "quebec romeo sierra tango uniform victor whiskey xray yankee zulu.",
+   "top": 138,
+   "bottom": 153,
+   "left": 0,
+   "right": 387.781
+  },
+  {
+   "owner": "p24",
+   "text": "Twenty-four pixel text at normal.",
+   "top": 161,
+   "bottom": 190,
+   "left": 0,
+   "right": 367.969
+  }
+ ],
+ "scrollHeight": 1000
+}

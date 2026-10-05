@@ -1,0 +1,73 @@
+{
+ "fixture": "inline-hard-breaks",
+ "width": 240,
+ "height": 1000,
+ "sourceSha256": "966b27263ab3ae2cf21dbc143d14e00e60b99b77f2bf3a971935a66ce0139c66",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "p1",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 240,
+   "h": 80
+  },
+  {
+   "id": "p2",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 88,
+   "w": 240,
+   "h": 40
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "p1",
+   "text": "Line one",
+   "top": 0,
+   "bottom": 20,
+   "left": 0,
+   "right": 64.578
+  },
+  {
+   "owner": "p1",
+   "text": "Line two",
+   "top": 20,
+   "bottom": 40,
+   "left": 0,
+   "right": 64.078
+  },
+  {
+   "owner": "p1",
+   "text": "Line four after an empty line",
+   "top": 60,
+   "bottom": 80,
+   "left": 0,
+   "right": 212.172
+  },
+  {
+   "owner": "p2",
+   "text": "Soft­hyphen­ated­word and ",
+   "top": 88,
+   "bottom": 108,
+   "left": 0,
+   "right": 190.609
+  },
+  {
+   "owner": "p2",
+   "text": "non breaking space joined words here.",
+   "top": 108,
+   "bottom": 128,
+   "left": 0,
+   "right": 293.609
+  }
+ ],
+ "scrollHeight": 1000
+}

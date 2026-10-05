@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+html { font-family: Inter; line-height: 1.25; font-optical-sizing: none; }
+body { margin: 0; }
+.outer { background: #fee; } .inner { margin-top: 30px; margin-bottom: 20px; background: #efe; } .pad { padding-top: 1px; background: #eef; }
+</style></head>
+<body>
+<div data-id="outer" class="outer"><div data-id="inner" class="inner">Inner margin collapses through the parent.</div></div>
+<div data-id="pad" class="pad"><div data-id="inner2" class="inner">Padding stops the collapse.</div></div>
+<div data-id="empty" style="margin: 12px 0;"></div>
+<div data-id="after">After an empty block whose margins collapse through it.</div>
+</body></html>

@@ -1,0 +1,131 @@
+{
+ "fixture": "pseudo",
+ "width": 240,
+ "height": 1000,
+ "sourceSha256": "c4cc255bd7c4500197187a78e37a2b2ff028926a682e03fd16a36de7b1aa1758",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "q",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 240,
+   "h": 40
+  },
+  {
+   "id": "n",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 48,
+   "w": 240,
+   "h": 160
+  },
+  {
+   "id": "blk",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 216,
+   "w": 240,
+   "h": 20
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "q",
+   "text": "Bracketed by generated ",
+   "top": 0,
+   "bottom": 20,
+   "left": 0,
+   "right": 181.188
+  },
+  {
+   "owner": "q",
+   "text": "content.",
+   "top": 20,
+   "bottom": 40,
+   "left": 0,
+   "right": 61.891
+  },
+  {
+   "owner": "n",
+   "text": "A prefixed paragraph whose ",
+   "top": 48,
+   "bottom": 68,
+   "left": 0,
+   "right": 214.672
+  },
+  {
+   "owner": "n",
+   "text": "prefix is generated. Alpha ",
+   "top": 68,
+   "bottom": 88,
+   "left": 0,
+   "right": 194.141
+  },
+  {
+   "owner": "n",
+   "text": "bravo charlie delta echo foxtrot ",
+   "top": 88,
+   "bottom": 108,
+   "left": 0,
+   "right": 236.391
+  },
+  {
+   "owner": "n",
+   "text": "golf hotel india juliet kilo lima ",
+   "top": 108,
+   "bottom": 128,
+   "left": 0,
+   "right": 217.547
+  },
+  {
+   "owner": "n",
+   "text": "mike november oscar papa ",
+   "top": 128,
+   "bottom": 148,
+   "left": 0,
+   "right": 205.266
+  },
+  {
+   "owner": "n",
+   "text": "quebec romeo sierra tango ",
+   "top": 148,
+   "bottom": 168,
+   "left": 0,
+   "right": 204.734
+  },
+  {
+   "owner": "n",
+   "text": "uniform victor whiskey xray ",
+   "top": 168,
+   "bottom": 188,
+   "left": 0,
+   "right": 208.141
+  },
+  {
+   "owner": "n",
+   "text": "yankee zulu.",
+   "top": 188,
+   "bottom": 208,
+   "left": 0,
+   "right": 95.172
+  },
+  {
+   "owner": "blk",
+   "text": "Content after a block pseudo.",
+   "top": 216,
+   "bottom": 236,
+   "left": 0,
+   "right": 223.828
+  }
+ ],
+ "scrollHeight": 1000
+}

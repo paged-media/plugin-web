@@ -1,0 +1,139 @@
+{
+ "fixture": "grid-template",
+ "width": 240,
+ "height": 1000,
+ "sourceSha256": "0f528fed63d9d5d394d7649ee3b579b2b46caab59134ecf5e730b02fa2f3be27",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "g",
+   "tag": "div",
+   "display": "grid",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 240,
+   "h": 84
+  },
+  {
+   "id": "a",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 57.328,
+   "h": 48
+  },
+  {
+   "id": "b",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 61.328,
+   "y": 0,
+   "w": 114.672,
+   "h": 48
+  },
+  {
+   "id": "c",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 180,
+   "y": 0,
+   "w": 60,
+   "h": 48
+  },
+  {
+   "id": "d",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 56,
+   "w": 57.328,
+   "h": 28
+  },
+  {
+   "id": "e",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 61.328,
+   "y": 56,
+   "w": 114.672,
+   "h": 28
+  },
+  {
+   "id": "f",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 180,
+   "y": 56,
+   "w": 60,
+   "h": 28
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "a",
+   "text": "A",
+   "top": 4,
+   "bottom": 24,
+   "left": 4,
+   "right": 15.047
+  },
+  {
+   "owner": "b",
+   "text": "B has more ",
+   "top": 4,
+   "bottom": 24,
+   "left": 65.328,
+   "right": 150.391
+  },
+  {
+   "owner": "b",
+   "text": "text to wrap",
+   "top": 24,
+   "bottom": 44,
+   "left": 65.328,
+   "right": 155.234
+  },
+  {
+   "owner": "c",
+   "text": "C",
+   "top": 4,
+   "bottom": 24,
+   "left": 184,
+   "right": 195.688
+  },
+  {
+   "owner": "d",
+   "text": "D",
+   "top": 60,
+   "bottom": 80,
+   "left": 4,
+   "right": 15.547
+  },
+  {
+   "owner": "e",
+   "text": "E",
+   "top": 60,
+   "bottom": 80,
+   "left": 65.328,
+   "right": 74.953
+  },
+  {
+   "owner": "f",
+   "text": "F",
+   "top": 60,
+   "bottom": 80,
+   "left": 184,
+   "right": 193.453
+  }
+ ],
+ "scrollHeight": 1000
+}

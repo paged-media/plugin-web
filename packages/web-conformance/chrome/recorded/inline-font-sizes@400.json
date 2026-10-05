@@ -1,0 +1,175 @@
+{
+ "fixture": "inline-font-sizes",
+ "width": 400,
+ "height": 1000,
+ "sourceSha256": "936f119595b378674bb91bd4709e828a36d458f037e70f77b240877d002a2d48",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "p1",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 12,
+   "w": 400,
+   "h": 45
+  },
+  {
+   "id": "p2",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 81,
+   "w": 400,
+   "h": 60
+  },
+  {
+   "id": "p3",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 165,
+   "w": 400,
+   "h": 115.188
+  },
+  {
+   "id": "p4",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 296.188,
+   "w": 400,
+   "h": 120
+  },
+  {
+   "id": "p5",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 432.188,
+   "w": 400,
+   "h": 30
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "p1",
+   "text": "Twelve pixel text. Alpha bravo charlie delta echo foxtrot golf hotel ",
+   "top": 12,
+   "bottom": 27,
+   "left": 0,
+   "right": 371.031
+  },
+  {
+   "owner": "p1",
+   "text": "india juliet kilo lima mike november oscar papa quebec romeo sierra ",
+   "top": 27,
+   "bottom": 42,
+   "left": 0,
+   "right": 385.016
+  },
+  {
+   "owner": "p1",
+   "text": "tango uniform victor whiskey xray yankee zulu.",
+   "top": 42,
+   "bottom": 57,
+   "left": 0,
+   "right": 266.609
+  },
+  {
+   "owner": "p2",
+   "text": "Twenty-four pixel text wraps ",
+   "top": 81,
+   "bottom": 110,
+   "left": 0,
+   "right": 324.203
+  },
+  {
+   "owner": "p2",
+   "text": "sooner.",
+   "top": 111,
+   "bottom": 140,
+   "left": 0,
+   "right": 84.078
+  },
+  {
+   "owner": "p3",
+   "text": "Line height one point eight. Alpha bravo charlie delta ",
+   "top": 169,
+   "bottom": 189,
+   "left": 0,
+   "right": 398
+  },
+  {
+   "owner": "p3",
+   "text": "echo foxtrot golf hotel india juliet kilo lima mike ",
+   "top": 197.797,
+   "bottom": 217.797,
+   "left": 0,
+   "right": 353.766
+  },
+  {
+   "owner": "p3",
+   "text": "november oscar papa quebec romeo sierra tango ",
+   "top": 226.594,
+   "bottom": 246.594,
+   "left": 0,
+   "right": 374.359
+  },
+  {
+   "owner": "p3",
+   "text": "uniform victor whiskey xray yankee zulu.",
+   "top": 255.391,
+   "bottom": 275.391,
+   "left": 0,
+   "right": 307.813
+  },
+  {
+   "owner": "p4",
+   "text": "Line height thirty pixels. Alpha bravo charlie delta ",
+   "top": 301.188,
+   "bottom": 321.188,
+   "left": 0,
+   "right": 372.531
+  },
+  {
+   "owner": "p4",
+   "text": "echo foxtrot golf hotel india juliet kilo lima mike ",
+   "top": 331.188,
+   "bottom": 351.188,
+   "left": 0,
+   "right": 353.766
+  },
+  {
+   "owner": "p4",
+   "text": "november oscar papa quebec romeo sierra tango ",
+   "top": 361.188,
+   "bottom": 381.188,
+   "left": 0,
+   "right": 374.359
+  },
+  {
+   "owner": "p4",
+   "text": "uniform victor whiskey xray yankee zulu.",
+   "top": 391.188,
+   "bottom": 411.188,
+   "left": 0,
+   "right": 307.813
+  },
+  {
+   "owner": "p5",
+   "text": "Mixed large and small inline sizes on one line.",
+   "top": 432.188,
+   "bottom": 461.188,
+   "left": 0,
+   "right": 353.234
+  }
+ ],
+ "scrollHeight": 1000
+}

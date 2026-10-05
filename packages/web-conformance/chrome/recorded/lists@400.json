@@ -1,0 +1,155 @@
+{
+ "fixture": "lists",
+ "width": 400,
+ "height": 1000,
+ "sourceSha256": "e7375eb90e8814832544e8cb170e8e0c1518c93fb4c47a9d714ac62625eb5193",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "ul",
+   "tag": "ul",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 400,
+   "h": 140
+  },
+  {
+   "id": "u1",
+   "tag": "li",
+   "display": "list-item",
+   "position": "static",
+   "x": 28,
+   "y": 0,
+   "w": 372,
+   "h": 20
+  },
+  {
+   "id": "u2",
+   "tag": "li",
+   "display": "list-item",
+   "position": "static",
+   "x": 28,
+   "y": 20,
+   "w": 372,
+   "h": 100
+  },
+  {
+   "id": "u3",
+   "tag": "li",
+   "display": "list-item",
+   "position": "static",
+   "x": 28,
+   "y": 120,
+   "w": 372,
+   "h": 20
+  },
+  {
+   "id": "ol",
+   "tag": "ol",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 148,
+   "w": 400,
+   "h": 40
+  },
+  {
+   "id": "o1",
+   "tag": "li",
+   "display": "list-item",
+   "position": "static",
+   "x": 28,
+   "y": 148,
+   "w": 372,
+   "h": 20
+  },
+  {
+   "id": "o2",
+   "tag": "li",
+   "display": "list-item",
+   "position": "static",
+   "x": 28,
+   "y": 168,
+   "w": 372,
+   "h": 20
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "u1",
+   "text": "First bullet item.",
+   "top": 0,
+   "bottom": 20,
+   "left": 28,
+   "right": 148.5
+  },
+  {
+   "owner": "u2",
+   "text": "Second bullet item wraps onto a second line ",
+   "top": 20,
+   "bottom": 40,
+   "left": 28,
+   "right": 362.281
+  },
+  {
+   "owner": "u2",
+   "text": "because it is long enough. Alpha bravo charlie ",
+   "top": 40,
+   "bottom": 60,
+   "left": 28,
+   "right": 376.969
+  },
+  {
+   "owner": "u2",
+   "text": "delta echo foxtrot golf hotel india juliet kilo lima ",
+   "top": 60,
+   "bottom": 80,
+   "left": 28,
+   "right": 383.656
+  },
+  {
+   "owner": "u2",
+   "text": "mike november oscar papa quebec romeo sierra ",
+   "top": 80,
+   "bottom": 100,
+   "left": 28,
+   "right": 394.844
+  },
+  {
+   "owner": "u2",
+   "text": "tango uniform victor whiskey xray yankee zulu.",
+   "top": 100,
+   "bottom": 120,
+   "left": 28,
+   "right": 383.469
+  },
+  {
+   "owner": "u3",
+   "text": "Third.",
+   "top": 120,
+   "bottom": 140,
+   "left": 28,
+   "right": 71.828
+  },
+  {
+   "owner": "o1",
+   "text": "Numbered one.",
+   "top": 148,
+   "bottom": 168,
+   "left": 28,
+   "right": 145.031
+  },
+  {
+   "owner": "o2",
+   "text": "Numbered two.",
+   "top": 168,
+   "bottom": 188,
+   "left": 28,
+   "right": 144.516
+  }
+ ],
+ "scrollHeight": 1000
+}

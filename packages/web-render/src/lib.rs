@@ -77,6 +77,11 @@ pub mod capture;
 #[cfg(feature = "blitz")]
 pub mod fonts;
 
+// Layout geometry readout (box rects + line boxes) for the Chrome
+// conformance replay — read-only, never part of a render.
+#[cfg(feature = "blitz")]
+pub mod geometry;
+
 // W-frag spike (feasibility PoC, not shipped) — fragment one flow across
 // frames. Behind `blitz`; see docs/design/flow-fragmentation.md.
 #[cfg(feature = "blitz")]

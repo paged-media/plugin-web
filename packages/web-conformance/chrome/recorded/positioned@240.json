@@ -1,0 +1,105 @@
+{
+ "fixture": "positioned",
+ "width": 240,
+ "height": 1000,
+ "sourceSha256": "30404667e6eaaa3f145e0ab07a2703aa111905209f0da67ee9d0c910167fcc73",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "rel",
+   "tag": "div",
+   "display": "block",
+   "position": "relative",
+   "x": 0,
+   "y": 0,
+   "w": 240,
+   "h": 120
+  },
+  {
+   "id": "tl",
+   "tag": "div",
+   "display": "block",
+   "position": "absolute",
+   "x": 10,
+   "y": 10,
+   "w": 50,
+   "h": 20
+  },
+  {
+   "id": "br",
+   "tag": "div",
+   "display": "block",
+   "position": "absolute",
+   "x": 141.953,
+   "y": 95,
+   "w": 93.047,
+   "h": 20
+  },
+  {
+   "id": "st",
+   "tag": "div",
+   "display": "block",
+   "position": "absolute",
+   "x": 48,
+   "y": 40,
+   "w": 144,
+   "h": 20
+  },
+  {
+   "id": "shift",
+   "tag": "div",
+   "display": "block",
+   "position": "relative",
+   "x": 12,
+   "y": 126,
+   "w": 240,
+   "h": 20
+  },
+  {
+   "id": "sticky",
+   "tag": "div",
+   "display": "block",
+   "position": "sticky",
+   "x": 0,
+   "y": 140,
+   "w": 240,
+   "h": 20
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "br",
+   "text": "Bottom right",
+   "top": 95,
+   "bottom": 115,
+   "left": 141.953,
+   "right": 235
+  },
+  {
+   "owner": "st",
+   "text": "Stretched between",
+   "top": 40,
+   "bottom": 60,
+   "left": 48,
+   "right": 191.406
+  },
+  {
+   "owner": "shift",
+   "text": "Relatively shifted.",
+   "top": 126,
+   "bottom": 146,
+   "left": 12,
+   "right": 144.781
+  },
+  {
+   "owner": "sticky",
+   "text": "Sticky acts as static here.",
+   "top": 140,
+   "bottom": 160,
+   "left": 0,
+   "right": 192.844
+  }
+ ],
+ "scrollHeight": 1000
+}

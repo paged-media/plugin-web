@@ -1,0 +1,211 @@
+{
+ "fixture": "text-align",
+ "width": 240,
+ "height": 1000,
+ "sourceSha256": "b5d8faf064ef29f723845e650d77305c24b0a2a65d7ff75e7a461f52e7c9d92d",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "l",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 240,
+   "h": 140
+  },
+  {
+   "id": "c",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 148,
+   "w": 240,
+   "h": 140
+  },
+  {
+   "id": "r",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 296,
+   "w": 240,
+   "h": 140
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "l",
+   "text": "Left aligned. Alpha bravo ",
+   "top": 0,
+   "bottom": 20,
+   "left": 0,
+   "right": 188.219
+  },
+  {
+   "owner": "l",
+   "text": "charlie delta echo foxtrot golf ",
+   "top": 20,
+   "bottom": 40,
+   "left": 0,
+   "right": 222.75
+  },
+  {
+   "owner": "l",
+   "text": "hotel india juliet kilo lima mike ",
+   "top": 40,
+   "bottom": 60,
+   "left": 0,
+   "right": 223.984
+  },
+  {
+   "owner": "l",
+   "text": "november oscar papa quebec ",
+   "top": 60,
+   "bottom": 80,
+   "left": 0,
+   "right": 226.484
+  },
+  {
+   "owner": "l",
+   "text": "romeo sierra tango uniform ",
+   "top": 80,
+   "bottom": 100,
+   "left": 0,
+   "right": 206
+  },
+  {
+   "owner": "l",
+   "text": "victor whiskey xray yankee ",
+   "top": 100,
+   "bottom": 120,
+   "left": 0,
+   "right": 204.438
+  },
+  {
+   "owner": "l",
+   "text": "zulu.",
+   "top": 120,
+   "bottom": 140,
+   "left": 0,
+   "right": 36.25
+  },
+  {
+   "owner": "c",
+   "text": "Centered text. Alpha bravo ",
+   "top": 148,
+   "bottom": 168,
+   "left": 18.891,
+   "right": 221.094
+  },
+  {
+   "owner": "c",
+   "text": "charlie delta echo foxtrot golf ",
+   "top": 168,
+   "bottom": 188,
+   "left": 8.625,
+   "right": 231.375
+  },
+  {
+   "owner": "c",
+   "text": "hotel india juliet kilo lima mike ",
+   "top": 188,
+   "bottom": 208,
+   "left": 8,
+   "right": 231.984
+  },
+  {
+   "owner": "c",
+   "text": "november oscar papa quebec ",
+   "top": 208,
+   "bottom": 228,
+   "left": 6.75,
+   "right": 233.234
+  },
+  {
+   "owner": "c",
+   "text": "romeo sierra tango uniform ",
+   "top": 228,
+   "bottom": 248,
+   "left": 17,
+   "right": 223
+  },
+  {
+   "owner": "c",
+   "text": "victor whiskey xray yankee ",
+   "top": 248,
+   "bottom": 268,
+   "left": 17.781,
+   "right": 222.219
+  },
+  {
+   "owner": "c",
+   "text": "zulu.",
+   "top": 268,
+   "bottom": 288,
+   "left": 101.875,
+   "right": 138.125
+  },
+  {
+   "owner": "r",
+   "text": "Right aligned. Alpha bravo ",
+   "top": 296,
+   "bottom": 316,
+   "left": 42.078,
+   "right": 240
+  },
+  {
+   "owner": "r",
+   "text": "charlie delta echo foxtrot golf ",
+   "top": 316,
+   "bottom": 336,
+   "left": 17.25,
+   "right": 240
+  },
+  {
+   "owner": "r",
+   "text": "hotel india juliet kilo lima mike ",
+   "top": 336,
+   "bottom": 356,
+   "left": 16.016,
+   "right": 240
+  },
+  {
+   "owner": "r",
+   "text": "november oscar papa quebec ",
+   "top": 356,
+   "bottom": 376,
+   "left": 13.516,
+   "right": 240
+  },
+  {
+   "owner": "r",
+   "text": "romeo sierra tango uniform ",
+   "top": 376,
+   "bottom": 396,
+   "left": 34,
+   "right": 240
+  },
+  {
+   "owner": "r",
+   "text": "victor whiskey xray yankee ",
+   "top": 396,
+   "bottom": 416,
+   "left": 35.563,
+   "right": 240
+  },
+  {
+   "owner": "r",
+   "text": "zulu.",
+   "top": 416,
+   "bottom": 436,
+   "left": 203.75,
+   "right": 240
+  }
+ ],
+ "scrollHeight": 1000
+}

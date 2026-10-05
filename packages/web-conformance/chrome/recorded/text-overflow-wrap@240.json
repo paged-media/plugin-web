@@ -1,0 +1,107 @@
+{
+ "fixture": "text-overflow-wrap",
+ "width": 240,
+ "height": 1000,
+ "sourceSha256": "558b538d7b0aee806e2162c650ee9f81f40afc4c50d9daf1d3b5b587dd6e24fd",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "bw",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 240,
+   "h": 60
+  },
+  {
+   "id": "ba",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 68,
+   "w": 240,
+   "h": 60
+  },
+  {
+   "id": "ov",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 136,
+   "w": 240,
+   "h": 40
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "bw",
+   "text": "Supercalifragilisticexpialidociou",
+   "top": 0,
+   "bottom": 20,
+   "left": 0,
+   "right": 239.281
+  },
+  {
+   "owner": "bw",
+   "text": "slylongwordwithoutanybreakop",
+   "top": 20,
+   "bottom": 40,
+   "left": 0,
+   "right": 237.297
+  },
+  {
+   "owner": "bw",
+   "text": "portunity and more.",
+   "top": 40,
+   "bottom": 60,
+   "left": 0,
+   "right": 148.766
+  },
+  {
+   "owner": "ba",
+   "text": "Break all breaks anywhere in w",
+   "top": 68,
+   "bottom": 88,
+   "left": 0,
+   "right": 234.547
+  },
+  {
+   "owner": "ba",
+   "text": "ords when needed to fit the fra",
+   "top": 88,
+   "bottom": 108,
+   "left": 0,
+   "right": 233.625
+  },
+  {
+   "owner": "ba",
+   "text": "me.",
+   "top": 108,
+   "bottom": 128,
+   "left": 0,
+   "right": 27.953
+  },
+  {
+   "owner": "ov",
+   "text": "Overflowingsupercalifragilisticexpialidociouslylongword ",
+   "top": 136,
+   "bottom": 156,
+   "left": 0,
+   "right": 421.469
+  },
+  {
+   "owner": "ov",
+   "text": "stays whole.",
+   "top": 156,
+   "bottom": 176,
+   "left": 0,
+   "right": 94.406
+  }
+ ],
+ "scrollHeight": 1000
+}
