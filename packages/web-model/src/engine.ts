@@ -20,44 +20,33 @@
 // A rendered web frame is reproducible only if the exact engine stack
 // that painted it is recorded: re-rendering the same source under the
 // same pins must yield the same scene. This module is the pin's single
-// source of truth — FORWARD-DECLARED today (the engine isn't built; the
-// versions are the W0 spike's proven stack, BREAKAGE_LOG W-01 / ADR-011)
-// and stamped into the source envelope's `engine` field on save so a
-// future re-render can detect a stack drift.
-//
-// These are NOT runtime-loaded versions — nothing reads them to fetch
-// wasm. They are the DECLARED contract: "this is the stack a render
-// would use", recorded so determinism is auditable the moment the engine
-// drops in behind the render contract.
+// source of truth, stamped into the source envelope's `engine` field on
+// save so a later render can detect a stack drift. It must equal the
+// versions in packages/web-render/Cargo.lock — web-bundle's
+// engine-pin.spec.ts fails when it does not.
 
-/** The pinned web-engine stack — the W0 spike's proven versions
- *  (ADR-011: the Blitz stack `=0.3.0-alpha.4` + Stylo 0.17 compiles AND
- *  paints on wasm32; `anyrender_vello 0.11` pins vello ^0.9 + wgpu ^29 =
- *  exactly core's versions). Bump in lockstep with the built artifact;
- *  the envelope stamp lets a re-render detect when a document was last
- *  rendered under an older stack. */
+/** The pinned web-engine stack (ADR 401: the Blitz stack is pinned
+ *  exactly). Bump in lockstep with the web-render lockfile. */
 export interface EnginePin {
   /** blitz-dom / blitz-paint version. */
   blitz: string;
   /** Stylo (servo CSS) version. */
   stylo: string;
-  /** anyrender_vello version (the Vello/wgpu bridge). */
+  /** anyrender version (the paint-scene trait the capture implements). */
   anyrender: string;
 }
 
-/** The current pin — forward-declared from the W0 spike (the artifact
- *  is not built yet; these are the versions it WILL use). Frozen so it
- *  can't be mutated by a stamp round-trip. */
+/** The current pin. Frozen so it can't be mutated by a stamp round-trip. */
 export const ENGINE_PIN: Readonly<EnginePin> = Object.freeze({
   blitz: "0.3.0-alpha.4",
   stylo: "0.17.0",
-  anyrender: "0.11.0",
+  anyrender: "0.10.0",
 });
 
 /** Flatten an {@link EnginePin} to the envelope's `engine` record
  *  (`Record<string, string>` — the structural twin of the host's
  *  `PluginMetadataEnvelope.engine`). Stamped on every save so the
- *  document records which stack a (future) render used. */
+ *  document records which stack a render used. */
 export function engineStamp(pin: Readonly<EnginePin> = ENGINE_PIN): Record<
   string,
   string

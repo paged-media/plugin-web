@@ -1351,11 +1351,12 @@ function SourceEditor({
           }}
         />
       </div>
-      {/* On-canvas rendering awaits the engine lane (Blitz/WASM, W0
-          spike) — saying so beats pretending. */}
+      {/* The preview is the browser's rendering; the canvas is the
+          engine's, refreshed by the render commands — saying so beats
+          pretending they are the same. */}
       <p style={{ margin: "var(--space-1, 4px) 0 0", font: "10px var(--font-sans, sans-serif)", color: "var(--pg-muted-fg)" }}>
-        Panel preview only — on-canvas vector rendering ships with the
-        engine lane.
+        Browser preview — the canvas updates when you run “Render web frame
+        to canvas” (or the flow render).
       </p>
       {diagnostics.length > 0 && (
         <>

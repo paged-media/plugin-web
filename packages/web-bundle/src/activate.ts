@@ -16,13 +16,12 @@
  *  @license    AGPL-3.0-only OR Paged Media Enterprise License (PMEL)
  */
 
-// The paged.web bundle entry. v0 scope (the honest slice API v0.2
-// carries): the webFrame SOURCE lane — insert command, the source
-// panel (HTML/CSS editors + sandboxed preview + diagnostics), and
-// storage-backed persistence. The rendering lane (Blitz/WASM into
-// Vello, concept §4) is the W0 engine spike; the manifest already
-// declares the webFrame object type + edit context so the contract
-// is forward-complete (both reserved host-side).
+// The paged.web bundle entry: the seven commands (insert, render frame,
+// render flow, thread / unthread / thread-named, bake), the "Web frame"
+// source panel, the webFrame object type + edit context (double-click
+// opens the panel), the .html importer and the menu. Rendering is the
+// Blitz engine wasm (engine-loader.ts) submitting C-1 scene layers;
+// persistence is the document label + container parts (source-part.ts).
 
 import type { BundleHandle, BundleHost } from "@paged-media/plugin-api";
 import { contributeMenu } from "./menu";

@@ -39,7 +39,8 @@ export interface WebFrameOptions {
    *  frame/panel decides). In the source panel this is honestly real:
    *  the preview IFRAME takes this width, and an iframe's element size
    *  IS the CSS viewport its content lays out (and media-queries)
-   *  against. Declarative for the engine rendering lane too (W0). */
+   *  against. The canvas render does NOT use it yet: it lays out at the
+   *  frame's own width. */
   viewportWidth?: number;
 }
 

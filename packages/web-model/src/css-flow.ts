@@ -119,8 +119,9 @@ export function flowSelectorFor(css: string, name: string): string | undefined {
 
 /**
  * Honest diagnostics for the CSS Regions syntax the source uses: which content
- * flows where, and what the MVP does NOT yet do (multiple named flows; DOM
- * `flow-from` regions — recipients are the host frame chain). Never throws.
+ * flows where, how to reach a second (third, …) named flow, and that DOM
+ * `flow-from` regions are not used — recipients are the host frame chain.
+ * Never throws.
  */
 export function namedFlowDiagnostics(css: string): WebDiagnostic[] {
   const into = parseFlowInto(css);

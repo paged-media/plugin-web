@@ -153,9 +153,8 @@ export {
   type NamedFlowRule,
 } from "./css-flow";
 
-// Engine version PINNING — the determinism record (ADR-011). The pin is
-// forward-declared from the W0 spike's proven stack and stamped into the
-// source envelope so a future re-render is reproducible.
+// Engine version PINNING — the determinism record (ADR-011, ADR 401),
+// stamped into the source envelope so a re-render is reproducible.
 export {
   ENGINE_PIN,
   engineStamp,

@@ -16,24 +16,21 @@
  *  @license    AGPL-3.0-only OR Paged Media Enterprise License (PMEL)
  */
 
-// The BAKE PATH — "Render to frame". The bundle-side wiring of the
-// W-01 render contract to the C-1 `sceneLayer` rail (ADR-011 Option B:
-// lower Blitz's paint to the plugin scene layer, never a core paint
-// hook). It is STRUCTURED end-to-end and ENGINE-GATED: it reads the
-// selected web frame's source + geometry, builds a `WebRenderRequest`,
-// calls `renderWebFrame`, and —
-//   · WHEN the engine paints (future): submits the C-1 SceneLayer via
-//     `host.contribute.sceneLayer().submit(...)` so core composes it
-//     inside the frame under `ItemTransform` + content-box clip;
-//   · TODAY: `renderWebFrame` returns the honest not-loaded path
-//     (`sceneLayer: null`), so this surfaces the "engine not loaded"
-//     diagnostic and leaves the sandboxed source-lane preview as the
-//     only preview. NOTHING is faked — no empty layer is submitted.
+// The RENDER PATH — "Render web frame to canvas" and the flow render. The
+// bundle-side wiring of the render contract to the C-1 `sceneLayer` rail
+// (ADR-011 Option B: lower Blitz's paint to the plugin scene layer, never a
+// core paint hook). It reads the web frame's source + geometry, builds a
+// render request and —
+//   · with the engine loaded (engine-loader.ts): renders it and submits
+//     the C-1 SceneLayer via `host.contribute.sceneLayer().submit(...)`,
+//     which core composes inside the frame under `ItemTransform` +
+//     content-box clip (a flow: one layer per frame of the chain);
+//   · without it: web-model's not-loaded result — the "engine not
+//     loaded" diagnostic, the sandboxed source-lane preview stays the only
+//     preview, and NOTHING is faked (no empty layer is submitted).
 //
-// The B2 baking (a real SceneLayer → IDML vector+text fallback, so a
-// foreign open sees baked content) is the documented downstream step:
-// it lowers WHATEVER scene the engine produced and is therefore equally
-// engine-gated. It is named here as the next seam, not implemented.
+// Baking a rendered scene into native page items (so a foreign open and
+// IDML/PDF export see the content) is bake-plan.ts + bake-to-document.ts.
 
 import type {
   BundleHost,

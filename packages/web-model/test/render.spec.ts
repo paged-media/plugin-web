@@ -149,11 +149,11 @@ describe("renderWebFlow — the not-loaded path (ADR-020 rung 2)", () => {
 });
 
 describe("engine pin — determinism record (ADR-011)", () => {
-  it("ENGINE_PIN is the W0 spike's forward-declared stack", () => {
+  it("ENGINE_PIN is the pinned engine stack (web-render Cargo.lock)", () => {
     expect(ENGINE_PIN).toEqual({
       blitz: "0.3.0-alpha.4",
       stylo: "0.17.0",
-      anyrender: "0.11.0",
+      anyrender: "0.10.0",
     });
   });
 
@@ -168,7 +168,7 @@ describe("engine pin — determinism record (ADR-011)", () => {
     expect(env.engine).toEqual({
       blitz: "0.3.0-alpha.4",
       stylo: "0.17.0",
-      anyrender: "0.11.0",
+      anyrender: "0.10.0",
     });
   });
 
