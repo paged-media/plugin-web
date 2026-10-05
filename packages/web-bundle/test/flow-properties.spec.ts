@@ -117,15 +117,20 @@ describe.skipIf(!present)("fragmentation conserves text (real engine, fast-check
     60_000,
   );
 
-  // DEFECT FW-02 (CW-02): an outside list marker's glyph run takes the next
-  // item's text, so a fragmented list repeats and drops items. Pinned in
-  // web-render's flow_parity.rs too. Flip to `it` when the capture is fixed.
-  it.fails("DEFECT FW-02: a fragmented list does not conserve its items @feat:plugin-web.flow-fragmentation", async () => {
+  // FW-02 (fixed): an outside list marker's glyph run took the next item's
+  // text, so a fragmented list repeated and dropped items. Also asserted in
+  // web-render's flow_parity.rs against Chrome.
+  it("a fragmented list conserves its items @feat:plugin-web.flow-fragmentation", async () => {
     const g = await glue();
     const list = `<ul>${Array.from({ length: 12 }, (_, i) => `<li>item${i} ${WORDS}</li>`).join("")}</ul>`;
     const frames = [{ widthPx: 240, heightPx: 160 }, { widthPx: 240, heightPx: 160 }, { widthPx: 240, heightPx: 160 }];
-    const flat = flow(g, list, frames).frames.flat();
-    const whole = flow(g, list, [{ widthPx: 240, heightPx: 100_000 }]).frames[0];
+    // The outside markers are painted after their item's lines, so where a
+    // marker falls among the words depends on the frame; conserve the items.
+    const items = (ws: string[]) => ws.filter((w) => w !== "•");
+    const flat = items(flow(g, list, frames).frames.flat());
+    const whole = items(flow(g, list, [{ widthPx: 240, heightPx: 100_000 }]).frames[0]);
+    expect(flat.length).toBeGreaterThan(0);
+    expect(new Set(flat.filter((w) => w.startsWith("item"))).size).toBe(flat.filter((w) => w.startsWith("item")).length);
     expect(whole.slice(0, flat.length)).toEqual(flat);
   });
 });
