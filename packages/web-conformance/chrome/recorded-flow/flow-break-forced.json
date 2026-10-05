@@ -1,0 +1,30 @@
+{
+ "fixture": "flow-break-forced",
+ "frames": [
+  {
+   "widthPx": 240,
+   "heightPx": 200
+  },
+  {
+   "widthPx": 240,
+   "heightPx": 200
+  },
+  {
+   "widthPx": 240,
+   "heightPx": 200
+  },
+  {
+   "widthPx": 240,
+   "heightPx": 200
+  }
+ ],
+ "sourceSha256": "ac798cc1b4285a7278ec31a8cf48653deda249569c7836f397ec73cb8223aebe",
+ "chrome": "153.0.8010.12",
+ "frameText": [
+  "One short paragraph.",
+  "Forced into frame two. Alpha bravo charlie delta. Still in frame two. Echo foxtrot golf hotel. This box ends frame two. India juliet.",
+  "Frame three opens here. Kilo lima mike. Nested first child. November oscar.",
+  "Nested forced child. Papa quebec. Nested tail. Romeo sierra."
+ ],
+ "oversetText": ""
+}

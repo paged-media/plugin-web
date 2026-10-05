@@ -136,10 +136,12 @@ fn run(rec: &FlowRecording, html: &str) -> FlowResultRow {
     let chrome_overset = !rec.overset_text.trim().is_empty();
 
     // Conservation: everything Blitz painted across the frames, in order, is
-    // a prefix of the whole flow laid out in one frame tall enough to hold it.
+    // a prefix of the whole document painted in one frame tall enough to hold
+    // it (a plain render, not a flow: a forced break would end a one-frame
+    // flow and leave the rest overset).
     let w = frames[0].0;
-    let tall = render_web_flow_variable(html, &[(w, 100_000)]);
-    let whole: Vec<String> = tall.frames.iter().flat_map(frame_words).collect();
+    let tall = web_render::capture::render_html(html, w, 100_000);
+    let whole: Vec<String> = frame_words(&tall);
     let flat: Vec<String> = blitz.iter().flatten().cloned().collect();
     let conserve_error = if whole.starts_with(&flat) {
         None

@@ -1,0 +1,25 @@
+{
+ "fixture": "flow-break-avoid",
+ "frames": [
+  {
+   "widthPx": 240,
+   "heightPx": 160
+  },
+  {
+   "widthPx": 240,
+   "heightPx": 160
+  },
+  {
+   "widthPx": 240,
+   "heightPx": 160
+  }
+ ],
+ "sourceSha256": "b6f22212240d6fd7cb55c7db6e69f183f62abbb3c4b62c3a93e04d7f0713567a",
+ "chrome": "153.0.8010.12",
+ "frameText": [
+  "Opening paragraph of the first frame, long enough to fill six lines of the narrow frame with plain words, and then a few more words so that it really does reach the sixth line.",
+  "This paragraph avoids a break inside, so it moves whole to frame two rather than splitting. Filler paragraph that stays in frame two after the kept one.",
+  "Heading kept with next The paragraph after the heading avoids a break inside and pulls its heading along into frame three."
+ ],
+ "oversetText": ""
+}

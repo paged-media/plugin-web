@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta name="paged-frames" content="240x200,240x200,240x200,240x200">
+<style>
+html { font-family: Inter; line-height: 1.25; font-optical-sizing: none; }
+body { margin: 0; }
+p { margin: 0 0 10px; orphans: 1; widows: 1; }
+.before { break-before: column; }
+.after { break-after: column; }
+</style></head>
+<body>
+<p>One short paragraph.</p>
+<p class="before">Forced into frame two. Alpha bravo charlie delta.</p>
+<p>Still in frame two. Echo foxtrot golf hotel.</p>
+<div class="after"><p>This box ends frame two. India juliet.</p></div>
+<p>Frame three opens here. Kilo lima mike.</p>
+<div><p>Nested first child. November oscar.</p><p class="before">Nested forced child. Papa quebec.</p><p>Nested tail. Romeo sierra.</p></div>
+</body></html>

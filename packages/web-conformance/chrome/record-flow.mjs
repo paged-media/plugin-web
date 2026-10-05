@@ -83,9 +83,13 @@ function fragment({ w, h, n }) {
 }
 
 async function main() {
+  // Optional fixture names on the command line record only those
+  // (`record-flow.mjs flow-break-avoid`); none records every fixture.
+  const only = new Set(process.argv.slice(2));
   const names = readdirSync(FIXTURES)
     .filter((f) => f.endsWith(".html"))
     .map((f) => basename(f, ".html"))
+    .filter((n) => only.size === 0 || only.has(n))
     .sort();
   mkdirSync(OUT, { recursive: true });
   const face = fontFaceStyle();

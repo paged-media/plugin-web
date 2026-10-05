@@ -81,6 +81,11 @@ pub mod fonts;
 #[cfg(feature = "blitz")]
 pub mod geometry;
 
+// Fragmentation rules the pinned Stylo does not compute (`break-*`,
+// `orphans`, `widows`, `@page` margins), read from the document's CSS.
+#[cfg(feature = "blitz")]
+pub mod break_rules;
+
 // Flow fragmentation — one flow across a frame chain (ADR 404). Behind
 // `blitz`; see docs/design/flow-fragmentation.md.
 #[cfg(feature = "blitz")]

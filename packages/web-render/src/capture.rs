@@ -867,6 +867,8 @@ pub fn render_html(html: &str, width_px: u32, height_px: u32) -> WebDisplayList 
     };
     let mut doc = HtmlDocument::from_html(html, config);
     perf::bump(Counter::HtmlParses, 1);
+    // A frame is a page box: `@page` margins inset its content (ADR 412).
+    crate::break_rules::apply_page_box(&mut doc);
     doc.set_viewport(Viewport::new(width_px, height_px, 1.0, ColorScheme::Light));
     doc.resolve(0.0);
     perf::bump(Counter::Resolves, 1);
