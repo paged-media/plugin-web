@@ -33,6 +33,7 @@ import {
 
 import manifest from "../manifest.json";
 
+import { startAutoRender } from "./auto-render";
 import { bakeSelectedWebFrame } from "./bake-to-document";
 import { insertWebFrame } from "./insert";
 import { renderSelectedWebFrame } from "./render-command";
@@ -157,8 +158,12 @@ export function activate(host: BundleHost): BundleHandle {
   // F1 — the menu bar. Before plugin-api 0.2.33 there was no menu door,
   // so every command in this bundle lived behind Cmd+K and nowhere else.
   const menuSub = contributeMenu(host);
+  // The canvas follows the document: web frames render on activation, on
+  // document open and after changes (auto-render.ts).
+  const auto = startAutoRender(host);
   return {
     dispose() {
+      auto.dispose();
       menuSub.dispose();
     },
   };

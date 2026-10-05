@@ -43,6 +43,7 @@
 
 import type { BundleHost, ElementId } from "@paged-media/plugin-api";
 import {
+  isWebFrameEnvelope,
   LABEL_INLINE_MAX_BYTES,
   sourceFromEnvelope,
   sourceFromPartText,
@@ -95,6 +96,15 @@ export async function loadWebSource(
     }
   }
   return inline;
+}
+
+/** A frame's web label as text — what names its source (inline, or a
+ *  pointer by content hash) — or `null` when the frame is not a web frame.
+ *  For change detection (auto-render.ts); the source itself is read with
+ *  {@link loadWebSource}. */
+export async function readWebLabel(host: PersistHost, id: ElementId): Promise<string | null> {
+  const label = (await host.document.getMetadata(id)) as WebSourceEnvelope | null;
+  return label && isWebFrameEnvelope(label) ? JSON.stringify(label) : null;
 }
 
 /** A readable reason from a refused mutation's `error` (any shape). */

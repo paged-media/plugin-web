@@ -84,14 +84,45 @@ const PX_PER_PT = 96 / 72;
  *  session caches `sceneSurface`) keeps the submitted layer alive. */
 const sceneSurfaces = new WeakMap<BundleHost, SceneLayerSurface>();
 
+/** The frame ids that hold a layer this bundle submitted, per host — so
+ *  the auto renderer (auto-render.ts) can clear a frame that left a flow
+ *  or was deleted. */
+const submittedFrames = new WeakMap<BundleHost, Set<string>>();
+
+/** The frames currently holding a layer this bundle submitted. */
+export function framesWithLayers(host: BundleHost): Set<string> {
+  let set = submittedFrames.get(host);
+  if (!set) {
+    set = new Set();
+    submittedFrames.set(host, set);
+  }
+  return set;
+}
+
 /** Get (or lazily create) the host's persistent scene-layer surface, or
  *  `null` when the host wires no scene channel. Never disposed here — it
- *  lives for the host's lifetime so the submitted layer persists. */
-function persistentSceneSurface(host: BundleHost): SceneLayerSurface | null {
+ *  lives for the host's lifetime so the submitted layer persists. Submits
+ *  and clears are recorded in {@link framesWithLayers}. */
+export function persistentSceneSurface(host: BundleHost): SceneLayerSurface | null {
   if (!host.supports("rendering.sceneLayer@1")) return null;
   let surface = sceneSurfaces.get(host);
   if (!surface) {
-    surface = host.contribute.sceneLayer();
+    const inner = host.contribute.sceneLayer();
+    const held = framesWithLayers(host);
+    surface = Object.assign(Object.create(inner) as SceneLayerSurface, {
+      submit: async (id: string, layer: Parameters<SceneLayerSurface["submit"]>[1]) => {
+        await inner.submit(id, layer);
+        held.add(id);
+      },
+      clear: async (id: string) => {
+        await inner.clear(id);
+        held.delete(id);
+      },
+      dispose: () => {
+        held.clear();
+        inner.dispose();
+      },
+    });
     sceneSurfaces.set(host, surface);
   }
   return surface;
@@ -526,9 +557,15 @@ export async function bakeWebFlows(
   let anyOverset = false;
 
   for (const group of groups) {
-    const groupFrames = group.frames as unknown as ElementId[];
-    const geos = await host.document.elementGeometry(groupFrames);
-    const framesPx = group.frames.map((_, i) => {
+    // A frame of the chain that no longer exists (deleted; undo can bring
+    // it back, so the chain keeps naming it) is skipped, not laid out as a
+    // 0×0 region. Geometry is matched by id, never by reply position.
+    const asked = await host.document.elementGeometry(group.frames as unknown as ElementId[]);
+    const byId = new Map(asked.map((g) => [(g.id as { id?: unknown }).id, g]));
+    const present = group.frames.filter((f) => byId.has(f.id));
+    const groupFrames = present as unknown as ElementId[];
+    const geos = present.map((f) => byId.get(f.id));
+    const framesPx = present.map((_, i) => {
       const b = geos[i]?.bounds;
       const widthPt = b ? Math.max(0, b[3] - b[1]) : 0;
       const heightPt = b ? Math.max(0, b[2] - b[0]) : 0;
@@ -542,10 +579,10 @@ export async function bakeWebFlows(
     const flowRoot = flowSelectorFor(rendered.css, group.name);
     const flow = engine.renderFlow(composedHtml, framesPx, flowRoot);
     if (flow === null) {
-      group.frames.forEach(() => layers.push(null));
+      present.forEach(() => layers.push(null));
       continue;
     }
-    for (let i = 0; i < group.frames.length; i += 1) {
+    for (let i = 0; i < present.length; i += 1) {
       const layer = flow.frames[i] ?? null;
       layers.push(layer);
       const target = asFrameTarget(groupFrames[i]);
