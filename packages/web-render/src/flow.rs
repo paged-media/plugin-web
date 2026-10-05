@@ -193,7 +193,7 @@ pub fn render_web_flow_variable_rooted(
         let is_last = fi + 1 == frames.len();
 
         // The last frame keeps everything up to its height (content beyond is
-        // overset). A non-last frame is cut by `plan_frame_cut`: the full
+        // overset; an overset last frame is cut below, after its paint). A non-last frame is cut by `plan_frame_cut`: the full
         // blocks it consumes PLUS a mid-block line split of the straddling
         // plain-text paragraph (rung 3) — the cut aligns to exactly what we
         // then delete/split, so no block or line straddle-duplicates. The cut
@@ -219,6 +219,21 @@ pub fn render_web_flow_variable_rooted(
             h.saturating_add(BAND_MARGIN_PX).min(tall)
         };
         let full = capture_resolved(&mut doc, w, paint_h);
+
+        // An overset last frame ends where the content that FITS ends, cut
+        // the way a non-last frame is: a straddling table row or line moves to
+        // the overset, never half-shown past the frame's bottom (when nothing
+        // fits whole, the frame keeps its height as before).
+        let cut_pt = if is_last && painted_content_bottom_pt(&full, w, paint_h) > h_pt + 0.5 {
+            let c = plan_frame_cut(&doc, h as f32, flow_root);
+            if c.cut_px > 0.0 && (!c.delete_full.is_empty() || c.split.is_some()) {
+                c.cut_px * PX_TO_PT
+            } else {
+                cut_pt
+            }
+        } else {
+            cut_pt
+        };
 
         let mut dl = WebDisplayList::new();
         for cmd in &full.commands {

@@ -46,15 +46,14 @@ use web_render::flow::render_web_flow_variable;
 
 #[derive(Debug, Clone, Copy)]
 enum Expect {
+    #[allow(dead_code)]
     Defect(&'static str),
     #[allow(dead_code)]
     Diverges(&'static str),
 }
 
 #[rustfmt::skip]
-const EXPECT: &[(&str, &str, Expect)] = &[
-    ("flow-table-rows", "breaks", Expect::Defect("FW-03 the last frame keeps a table row that does not fit its height")),
-];
+const EXPECT: &[(&str, &str, Expect)] = &[];
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
