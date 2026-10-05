@@ -73,9 +73,9 @@ Each named flow is a separate full run of the engine over the same composed docu
 The scanner matches flat `selector { … }` blocks and ignores at-rules and nesting
 (`css-flow.ts:35-38`).
 
-`packages/web-model/src/render.ts:212-288` still carries a host-independent flow request shape with a
+`packages/web-model/src/render.ts:198-281` still carries a host-independent flow request shape with a
 `FlowId` type and a `renderWebFlow` function that always returns the not-loaded result. The
-real path does not use it (`packages/web-bundle/src/bake.ts:358-361`).
+real path does not use it (`packages/web-bundle/src/bake.ts:347-350`).
 
 The flatten to native items ([ADR 407](407-baking-flattens-to-native-items.md)) follows the
 primary chain only: it resolves the chain with `flowChainOf`, which leaves out recipients

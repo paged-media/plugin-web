@@ -67,7 +67,7 @@ The capture is written against this version's `PaintScene` calls, and the flow c
 Moving the pin means revisiting both.
 
 The stamp is written but not read. `pinFromStamp` and `pinMatches` exist
-(`packages/web-model/src/engine.ts:72-85`) and nothing under `packages/*/src` calls them, so
+(`packages/web-model/src/engine.ts:61-74`) and nothing under `packages/*/src` calls them, so
 no code detects that a document was last saved under another engine version.
 
 The TypeScript pin and its comments do not match the crate. `ENGINE_PIN.anyrender` is
