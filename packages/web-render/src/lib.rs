@@ -61,6 +61,13 @@
 
 pub mod display_list;
 pub mod lower;
+pub mod perf;
+
+// The exports' native bodies (boundary byte counting) + the perf exports.
+#[cfg(feature = "blitz")]
+mod boundary;
+#[cfg(feature = "blitz")]
+pub use boundary::{render_web_flow_boundary_json, render_web_frame_json};
 pub mod wire;
 
 #[cfg(feature = "blitz")]
@@ -92,8 +99,7 @@ pub use wire::{
 #[cfg(all(feature = "blitz", target_arch = "wasm32"))]
 #[wasm_bindgen::prelude::wasm_bindgen]
 pub fn render_web_frame(html: &str, width_px: u32, height_px: u32) -> String {
-    let lowered = capture::render_and_lower(html, width_px, height_px);
-    serde_json::to_string(&lowered.layer).unwrap_or_else(|_| "{\"items\":[]}".to_string())
+    render_web_frame_json(html, width_px, height_px)
 }
 
 /// The wasm entry for a THREADED web flow (ADR-020 scoped extension, rung 2).
@@ -106,7 +112,7 @@ pub fn render_web_frame(html: &str, width_px: u32, height_px: u32) -> String {
 pub fn render_web_flow(html: &str, frames_json: &str, flow_root: &str) -> String {
     // `flow_root` is a CSS `flow-into` selector (Regions syntax) or "" for the
     // whole body.
-    flow::render_web_flow_json(html, frames_json, flow_root)
+    render_web_flow_boundary_json(html, frames_json, flow_root)
 }
 
 /// The hash of the sources this wasm was built from (`scripts/source-hash.mjs`,

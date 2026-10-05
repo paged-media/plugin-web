@@ -52,6 +52,7 @@ pub const BUNDLED_FAMILY: &str = "Inter";
 /// which is the upstream "standard setup for WASM"). Used for BOTH the
 /// native and wasm builds so shaping is deterministic.
 pub fn build_font_ctx() -> FontContext {
+    crate::perf::bump(crate::perf::Counter::FontContextBuilds, 1);
     blitz_dom::build_single_font_ctx(INTER_REGULAR)
 }
 

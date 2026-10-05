@@ -160,6 +160,7 @@ pub fn render_web_flow_variable_rooted(
         ..Default::default()
     };
     let mut doc = HtmlDocument::from_html(html, config);
+    crate::perf::bump(crate::perf::Counter::HtmlParses, 1);
 
     // CSS Regions `flow-into`: keep ONLY the named flow root's subtree so only
     // its content flows. Handles a NESTED root (e.g. body > main > #story), not
@@ -191,6 +192,7 @@ pub fn render_web_flow_variable_rooted(
     for (fi, &(w, h)) in frames.iter().enumerate() {
         doc.set_viewport(Viewport::new(w, tall, 1.0, ColorScheme::Light));
         doc.resolve(0.0);
+        crate::perf::bump(crate::perf::Counter::Resolves, 1);
 
         // Paint the REMAINING document at this width. After each prefix
         // deletion the remainder re-lays out from y=0, so the capture is

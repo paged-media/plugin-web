@@ -105,6 +105,7 @@ import {
   type EditorLane,
 } from "./editor-lane";
 import { resolvePreviewFontFaces } from "./font-resolution";
+import { watchDocumentFonts } from "./font-watch";
 import {
   clipboardAvailable,
   describeRemoval,
@@ -116,18 +117,6 @@ import { selectRange } from "./find-in-source";
 /** Trailing-edge debounce between a keystroke and the preview/lint
  *  refresh. Document writes do NOT ride this timer — see `persistDraft`. */
 export const PREVIEW_DEBOUNCE_MS = 300;
-
-/** The `fonts` collection's row shape we read — family NAMES only.
- *  Structural twin of the wire `FontSummary` (not re-exported from
- *  plugin-api), supplied as the `collection<T>` type parameter so the
- *  bundle stays decoupled from the vendored wire types. The wire
- *  shape carries no face BYTES (and the only bytes-bearing message is
- *  the engine's host→worker `registerFont`), so the panel can read
- *  family parity but cannot serve `@font-face` sources — that is the
- *  W-06 asset-store dependency. */
-interface FontSummaryLike {
-  family: string;
-}
 
 // ---------------------------------------------------------------- styles
 // Token-layer styling per the brand system: sentence case labels,
@@ -457,27 +446,8 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
     // (empty) — never a crash; parity then emits nothing (absence of a
     // registry is not evidence a family is missing).
     useEffect(() => {
-      let stale = false;
-      const refresh = (): void => {
-        void host.document
-          .collection<FontSummaryLike>("fonts")
-          .then((rows) => {
-            if (stale) return;
-            const fams = rows
-              .map((r) => (typeof r.family === "string" ? r.family : ""))
-              .filter((f) => f.length > 0);
-            setFontFamilies(fams);
-          })
-          .catch(() => {
-            if (!stale) setFontFamilies([]);
-          });
-      };
-      refresh();
-      const sub = host.document.onDidChange(() => refresh());
-      return () => {
-        stale = true;
-        sub.dispose();
-      };
+      const sub = watchDocumentFonts(host, setFontFamilies);
+      return () => sub.dispose();
     }, []);
     // The source lives as DOCUMENT METADATA (protocol v33). Reads are
     // async; a stale flag guards out-of-order replies on fast
