@@ -18,19 +18,12 @@
 
 // The tag OUTLINE scan — the source-side subset of click-to-inspect.
 //
-// ===================== HONEST SEAM — READ THIS =====================
-// Full live element inspection (hover a rendered box → highlight its
-// source, read computed layout/box metrics) needs the element to be
-// LAID OUT and mapped back to the source; the Blitz/WASM render lane lays
-// it out on the canvas but hands back no box-to-node map. What IS honest,
-// with only the static source
-// and a `sandbox=""` preview that runs no JS, is the SOURCE side: scan
-// the markup for its element tags and expose, per tag, the exact
-// character range of its OPEN tag in the source. The panel lists those
-// tags; clicking one selects/scrolls to that range in the code editor
-// ("Find in source"). It is a navigation aid over the text, NOT
-// inspection of a rendered box — the panel says so.
-// =================================================================
+// The outline is the SOURCE side: it scans the markup for its element tags
+// and exposes, per tag, the exact character range of its OPEN tag in the
+// source. The panel lists those tags; clicking one selects that range in
+// the code editor ("Find in source") and outlines the element's painted
+// box on the canvas — the box comes from the engine's inspected render
+// (inspect.ts), matched by tag and occurrence, the key this list implies.
 //
 // A scanner, not a parser (the `diagnose.ts` discipline): zero deps, no
 // DOM, never crashes on bad input. Void elements and close tags are not

@@ -92,9 +92,12 @@ surface.submit(frameId, layer)  ->  the host composes the layer inside the frame
    runs, axis-aligned raster images, linear, radial and sweep gradient fills, and outset and
    inset box shadows. Commands with no scene item (image or pattern brushes, rotated images,
    gradient-painted text) are counted in `LowerReport` and dropped.
-6. The wasm returns the layer as a JSON string. The whole boundary is two exported
-   functions, `render_web_frame` and `render_web_flow`: strings and integers in, JSON out
-   ([ADR 403](adr/403-json-wasm-boundary.md)). The bundle parses the JSON (a malformed
+6. The wasm returns the layer as a JSON string. The boundary is exported functions with
+   strings and integers in, JSON out ([ADR 403](adr/403-json-wasm-boundary.md)):
+   `render_web_frame`, `render_web_flow`, and `render_web_frame_inspect`, which adds to the
+   layer the map from paint back to the DOM (`inspect.rs`: each line's clusters with the text
+   node and offset they come from, each element's box by tag and occurrence) for in-frame
+   editing and the outline highlight. The bundle parses the JSON (a malformed
    payload reads as an empty layer) and submits it through one scene-layer surface per
    host, created on first use and never disposed: disposing it clears what it submitted.
 
@@ -120,7 +123,9 @@ found by the scanner in `css-flow.ts`, or empty for the whole body.
 In `flow.rs` the engine handles one frame at a time: set the viewport to that frame's width,
 resolve, capture, choose a cut, keep the commands above the cut, then remove the consumed
 content from the DOM and repeat for the next frame. The last frame keeps what fits its
-height; anything left sets `overset`. Each frame's display list is lowered on its own and
+height; anything left sets `overset`. The cut follows the source's `break-*`, `orphans` and
+`widows` rules and `@page` margins, read by `break_rules.rs` because the layout engine does not
+compute them ([ADR 412](adr/412-a-frame-is-a-page-box.md)). Each frame's display list is lowered on its own and
 the bundle submits one layer per frame. See [ADR 404](adr/404-fragmentation-by-relayout.md)
 and [ADR 020](adr/020-paged-web-native-engine-defer-frame-threading.md); the as-built detail
 is in [`design/flow-fragmentation.md`](design/flow-fragmentation.md).
@@ -179,6 +184,9 @@ See [ADR 409](adr/409-label-is-the-truth-large-sources-by-pointer.md).
 | `host.document.onDidChange`, `host.selection.get` / `set` / `onDidChange` | the panel follows the selection and re-reads after undo or redo; commands act on the selection |
 | `host.diagnostics.set` | lint, render and flow findings |
 | `host.assets.getFontFace` | font bytes for the panel preview |
+| edit context `onContentPointerDown`, `onContentKey`, `isDirty`, `onCommit`, `onCancel`, `onUndo`/`onRedo` | in-frame text editing (`in-frame-edit.ts`) |
+| `host.overlay.setToolPreviews` | the in-frame caret and the outline highlight |
+| `host.dataProviders.discover` / `get` / `onDidChange`, `host.document.meta` | bound data for templates (`bindings.ts`) |
 | `host.clipboard.read` | paste HTML into the panel, sanitised first |
 | `host.widgets.CodeEditor` | the HTML and CSS editors, with a plain textarea as fallback |
 | `host.text.measureString` | size the text frames of a flatten; estimated when absent |
@@ -186,7 +194,7 @@ See [ADR 409](adr/409-label-is-the-truth-large-sources-by-pointer.md).
 | `host.shell.openPanel`, `host.log`, `host.supports` | open the panel after insert; logging; probing optional doors |
 
 The manifest declares the matching capabilities: `document` (read `broad`, write `scoped`),
-`rendering` (`sceneLayer`), `editContext` (`webFrame`), `assets` (`fonts`), `clipboard`
+`rendering` (`sceneLayer`, `overlay`), `dataProviders` (consume `dataset`), `editContext` (`webFrame`), `assets` (`fonts`), `clipboard`
 (`full`), `network: false`, and one wasm module (`blitz`, at most 64 MiB).
 
 ## Build and test

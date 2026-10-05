@@ -32,8 +32,10 @@ without a browser.
   - Flow fixtures: Chrome pours the content through a multi-column box whose columns are the frames
     (equal frame sizes only, since Chrome has no CSS Regions); every character goes to the column
     its glyph box lands in. `breaks`: every frame holds the same words; `overset`: same overset
-    status; `conserve`: Blitz's frames lose and duplicate nothing compared with the same flow in one
-    tall frame.
+    status; `conserve`: Blitz's frames lose and duplicate nothing compared with the same document
+    painted in one tall frame. The fragmentation rules (`break-before/after/inside`, `orphans`,
+    `widows`) are written with `column` values, which Chrome's column model honours; the frame
+    as a page box (`page` values, `@page` margins) is checked by `tests/page_breaks.rs` instead.
 - **Verdicts.** `agree` is asserted (a regression fails CI). `defect` is a pinned engine
   disagreement that must keep disagreeing: the day it starts agreeing the test fails and the
   `EXPECT` row goes. `diverges` is a documented difference that is measured but not asserted.
@@ -82,8 +84,9 @@ left/center/right/justify, `letter-spacing`/`word-spacing`/`text-indent`/`text-t
 `overflow-wrap`/`word-break`, flex rows with grow/wrap/gap, grid templates, areas and spans,
 absolute and relative positioning, `::before`/`::after`, borders and radii, user-agent heading and
 blockquote defaults, inline-block. In the flow lane, Chrome and Blitz break paragraphs, split
-paragraphs mid-text, honour default orphans/widows, truncate heading margins at a break and honour a
-forced break on the same word in every case except lists and the last table row.
+paragraphs mid-text, honour orphans and widows (the initial 2 and declared values), forced breaks
+between and inside blocks, `break-inside: avoid` and `break-after: avoid`, truncate heading margins at
+a break, and break on the same word in every case except lists and the last table row.
 
 ## Not covered yet
 
@@ -192,9 +195,12 @@ Words per frame, Chrome vs Blitz (`+` = overset).
 
 | Fixture | breaks | overset | conserve | Chrome words | Blitz words |
 |---|---|---|---|---|---|
+| flow-break-avoid | agree | agree | agree | 34/27/21 | 34/27/21 |
+| flow-break-forced | agree | agree | agree | 3/23/12/9 | 3/23/12/9 |
 | flow-forced-break | agree | agree | agree | 36/29/0 | 36/29/0 |
 | flow-headings-margins | agree | agree | agree | 23/33/28 | 23/33/28 |
 | flow-list | **defect FW-02** | agree | **defect FW-02** | 36/36/36 + | 50/49/48 + |
+| flow-orphans-widows-rules | agree | agree | agree | 39/31/38/17 | 39/31/38/17 |
 | flow-orphans-widows | agree | agree | agree | 37/38/9 | 37/38/9 |
 | flow-paragraphs | agree | agree | agree | 36/36/36 + | 36/36/36 + |
 | flow-split-paragraph | agree | agree | agree | 34/38/15 | 34/38/15 |
