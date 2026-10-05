@@ -1093,7 +1093,7 @@ mod tests {
     #[test]
     fn a_flow_that_fits_its_last_frame_is_not_overset() {
         // The last frame (2000 px) is shorter than the 4096 px paint viewport.
-        // Before Wave 2 the viewport-sized canvas background counted as
+        // In the 2026-10-05 baseline the viewport-sized canvas background counted as
         // content, so this always reported overset. Both with no page
         // background (a transparent canvas fill) and with an opaque one.
         for bg in ["", "html{background:#fafafa}"] {

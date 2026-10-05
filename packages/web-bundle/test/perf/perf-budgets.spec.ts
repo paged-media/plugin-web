@@ -275,7 +275,7 @@ describe.skipIf(!bundledPresent)("web perf budgets (real host + real Blitz)", ()
 // --- the pins (measured 2026-10-05) ----------------------------------------
 
 const BUDGET = {
-  // bytesOut lowered by the engine (Wave 2): the transparent canvas fill no
+  // bytesOut lowered by the engine optimisations: the transparent canvas fill no
   // longer crosses the wire (frame 12 788 -> 12 564, flow 78 153 -> 75 467),
   // nor do zero-extent border subpaths (frame -> 6 302, flow -> 31 873).
   renderFrame: { doorCalls: 8, reads: 2, bytesIn: 8936, bytesOut: 6302 },

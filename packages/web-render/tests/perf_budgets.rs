@@ -25,11 +25,11 @@
 //! count is the same on every machine; an optimisation lowers the pin in the
 //! commit that earns it, and a pin is never raised.
 //!
-//! The baseline (2026-10-05) showed the shapes Wave 2 attacks: a flow
+//! The baseline (2026-10-05) showed the shapes the optimisations attack: a flow
 //! resolves and paints once PER FRAME, each paint covering the whole
 //! remainder (painted commands ~ frames x remaining content), and text
 //! recovery compared every captured run against every recovered run
-//! (run-match comparisons ~ R^2). After Wave 2 a flow frame paints only its
+//! (run-match comparisons ~ R^2). Now a flow frame paints only its
 //! band and run matching is ~R through an index.
 //!
 //! Run: `cargo test --features blitz,perf-counters --test perf_budgets`;
@@ -201,7 +201,7 @@ fn styled_runs_200_in_one_frame__feat__plugin_web_perf_budgets() {
 
 /// The work SHAPES, stated as relations between the pinned budgets so they
 /// read as the property they are (baseline 2026-10-05: per-frame flow work,
-/// R^2 run matching, a font context per call; Wave 2 turns them around).
+/// R^2 run matching, a font context per call; the optimisations turn them around).
 #[test]
 fn work_shapes__feat__plugin_web_perf_budgets() {
     // Resolves per flow = frames: each frame re-lays out the remainder at its
@@ -211,13 +211,13 @@ fn work_shapes__feat__plugin_web_perf_budgets() {
     assert_eq!(ARTICLE_12.resolves, 12);
     // Each frame paints only its BAND (the last frame its remainder), so a
     // flow paints about its content once, however many frames: 12 frames
-    // paint < 1.5 x one frame's commands (before Wave 2 each frame repainted
+    // paint < 1.5 x one frame's commands (in the baseline each frame repainted
     // the whole remainder: ~ C x (F + 1) / 2, 1 360 for 12 frames).
     const { assert!(2 * ARTICLE_4.painted_commands < 3 * ARTICLE_1.painted_commands) };
     const { assert!(2 * ARTICLE_12.painted_commands < 3 * ARTICLE_1.painted_commands) };
     // Run matching is LINEAR: an index answers each captured run with ~one
-    // candidate (the article's 200 line runs cost 200 comparisons; before
-    // Wave 2 they cost 200^2 = 40 000, the table 815 409).
+    // candidate (the article's 200 line runs cost 200 comparisons; in
+    // the baseline they cost 200^2 = 40 000, the table 815 409).
     assert_eq!(ARTICLE_1.run_match_comparisons, 200);
     assert_eq!(STYLED_200.run_match_comparisons, STYLED_RUNS as u64);
     const { assert!(TABLE_300.run_match_comparisons <= 4 * TABLE_ROWS as u64) };
@@ -226,7 +226,7 @@ fn work_shapes__feat__plugin_web_perf_budgets() {
 }
 
 /// The font context is built ONCE per engine (thread): the first render on a
-/// cold engine builds it, every later render reuses it. Before Wave 2 every
+/// cold engine builds it, every later render reuses it. In the baseline every
 /// render call built its own (1 per call).
 #[test]
 fn font_context_is_built_once_per_engine__feat__plugin_web_perf_budgets() {
@@ -255,7 +255,7 @@ fn font_context_is_built_once_per_engine__feat__plugin_web_perf_budgets() {
 // is fixed its test becomes a plain assertion in the fixing commit.
 // ---------------------------------------------------------------------------
 
-/// FIXED in Wave 2 (was `defect_styled_runs_carry_their_whole_line_text`):
+/// FIXED 2026-10-05 (was `defect_styled_runs_carry_their_whole_line_text`):
 /// colour-only `<span>`s share one shaping run, and every per-style glyph run
 /// recovered the shaping run's WHOLE line text (`run.text_range()`) — the
 /// canvas painted each line once per colour run, overlapping (3 257 words for
@@ -268,7 +268,7 @@ fn styled_runs_carry_only_their_own_text__feat__plugin_web_perf_budgets() {
     assert_each_once(&ws, (0..STYLED_RUNS).map(styled_marker));
 }
 
-/// FIXED in Wave 2 (was `defect_flow_reports_overset_for_content_that_fits`):
+/// FIXED 2026-10-05 (was `defect_flow_reports_overset_for_content_that_fits`):
 /// the flow's last-frame bottom included the viewport-sized transparent canvas
 /// background fill, so `overset` was true whenever the last frame was shorter
 /// than the 4096 px paint viewport, even when the text fit. The transparent

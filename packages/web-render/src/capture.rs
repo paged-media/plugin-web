@@ -1049,7 +1049,7 @@ fn run_cell(x: f32, y: f32) -> (i32, i32) {
 /// key) and by untransformed ABSOLUTE baseline (where an untransformed run's
 /// capture lands). A lookup reads the 3 x 3 cells around a point, so matching
 /// costs ~one candidate per captured run instead of a scan of every
-/// recovered run (R comparisons per run, R^2 per render, before Wave 2).
+/// recovered run (R comparisons per run, R^2 per render, in the 2026-10-05 baseline).
 struct RunIndex {
     by_local: std::collections::HashMap<(i32, i32), Vec<usize>>,
     by_abs: std::collections::HashMap<(i32, i32), Vec<usize>>,
@@ -1590,7 +1590,7 @@ mod tests {
     fn colour_only_spans_each_recover_only_their_own_text() {
         // Spans differing only in colour shape as ONE parley run that paint
         // splits into one glyph run per colour. Each must carry its own words
-        // — before Wave 2 every colour run carried the whole line, so the
+        // — in the 2026-10-05 baseline every colour run carried the whole line, so the
         // canvas drew the line once per colour, overlapping.
         let items = text_items(
             "<html><body><p style=\"margin:0\">\
