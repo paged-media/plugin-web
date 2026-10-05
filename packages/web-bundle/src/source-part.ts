@@ -38,8 +38,8 @@
 // write was refused), or when there is no label source at all.
 //
 // Content-addressed parts accumulate: one per saved version of a large
-// source. Removing the ones no label and no undo step can reach is a
-// host-side question (parts do not take part in undo) and is not done here.
+// source. The ones no label and no undo step can reach are dropped on save
+// by parts-gc.ts (ADR 410).
 
 import type { BundleHost, ElementId } from "@paged-media/plugin-api";
 import {
@@ -58,6 +58,19 @@ import {
 type PersistHost = Pick<BundleHost, "document" | "parts" | "supports">;
 
 const decoder = new TextDecoder();
+
+/** Source parts this bundle wrote in this session, per host. An undo can
+ *  return to any of them, so the collector (parts-gc.ts) never drops one. */
+const written = new WeakMap<object, Set<string>>();
+
+export function partsWrittenThisSession(host: object): Set<string> {
+  let set = written.get(host);
+  if (!set) {
+    set = new Set();
+    written.set(host, set);
+  }
+  return set;
+}
 
 /** The legacy (pre-pointer) part path for a frame's source. */
 function legacyPartPath(id: ElementId): string | null {
@@ -147,7 +160,9 @@ export async function prepareSourceLabel(
     };
   }
   try {
-    await host.parts.write(sourcePartPath(stored.ref), new TextEncoder().encode(stored.partText));
+    const path = sourcePartPath(stored.ref);
+    await host.parts.write(path, new TextEncoder().encode(stored.partText));
+    partsWrittenThisSession(host).add(path);
   } catch (err) {
     return { refused: `the web source (${kib} KiB) could not be stored: ${String(err)}` };
   }

@@ -34,6 +34,7 @@ import {
 import manifest from "../manifest.json";
 
 import { startAutoRender } from "./auto-render";
+import { startPartsCollector } from "./parts-gc";
 import { bakeSelectedWebFrame } from "./bake-to-document";
 import { insertWebFrame } from "./insert";
 import { renderSelectedWebFrame } from "./render-command";
@@ -161,8 +162,11 @@ export function activate(host: BundleHost): BundleHandle {
   // The canvas follows the document: web frames render on activation, on
   // document open and after changes (auto-render.ts).
   const auto = startAutoRender(host);
+  // Source parts no label or undo step can reach are dropped on save.
+  const collector = startPartsCollector(host);
   return {
     dispose() {
+      collector.dispose();
       auto.dispose();
       menuSub.dispose();
     },

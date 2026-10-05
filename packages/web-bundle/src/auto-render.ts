@@ -66,8 +66,6 @@ export interface AutoRenderer {
   idle(): Promise<void>;
   /** The labels of every web frame the last pass found, by frame id. */
   labels(): ReadonlyMap<string, string>;
-  /** Subscribe to the end of every pass (the parts collector uses it). */
-  onDidReconcile(listener: (labels: ReadonlyMap<string, string>) => void): { dispose(): void };
   dispose(): void;
 }
 
@@ -89,7 +87,7 @@ export function autoRendererFor(host: BundleHost): AutoRenderer | undefined {
 }
 
 /** One web frame found by discovery. */
-interface Found {
+export interface Found {
   id: ElementId;
   label: string;
 }
@@ -124,6 +122,29 @@ function parseLabel(text: string): WebSourceEnvelope | null {
   }
 }
 
+/** Every page item of the document and the web frames among them, with
+ *  their labels: one `tree()` read where the engine reports plugin labels
+ *  on tree rows, else one label read per page item. */
+export async function discoverWebFrames(
+  host: BundleHost,
+): Promise<{ items: ElementId[]; found: Found[] }> {
+  const roots = await host.document.tree();
+  const { items, labels } = pageItems(roots);
+  const found: Found[] = [];
+  if (labels) {
+    for (const id of items) {
+      const text = labels.get((id as { id: string }).id);
+      if (text !== undefined && isWebFrameEnvelope(parseLabel(text))) found.push({ id, label: text });
+    }
+    return { items, found };
+  }
+  for (const id of items) {
+    const text = await readWebLabel(host, id);
+    if (text !== null) found.push({ id, label: text });
+  }
+  return { items, found };
+}
+
 export function startAutoRender(host: BundleHost, opts: AutoRenderOptions = {}): AutoRenderer {
   const debounceMs = opts.debounceMs ?? DEFAULT_DEBOUNCE_MS;
   const engineOf = opts.engine ?? (() => loadWebEngine(host));
@@ -141,7 +162,6 @@ export function startAutoRender(host: BundleHost, opts: AutoRenderOptions = {}):
   let pendingReason: ReconcileReason | null = null;
   let running: Promise<void> | null = null;
   let disposed = false;
-  const listeners = new Set<(labels: ReadonlyMap<string, string>) => void>();
 
   const merge = (a: ReconcileReason | null, b: ReconcileReason): ReconcileReason => {
     // An undo anywhere in a burst withholds grow for the whole pass.
@@ -149,25 +169,6 @@ export function startAutoRender(host: BundleHost, opts: AutoRenderOptions = {}):
     if (a === "open" || b === "open") return "open";
     return "change";
   };
-
-  async function discover(): Promise<Found[]> {
-    const roots = await host.document.tree();
-    const { items, labels } = pageItems(roots);
-    const found: Found[] = [];
-    if (labels) {
-      for (const id of items) {
-        const text = labels.get((id as { id: string }).id);
-        if (text !== undefined && isWebFrameEnvelope(parseLabel(text))) found.push({ id, label: text });
-      }
-      return found;
-    }
-    // An engine without labels on tree rows: one read per page item.
-    for (const id of items) {
-      const text = await readWebLabel(host, id);
-      if (text !== null) found.push({ id, label: text });
-    }
-    return found;
-  }
 
   async function sourceFor(f: Found): Promise<WebFrameSource | null> {
     if (sources.has(f.label)) return sources.get(f.label) ?? null;
@@ -179,7 +180,7 @@ export function startAutoRender(host: BundleHost, opts: AutoRenderOptions = {}):
   async function pass(reason: ReconcileReason): Promise<void> {
     const surface = persistentSceneSurface(host);
     if (!surface) return; // no scene channel: nothing can show
-    const found = await discover();
+    const { found } = await discoverWebFrames(host);
     lastLabels = new Map(found.map((f) => [(f.id as { id: string }).id, f.label]));
     const engine = await engineOf();
 
@@ -244,7 +245,6 @@ export function startAutoRender(host: BundleHost, opts: AutoRenderOptions = {}):
       }
     }
     if (sources.size > 256) sources = new Map();
-    for (const l of listeners) l(lastLabels);
   }
 
   function run(reason: ReconcileReason): Promise<void> {
@@ -312,16 +312,11 @@ export function startAutoRender(host: BundleHost, opts: AutoRenderOptions = {}):
       }
     },
     labels: () => lastLabels,
-    onDidReconcile(listener) {
-      listeners.add(listener);
-      return { dispose: () => listeners.delete(listener) };
-    },
     dispose() {
       disposed = true;
       if (timer) clearTimeout(timer);
       docSub.dispose();
       offLoaded?.();
-      listeners.clear();
       renderers.delete(host);
     },
   };
