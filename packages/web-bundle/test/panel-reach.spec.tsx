@@ -122,3 +122,50 @@ describe("overflow policy in the panel", () => {
     expect(saved?.options.overflow).toBe("grow");
   });
 });
+
+describe("preview = canvas", () => {
+  const iframe = (r: ReactTestRenderer) => byData(r, "data-web-preview");
+
+  it("the preview lays out at the frame's size (points → CSS px), not a viewport option", async () => {
+    const h = reachHost([10, 20, 160, 320]); // 300 × 150 pt
+    h.labels.set("uA", envelopeFor({ ...DEFAULT_SOURCE, options: { media: "print", overflow: "clip", viewportWidth: 999 } }));
+    const r = await mountPanel(h);
+    expect(iframe(r).props.style.width).toBe("400px");
+    expect(iframe(r).props.style.height).toBe("200px");
+    expect(r.root.findAll((n) => typeof n.type === "string" && n.props["data-web-viewport"] !== undefined)).toHaveLength(0);
+  });
+
+  it("a resize of the frame resizes the preview", async () => {
+    const h = reachHost([0, 0, 150, 300]);
+    const r = await mountPanel(h);
+    h.geometry.bounds = [0, 0, 150, 450];
+    await act(async () => h.emit({ kind: "mutationApplied", pageIds: [], reflow: { frameId: "uA", contentBox: [0, 0, 150, 450] } }));
+    await settle();
+    expect(iframe(r).props.style.width).toBe("600px");
+  });
+
+  it("an undo that resizes the frame resizes the preview", async () => {
+    const h = reachHost([0, 0, 150, 300]);
+    const r = await mountPanel(h);
+    h.geometry.bounds = [0, 0, 300, 300];
+    await act(async () => h.emit({ kind: "undoApplied", pageIds: [] }));
+    await settle();
+    expect(iframe(r).props.style.height).toBe("400px");
+  });
+
+  it("the panel says the canvas follows a save, not a command", async () => {
+    const h = reachHost();
+    const r = await mountPanel(h);
+    const note = byData(r, "data-web-preview-note");
+    const text = [note.props.children].flat().join("");
+    expect(text).not.toMatch(/when you run/);
+    expect(text).toMatch(/save/i);
+  });
+
+  it("the media option says how @media is evaluated", async () => {
+    const h = reachHost();
+    const r = await mountPanel(h);
+    const text = [byData(r, "data-web-media-note").props.children].flat().join("");
+    expect(text).toMatch(/@media/);
+  });
+});

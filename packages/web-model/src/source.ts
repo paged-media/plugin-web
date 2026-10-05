@@ -38,12 +38,9 @@ export interface WebFrameOptions {
    *  `thread` continues it into the frames the source is threaded into
    *  (the flow chain — clipped at the last frame, reported as overset). */
   overflow: OverflowPolicy;
-  /** Layout viewport width in CSS px. Absent = natural width (the
-   *  frame/panel decides). In the source panel this is honestly real:
-   *  the preview IFRAME takes this width, and an iframe's element size
-   *  IS the CSS viewport its content lays out (and media-queries)
-   *  against. The canvas render does NOT use it yet: it lays out at the
-   *  frame's own width. */
+  /** Layout viewport width in CSS px, from older documents. Read and
+   *  kept, but nothing lays out at it any more: the canvas and the panel
+   *  preview both lay out at the frame's own content width. */
   viewportWidth?: number;
 }
 

@@ -69,9 +69,7 @@ import {
   diagnoseHtml,
   flowThreadOptions,
   fontParity,
-  MAX_VIEWPORT_WIDTH,
   namedFlowDiagnostics,
-  normalizeViewportWidth,
   normalizeOverflow,
   OVERFLOW_POLICIES,
   type OverflowPolicy,
@@ -639,6 +637,43 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
   };
 }
 
+/** CSS px per point (1 pt = 1/72 in, 1 px = 1/96 in). */
+const PX_PER_PT = 96 / 72;
+
+/** The frame's content size in CSS px, or `null` when the host answers no
+ *  geometry. Follows resizes (reflow events) and undo/redo. */
+function useFrameSizePx(host: BundleHost, id: ElementId): { width: number; height: number } | null {
+  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
+  const frameId = (id as { id?: unknown }).id;
+  useEffect(() => {
+    let stale = false;
+    const read = (): void => {
+      const doc = host.document as Partial<BundleHost["document"]>;
+      if (typeof doc.elementGeometry !== "function") return;
+      void doc
+        .elementGeometry([id])
+        .then(([g]) => {
+          if (stale || !g?.bounds) return;
+          const [top, left, bottom, right] = g.bounds;
+          setSize({
+            width: Math.round(Math.max(0, right - left) * PX_PER_PT),
+            height: Math.round(Math.max(0, bottom - top) * PX_PER_PT),
+          });
+        })
+        .catch(() => {});
+    };
+    read();
+    const sub = host.document.onDidChange((e) => {
+      if (e.reflow?.frameId === frameId || e.kind !== "mutationApplied") read();
+    });
+    return () => {
+      stale = true;
+      sub.dispose();
+    };
+  }, [frameId]);
+  return size;
+}
+
 // ---------------------------------------------------------- the editor
 
 interface SourceEditorProps {
@@ -679,6 +714,10 @@ function SourceEditor({
   // Why the last save was refused (shown beside the save button).
   const [saveError, setSaveError] = useState<string | null>(null);
   const preview = useDebouncedValue(draft, PREVIEW_DEBOUNCE_MS);
+  // Preview = canvas: the preview lays out at the frame's content size,
+  // the box the engine lays out in. Re-read when the frame is resized (the
+  // reflow event) and after undo/redo (which can resize it back).
+  const frameSize = useFrameSizePx(host, id);
   // The bundle-owned HTML <textarea> (fallback lane only) — the target
   // the "Find in source" affordance drives the caret in. The host
   // widget lane has no selection prop, so this stays null there and the
@@ -898,11 +937,11 @@ function SourceEditor({
   );
 
   const CodeEditor = lane.CodeEditor;
-  // The honest viewport: the preview IFRAME takes the declared width,
-  // and an iframe's element size IS the CSS viewport its content lays
-  // out (and media-queries) against. Applied from the DEBOUNCED draft
-  // so the whole preview moves on one cadence.
-  const viewportWidth = preview.options.viewportWidth;
+  // The preview IFRAME takes the frame's content size — an iframe's element
+  // size IS the CSS viewport its content lays out (and media-queries)
+  // against, so the preview breaks lines where the canvas does. Without
+  // geometry (a host that answers none) it falls back to the panel width.
+  const viewportWidth = frameSize?.width;
 
   return (
     <div
@@ -1120,30 +1159,10 @@ function SourceEditor({
           <option value="print">print</option>
           <option value="screen">screen</option>
         </select>
-      </label>
-      <label style={optionRow}>
-        Viewport width
-        <input
-          data-web-viewport
-          type="number"
-          min={1}
-          max={MAX_VIEWPORT_WIDTH}
-          placeholder="auto"
-          value={draft.options.viewportWidth ?? ""}
-          onChange={(e) => {
-            const raw = e.target.value;
-            const next = { ...draft.options };
-            const w =
-              raw === ""
-                ? undefined
-                : normalizeViewportWidth(Number(raw));
-            if (w === undefined) delete next.viewportWidth;
-            else next.viewportWidth = w;
-            setDraft({ ...draft, options: next });
-          }}
-          style={{ ...field, width: 72 }}
-        />
-        <span style={mutedNote}>px — empty = panel width</span>
+        <span data-web-media-note style={mutedNote}>
+          sets the body class media-{draft.options.media}; @media queries evaluate as screen in
+          the preview and on the canvas alike
+        </span>
       </label>
       <label style={optionRow}>
         Overflow
@@ -1364,7 +1383,7 @@ function SourceEditor({
           panel. */}
       <div
         data-web-preview-stage
-        style={{ overflowX: viewportWidth ? "auto" : "visible" }}
+        style={{ overflow: viewportWidth ? "auto" : "visible", maxHeight: 420 }}
       >
         <iframe
           data-web-preview
@@ -1373,19 +1392,20 @@ function SourceEditor({
           srcDoc={srcdoc}
           style={{
             width: viewportWidth ? `${viewportWidth}px` : "100%",
-            height: 180,
+            height: frameSize ? `${frameSize.height}px` : 180,
             background: "#ffffff",
             border: "1px solid var(--pg-border)",
             borderRadius: "var(--radius-sm, 4px)",
           }}
         />
       </div>
-      {/* The preview is the browser's rendering; the canvas is the
-          engine's, refreshed by the render commands — saying so beats
-          pretending they are the same. */}
-      <p style={{ margin: "var(--space-1, 4px) 0 0", font: "10px var(--font-sans, sans-serif)", color: "var(--pg-muted-fg)" }}>
-        Browser preview — the canvas updates when you run “Render web frame
-        to canvas” (or the flow render).
+      {/* The preview is the browser's rendering at the frame's size; the
+          canvas is the engine's, re-rendered when the saved source or the
+          frame's size changes (auto-render.ts). What still differs is said. */}
+      <p data-web-preview-note style={{ margin: "var(--space-1, 4px) 0 0", font: "10px var(--font-sans, sans-serif)", color: "var(--pg-muted-fg)" }}>
+        Browser preview at the frame’s size. The canvas shows the saved source and
+        re-renders when you save; it lays text out in its bundled typeface, and
+        “shrink to fit” scales only on the canvas.
       </p>
       {diagnostics.length > 0 && (
         <>
