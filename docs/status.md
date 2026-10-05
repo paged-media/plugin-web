@@ -22,6 +22,20 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
   the panel is open and come back, still marked unsaved, when the frame is selected again.
   While the frame's edit context is active, the host's Undo/Redo step the frame's draft edits
   (quick edits are one step); leaving the frame hands Undo back to the document.
+- **In-frame text editing.** Inside the frame's edit context a click on rendered text places
+  a caret in the DOM text node it was painted from (the engine's inspected render maps every
+  painted cluster to its text node). Typing, Backspace/Delete, arrows and Home/End edit that
+  node; the frame re-renders live and the caret is drawn on the canvas. Enter writes the
+  source as one undoable step (markup and untouched character references stay as they were),
+  Esc restores the frame, Cmd+Z steps the keystrokes while an edit is open; a click on other
+  text commits and opens that node.
+- **Outline and canvas.** Clicking a tag in the panel's outline outlines the element's painted
+  box on the canvas; a press inside the entered frame marks the tag of the element under it.
+- **Bound data.** Templates can name `{{doc.title}}`, `{{doc.pages}}`, `{{doc.<key>}}` (a
+  document value map, set in the panel), `{{frame.page}}` and `{{data.<field>}}` /
+  `{{data.<provider>.<field>}}` (the first record of a `dataset` data provider, which paged.data
+  publishes). The panel lists the bound names a draft uses with their values; every render
+  substitutes them, and the canvas re-renders when a value changes.
 - **Import.** A `.html` or `.htm` file opens as a new web frame: `<style>` blocks become the
   CSS, the content of `<body>` becomes the HTML, and the sanitiser runs on it.
 - **Render to canvas.** Web frames render through the wasm engine to a scene layer by
@@ -38,7 +52,10 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
 - **Flow.** Frames can be threaded to and unthreaded from a web frame, and the chain is
   saved. The flow render lays the remainder out again at each frame's width and cuts between
   blocks, lines of a paragraph, children of a container and table body rows (a `<thead>`
-  repeats). Content left after the last frame is reported as overset. A CSS `flow-into` rule
+  repeats). `break-before`, `break-after` and `break-inside` (and the CSS 2 `page-break-*`
+  aliases), `orphans` and `widows` (initial value 2) are honoured; a frame is a page box, so
+  `page` and `column` both force the next frame and `@page` margins inset every frame
+  ([ADR 412](adr/412-a-frame-is-a-page-box.md)). Content left after the last frame is reported as overset. A CSS `flow-into` rule
   selects the subtree that flows; several named flows each go to their own frames.
 - **Flatten.** "Bake web frame to document" creates native swatches, rectangles, paths and
   text frames for one frame or for a primary flow chain, and reports what it left out.
@@ -70,8 +87,10 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
   on the canvas.
 - **Fragmentation cannot split** a table row, an image or other replaced element, a form
   control, or a block whose one line is taller than the frame; such a block moves whole to
-  the next frame. There is no `break-*`, orphan or widow handling. Table columns are
-  resolved again in each frame and may shift.
+  the next frame. Table columns are resolved again in each frame and may shift. The
+  fragmentation properties are read from the source's CSS by a scanner (the layout engine does
+  not compute them): rules apply in source order without comparing specificity, rules inside
+  `@media` are not read, and `@page size` is not applied (the frame's size is the page size).
 - **A flow** re-renders when its source or a frame's size changes; a deleted recipient is
   skipped (the chain keeps its id, so undo of the delete brings it back). Overset is a warning
   only, no frame or page is created, and DOM `flow-from` regions are ignored. An overset last
@@ -94,6 +113,15 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
   version of a large source written in a session stays as a part until a later session's
   save (that is what lets undo return to it). The engine versions stamped into each envelope match the
   lockfile (a spec checks it) but nothing reads them back.
+- **In-frame editing** edits one text node at a time: the caret does not cross into the
+  neighbouring node (a bold word, a link), and Enter commits rather than starting a paragraph.
+  Text a template produced, and text the parser moves (fostered out of a table), is refused with
+  a note. A threaded frame and a shrink-to-fit frame are edited in the panel. The double-click
+  that enters the frame is not delivered to the plugin, so a further click places the caret.
+  The caret is a line drawn through the host's tool-preview overlay, which other tools share.
+- **Bound data** reads one record (the first) of a provider. Document values live in a
+  container part, which undo does not restore, and writing one raises no document change (the
+  panel re-renders the frames itself).
 - **Import** reads the one file. Linked stylesheets, images and fonts are not brought in.
 
 ## Not built
@@ -104,8 +132,8 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
 - A raster fallback: the `dpi` field of the render request feeds only a stub.
 - Document fonts in the layout engine (see Fonts).
 - A flow the host knows about: the chain is plugin data ([ADR 405](adr/405-flow-chain-is-plugin-data.md)).
-- Inspection of rendered boxes, and a CSS compatibility table: the outline and the linter
-  work on the source text.
+- Inspection of computed styles, and a CSS compatibility table: the linter works on the source
+  text, and the outline maps tags to painted boxes but shows no metrics.
 - The engine-neutral `renderWebFrame` and `renderWebFlow` in `packages/web-model/src/render.ts`:
   they always answer "not loaded", and the bundle calls the engine object directly.
 

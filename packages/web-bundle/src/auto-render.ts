@@ -47,12 +47,14 @@ import {
   asFrameTarget,
   flowGroups,
   isWebFrameEnvelope,
+  referencesBoundData,
   type FrameTarget,
   type WebFrameSource,
   type WebSourceEnvelope,
 } from "../../web-model/src";
 
 import { bakeWebFlows, bakeWebFrame, framesWithLayers, persistentSceneSurface } from "./bake";
+import { resolveBindings, watchProviders } from "./bindings";
 import { loadWebEngine, type WebEngine } from "./engine-loader";
 import { loadWebSource, readWebLabel } from "./source-part";
 
@@ -209,7 +211,12 @@ export function startAutoRender(host: BundleHost, opts: AutoRenderOptions = {}):
       const sid = (f.id as { id: string }).id;
       live.add(sid);
       const present = frames.filter((fr) => size.has(fr.id));
-      const key = f.label + "|" + present.map((fr) => `${fr.id}:${size.get(fr.id)}`).join(",");
+      // A source that names bound data (bindings.ts) also re-renders when
+      // a bound value changes: the document's name or value map, the page
+      // the frame is on, a data provider's revision.
+      const bound = referencesBoundData(source) ? (await resolveBindings(host, f.id, source)).key : "";
+      const key =
+        f.label + "|" + present.map((fr) => `${fr.id}:${size.get(fr.id)}`).join(",") + (bound ? `|${bound}` : "");
       if (engine && renderedKey.get(sid) !== key) {
         const threaded = (source.flow?.recipients.length ?? 0) > 0;
         if (threaded) {
@@ -245,6 +252,7 @@ export function startAutoRender(host: BundleHost, opts: AutoRenderOptions = {}):
       }
     }
     if (sources.size > 256) sources = new Map();
+    providers.refresh();
   }
 
   function run(reason: ReconcileReason): Promise<void> {
@@ -272,6 +280,10 @@ export function startAutoRender(host: BundleHost, opts: AutoRenderOptions = {}):
       void run(r);
     }, delay);
   }
+
+  // A data provider's new revision re-runs the pass (sources that name its
+  // values re-render; the rest keep their key).
+  const providers = watchProviders(host, () => schedule("change"));
 
   const docSub = host.document.onDidChange((e) => {
     schedule(e.kind === "mutationApplied" ? "change" : "undo");
@@ -316,6 +328,7 @@ export function startAutoRender(host: BundleHost, opts: AutoRenderOptions = {}):
       disposed = true;
       if (timer) clearTimeout(timer);
       docSub.dispose();
+      providers.dispose();
       offLoaded?.();
       renderers.delete(host);
     },

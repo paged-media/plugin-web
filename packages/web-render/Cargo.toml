@@ -85,6 +85,10 @@ required-features = ["blitz"]
 name = "flow_parity"
 required-features = ["blitz"]
 
+[[test]]
+name = "page_breaks"
+required-features = ["blitz"]
+
 [[example]]
 name = "dump_geometry"
 required-features = ["blitz"]

@@ -49,11 +49,13 @@ import {
   renderWebFrameSource,
   ENGINE_NOT_LOADED_MESSAGE,
   type SceneLayer,
+  type TemplateVars,
   type WebDiagnostic,
   type WebFrameSource,
   type WebRenderResult,
 } from "../../web-model/src";
 
+import { resolveBindings } from "./bindings";
 import { engineDocument } from "./engine-document";
 import type { WebEngine } from "./engine-loader";
 import { renderWithPolicy } from "./overflow";
@@ -203,8 +205,9 @@ export async function bakeWebFrame(
   // first, exactly as the preview composes), feed it the frame's content
   // size in CSS px, and take the REAL C-1 layer the engine painted. With
   // the engine NOT loaded (or it threw): the honest not-loaded path.
+  const bound = (await resolveBindings(host, id, source)).vars;
   const result: WebRenderResult = engine
-    ? await renderWithEngine(host, id, engine, source, bounds ?? null, opts?.allowGrow ?? true)
+    ? await renderWithEngine(host, id, engine, source, bounds ?? null, opts?.allowGrow ?? true, bound)
     : renderWebFrame({
         html: source.html,
         css: source.css,
@@ -268,6 +271,7 @@ async function renderWithEngine(
   source: WebFrameSource,
   bounds: [number, number, number, number] | null,
   allowGrow: boolean,
+  bound: TemplateVars = {},
 ): Promise<WebRenderResult> {
   const notLoaded: WebRenderResult = {
     sceneLayer: null,
@@ -277,8 +281,9 @@ async function renderWithEngine(
   };
   const frameWidthPt = bounds ? Math.max(0, bounds[3] - bounds[1]) : 0;
   const frameHeightPt = bounds ? Math.max(0, bounds[2] - bounds[0]) : 0;
-  // Apply the §6.2 deterministic template pass, then compose the document.
-  const rendered = renderWebFrameSource(source);
+  // Apply the §6.2 deterministic template pass (with the bound values),
+  // then compose the document.
+  const rendered = renderWebFrameSource(source, bound);
   const html = composeSrcdoc({ ...source, html: rendered.html, css: rendered.css });
   const widthPx = Math.round(frameWidthPt * PX_PER_PT);
   const heightPx = Math.round(frameHeightPt * PX_PER_PT);
@@ -428,7 +433,8 @@ export async function bakeWebFlow(
 
   // Compose the document once (template vars first, then html+css → one
   // doc), and feed the engine each frame's content size in CSS px.
-  const rendered = renderWebFrameSource(source);
+  const bound = (await resolveBindings(host, sourceId, source)).vars;
+  const rendered = renderWebFrameSource(source, bound);
   const html = composeSrcdoc({
     ...source,
     html: rendered.html,
@@ -536,7 +542,8 @@ export async function bakeWebFlows(
   // per call, so a source with N named flows costs N parses + N resolves
   // until the engine takes every group in one call (recorded for the
   // engine half, perf-baseline-2026-10-05 "after Wave 2 (host)").
-  const doc = engineDocument(source);
+  const bound = (await resolveBindings(host, sourceId, source)).vars;
+  const doc = engineDocument(source, bound);
   const groups = flowGroups(source, sourceTarget);
   const diagnostics: WebDiagnostic[] = [
     ...doc.diagnostics,

@@ -10,7 +10,8 @@
       "write": "scoped"
     },
     "rendering": [
-      "sceneLayer"
+      "sceneLayer",
+      "overlay"
     ],
     "editContext": [
       "webFrame"
@@ -27,7 +28,12 @@
       }
     ],
     "network": false,
-    "clipboard": "full"
+    "clipboard": "full",
+    "dataProviders": {
+      "consume": [
+        "dataset"
+      ]
+    }
   },
   "contributes": {
     "panels": [

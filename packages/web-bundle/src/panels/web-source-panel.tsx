@@ -62,6 +62,7 @@ import type {
 } from "@paged-media/plugin-api";
 import {
   asFrameTarget,
+  boundNamesIn,
   composeFontFaces,
   composeSrcdoc,
   DEFAULT_SOURCE,
@@ -96,7 +97,10 @@ import {
   lastRenderReport,
   subscribeRenderReport,
 } from "../render-report";
-import { loadWebSource, writeWebSource } from "../source-part";
+import { autoRendererFor } from "../auto-render";
+import { resolveBindings, watchProviders, type Bindings } from "../bindings";
+import { clearOutlineHighlight, highlightOutlineEntry, onCanvasPick } from "../outline-highlight";
+import { loadWebSource, readDocumentValues, writeDocumentValues, writeWebSource } from "../source-part";
 import { createDraftSession, type DraftSession, type DraftStore } from "./draft-store";
 
 import { createDebouncer } from "./debounce";
@@ -649,6 +653,127 @@ function useFrameSizePx(host: BundleHost, id: ElementId): { width: number; heigh
   return size;
 }
 
+// ---------------------------------------------------------- bound data
+
+const NO_BINDINGS: Bindings = { vars: {}, key: "" };
+
+/** The bound values `source` names, for frame `id`; re-read after document
+ *  changes and provider revisions. */
+function useBindings(
+  host: BundleHost,
+  id: ElementId,
+  source: WebFrameSource,
+): { bindings: Bindings; refresh(): void } {
+  const [bindings, setBindings] = useState<Bindings>(NO_BINDINGS);
+  const [tick, bump] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    const docSub = host.document.onDidChange(() => bump());
+    const providers = watchProviders(host, () => bump());
+    return () => {
+      docSub.dispose();
+      providers.dispose();
+    };
+  }, []);
+  useEffect(() => {
+    let stale = false;
+    void resolveBindings(host, id, source)
+      .then((b) => {
+        if (!stale) setBindings((prev) => (prev.key === b.key ? prev : b));
+      })
+      .catch(() => {});
+    return () => {
+      stale = true;
+    };
+  }, [source.html, source.css, tick]);
+  return { bindings, refresh: bump };
+}
+
+/** The bound names the draft uses and their values; a `doc.<key>` with no
+ *  value can be set here (the document value map). */
+function BoundData({
+  host,
+  names,
+  bindings,
+  onChanged,
+}: {
+  host: BundleHost;
+  names: string[];
+  bindings: Bindings;
+  /** A document value was written (parts raise no document change). */
+  onChanged(): void;
+}): ReactElement | null {
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [note, setNote] = useState<string | null>(null);
+  if (names.length === 0) return null;
+  const docKey = (name: string) => {
+    const k = name.slice(4);
+    return name.startsWith("doc.") && k !== "title" && k !== "pages" ? k : null;
+  };
+  const save = async (key: string, value: string) => {
+    const current = await readDocumentValues(host);
+    const out = await writeDocumentValues(host, { ...current, [key]: value });
+    setNote(out.applied ? null : `not saved: ${out.reason ?? "refused"}`);
+    if (!out.applied) return;
+    onChanged();
+    // The canvas re-renders the frames that name the value.
+    void autoRendererFor(host)?.reconcile("change");
+  };
+  return (
+    <div data-web-bound>
+      <div style={kicker}>Bound data</div>
+      {names.map((name) => {
+        const value = bindings.vars[name];
+        const key = docKey(name);
+        return (
+          <div key={name} data-web-bound-row={name} style={optionRow}>
+            <code style={{ font: "11px var(--font-mono, monospace)", width: 120, overflow: "hidden" }}>{name}</code>
+            {key !== null ? (
+              <>
+                <input
+                  data-web-bound-input={name}
+                  aria-label={`Document value ${key}`}
+                  value={values[name] ?? value ?? ""}
+                  onChange={(e) => setValues({ ...values, [name]: e.target.value })}
+                  style={{ ...field, flex: 1 }}
+                />
+                <button
+                  type="button"
+                  data-web-bound-set={name}
+                  onClick={() => void save(key, values[name] ?? value ?? "")}
+                  style={{
+                    font: "500 11px var(--font-sans, sans-serif)",
+                    color: "var(--pg-fg)",
+                    background: "var(--pg-bg)",
+                    border: "1px solid var(--pg-border)",
+                    borderRadius: "var(--radius-sm, 4px)",
+                    padding: "2px 6px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Set
+                </button>
+              </>
+            ) : (
+              <span data-web-bound-value={name} style={value === undefined ? mutedNote : { font: "12px var(--font-sans, sans-serif)" }}>
+                {value === undefined ? "not bound" : value}
+              </span>
+            )}
+          </div>
+        );
+      })}
+      <span style={mutedNote}>
+        doc.title, doc.pages, doc.&lt;key&gt; (document values), frame.page, data.&lt;field&gt; (first record
+        of a data provider)
+      </span>
+      {note && (
+        <span data-web-bound-note role="alert" style={{ ...mutedNote, color: "var(--status-error, var(--pg-fg))" }}>
+          {note}
+        </span>
+      )}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------- the editor
 
 interface SourceEditorProps {
@@ -728,7 +853,12 @@ function SourceEditor({
   // drift against the editor's template text — the rendered output is
   // the honest lint target (a variable could inject `<script>`; the
   // policy error must fire on what actually previews).
-  const rendered = useMemo(() => renderWebFrameSource(preview), [preview]);
+  // Bound data (bindings.ts): the values the draft names under `doc.`,
+  // `frame.` and `data.`, re-read when the document changes and when a data
+  // provider announces a new revision — the preview substitutes them as
+  // the canvas does.
+  const { bindings, refresh: refreshBindings } = useBindings(host, id, preview);
+  const rendered = useMemo(() => renderWebFrameSource(preview, bindings.vars), [preview, bindings]);
   // W-06 — document faces the host asset store served BYTES for and we
   // composed into real `@font-face` rules (data URLs — see
   // font-resolution.ts for why data:, not blob:, in a sandboxed
@@ -902,11 +1032,32 @@ function SourceEditor({
     () => tagOutline(draft.html),
     [draft.html],
   );
-  const findInSource = useCallback((entry: TagOutlineEntry) => {
-    const el = htmlTextareaRef.current;
-    if (!el) return; // host-widget lane: no caret to drive
-    selectRange(el, entry.sourceStart, entry.sourceEnd);
-  }, []);
+  // Outline ↔ canvas (outline-highlight.ts): a clicked tag also outlines
+  // its painted box on the canvas; a press on the canvas inside the frame's
+  // edit context marks the tag of the element under it.
+  const [activeTag, setActiveTag] = useState<number | null>(null);
+  const [highlightNote, setHighlightNote] = useState<string | null>(null);
+  const frameIdStr = (id as { id?: unknown }).id;
+  useEffect(
+    () =>
+      onCanvasPick(host, (fid, index) => {
+        if (fid === frameIdStr) setActiveTag(index >= 0 ? index : null);
+      }),
+    [frameIdStr],
+  );
+  useEffect(() => () => clearOutlineHighlight(host), []);
+  const findInSource = useCallback(
+    (entry: TagOutlineEntry, index: number) => {
+      setActiveTag(index);
+      void highlightOutlineEntry(host, id, { ...draft }, index).then((n) =>
+        setHighlightNote(n > 0 ? null : `<${entry.tag}> paints no box on the canvas`),
+      );
+      const el = htmlTextareaRef.current;
+      if (!el) return; // host-widget lane: no caret to drive
+      selectRange(el, entry.sourceStart, entry.sourceEnd);
+    },
+    [draft],
+  );
 
   // §6.2 slice — the panel-edited variables map. Rows render in entry
   // order; a key rename rebuilds the object (a rename ONTO an existing
@@ -1036,11 +1187,10 @@ function SourceEditor({
           />
         )}
       </div>
-      {/* Find in source — the W-01 source-side subset of click-to-inspect.
-          Lists the markup's opening tags (the pure `tagOutline` scan);
-          clicking one selects its source range in the editor. Inspecting
-          a rendered box (clicking the canvas to reach its source) needs
-          the engine's run-to-node map in the panel and is not built. */}
+      {/* Find in source — the markup's opening tags (the pure `tagOutline`
+          scan); clicking one selects its source range in the editor and
+          outlines the element's painted box on the canvas; a press on the
+          canvas inside the frame marks its tag here. */}
       {outline.length > 0 && (
         <details data-web-outline style={{ margin: "var(--space-1, 4px) 0 0" }}>
           <summary
@@ -1070,7 +1220,8 @@ function SourceEditor({
                   type="button"
                   data-web-outline-tag={entry.tag}
                   data-web-outline-line={entry.line}
-                  onClick={() => findInSource(entry)}
+                  data-web-outline-active={activeTag === i ? "true" : undefined}
+                  onClick={() => findInSource(entry, i)}
                   title={
                     lane.native
                       ? `line ${entry.line} — select in the host editor is not wired`
@@ -1080,7 +1231,7 @@ function SourceEditor({
                     font: "11px var(--font-mono, monospace)",
                     color: "var(--pg-fg)",
                     background: "var(--pg-bg)",
-                    border: "1px solid var(--pg-border)",
+                    border: `1px solid ${activeTag === i ? "var(--pg-accent, var(--pg-fg))" : "var(--pg-border)"}`,
                     borderRadius: "var(--radius-sm, 4px)",
                     padding: "1px 6px",
                     cursor: lane.native ? "default" : "pointer",
@@ -1098,6 +1249,11 @@ function SourceEditor({
             <p style={{ margin: "var(--space-1, 4px) 0 0", ...mutedNote }}>
               The host code editor has no selection channel — these show
               the line only.
+            </p>
+          )}
+          {highlightNote && (
+            <p data-web-outline-note style={{ margin: "var(--space-1, 4px) 0 0", ...mutedNote }}>
+              {highlightNote}
             </p>
           )}
         </details>
@@ -1262,6 +1418,7 @@ function SourceEditor({
           deterministic; scripted transforms are not available
         </span>
       </div>
+      <BoundData host={host} names={boundNamesIn(draft)} bindings={bindings} onChanged={refreshBindings} />
       {/* Persistence is EXPLICIT: one undoable metadata mutation per
           save, never a side effect of typing (the preview above the
           fold refreshes live; the document does not). */}

@@ -43,6 +43,7 @@ use blitz_html::HtmlDocument;
 use blitz_traits::shell::{ColorScheme, Viewport};
 use serde::{Deserialize, Serialize};
 
+use crate::break_rules::{apply_page_box, Between, BreakRules, Within};
 use crate::capture::{capture_resolved, render_html};
 use crate::display_list::{WebDisplayList, WebDrawCmd, WebGlyphRun, WebGradient, WebImage};
 use crate::fonts::font_ctx;
@@ -176,6 +177,13 @@ pub fn render_web_flow_variable_rooted(
         }
     }
 
+    // `@page` margins inset every frame (a frame is a page box, ADR 412);
+    // the fragmentation rules the engine's style system does not compute
+    // (`break-*`, `orphans`, `widows`) are read once — node ids stay stable
+    // across the removals and text edits below.
+    let page = apply_page_box(&mut doc);
+    let rules = BreakRules::from_doc(&doc);
+
     // A viewport tall enough that no frame's remainder is culled before we
     // slice it to the frame band.
     let tall = frames.iter().map(|&(_, h)| h).max().unwrap_or(1).max(4096);
@@ -189,7 +197,9 @@ pub fn render_web_flow_variable_rooted(
         doc.resolve(0.0);
         crate::perf::bump(crate::perf::Counter::Resolves, 1);
 
-        let h_pt = h as f32 * PX_TO_PT;
+        // The page area ends `@page margin-bottom` above the frame's bottom.
+        let limit_px = (h as f32 - page.bottom()).max(0.0);
+        let h_pt = limit_px * PX_TO_PT;
         let is_last = fi + 1 == frames.len();
 
         // The last frame keeps everything up to its height (content beyond is
@@ -198,11 +208,23 @@ pub fn render_web_flow_variable_rooted(
         // plain-text paragraph (rung 3) — the cut aligns to exactly what we
         // then delete/split, so no block or line straddle-duplicates. The cut
         // reads layout only, so it is planned before the paint.
-        let (cut_pt, cut) = if is_last {
-            (h_pt, None)
+        //
+        // A forced break (`break-before/after: page|column`) also ends the
+        // LAST frame: what follows it is overset.
+        let (cut_pt, cut, forced_last) = if is_last {
+            if rules.is_empty() {
+                (h_pt, None, false)
+            } else {
+                let c = plan_frame_cut(&doc, limit_px, flow_root, &rules);
+                if c.forced {
+                    (c.cut_px * PX_TO_PT, None, true)
+                } else {
+                    (h_pt, None, false)
+                }
+            }
         } else {
-            let c = plan_frame_cut(&doc, h as f32, flow_root);
-            (c.cut_px * PX_TO_PT, Some(c))
+            let c = plan_frame_cut(&doc, limit_px, flow_root, &rules);
+            (c.cut_px * PX_TO_PT, Some(c), false)
         };
 
         // Paint the REMAINING document at this width. After each prefix
@@ -224,16 +246,18 @@ pub fn render_web_flow_variable_rooted(
         // the way a non-last frame is: a straddling table row or line moves to
         // the overset, never half-shown past the frame's bottom (when nothing
         // fits whole, the frame keeps its height as before).
-        let cut_pt = if is_last && painted_content_bottom_pt(&full, w, paint_h) > h_pt + 0.5 {
-            let c = plan_frame_cut(&doc, h as f32, flow_root);
-            if c.cut_px > 0.0 && (!c.delete_full.is_empty() || c.split.is_some()) {
-                c.cut_px * PX_TO_PT
+        let cut_pt =
+            if is_last && !forced_last && painted_content_bottom_pt(&full, w, paint_h) > h_pt + 0.5
+            {
+                let c = plan_frame_cut(&doc, limit_px, flow_root, &rules);
+                if c.cut_px > 0.0 && (!c.delete_full.is_empty() || c.split.is_some()) {
+                    c.cut_px * PX_TO_PT
+                } else {
+                    cut_pt
+                }
             } else {
                 cut_pt
-            }
-        } else {
-            cut_pt
-        };
+            };
 
         let mut dl = WebDisplayList::new();
         for cmd in &full.commands {
@@ -248,7 +272,7 @@ pub fn render_web_flow_variable_rooted(
         let Some(cut) = cut else {
             // Last frame: overset when painted content reaches past it.
             let remainder_bottom_pt = painted_content_bottom_pt(&full, w, paint_h);
-            overset = remainder_bottom_pt > h_pt + 0.5;
+            overset = forced_last || remainder_bottom_pt > h_pt + 0.5;
             content_bottom_pt = remainder_bottom_pt;
             break;
         };
@@ -353,55 +377,126 @@ struct FrameCut {
     /// consumed prefix and keep the remainder, so the next resolve re-wraps
     /// only what didn't fit (remainder inline formatting preserved).
     split: Option<Vec<(usize, String)>>,
+    /// The cut is a FORCED break (`break-before/after: page|column|…`), not
+    /// the frame's height running out.
+    forced: bool,
 }
 
 /// Plan a frame's cut over the flow's top-level blocks (see
 /// [`plan_blocks_cut`] for the recursive algorithm).
-fn plan_frame_cut(doc: &BaseDocument, limit_px: f32, flow_root: Option<&str>) -> FrameCut {
-    plan_blocks_cut(doc, &flow_blocks(doc, flow_root), limit_px)
+fn plan_frame_cut(
+    doc: &BaseDocument,
+    limit_px: f32,
+    flow_root: Option<&str>,
+    rules: &BreakRules,
+) -> FrameCut {
+    plan_blocks_cut(doc, &flow_blocks(doc, flow_root), limit_px, rules, false)
 }
 
 /// Plan a frame's cut over a list of sibling `blocks` (top-level flow blocks,
 /// or — recursively — a container's children): consume the full-fitting
 /// prefix, then handle the first block that crosses `limit_px`:
-///   1. a splittable plain-text **paragraph** → split it at the last LINE that
-///      fits (rung 3, [`try_split`]);
-///   2. a fragmentable **container** (`<div>`/`<ul>`/… — element children, no
+///   1. a splittable plain-text **paragraph** → split it at a LINE that
+///      fits, honouring `orphans` and `widows` ([`try_split`]);
+///   2. a **table** → cut between its body rows;
+///   3. a fragmentable **container** (`<div>`/`<ul>`/… — element children, no
 ///      inline text of its own, not a table-family/replaced element) → DESCEND
 ///      and cut at its children's boundaries (consume the fitting children,
 ///      recurse into the straddling one). The container element stays put — it
 ///      holds the remainder; an emptied container self-cleans next frame.
 ///
-/// A straddler that is neither (an image, a single-line block too tall to fit,
-/// a table) is left whole and moves to the next frame (halting the flow only if
+/// The fragmentation rules (`break_rules.rs`, CSS Fragmentation 3):
+///   · a FORCED break before a block (or after the previous one) ends the
+///     frame there, unless nothing precedes it in the frame (the break is
+///     already there); a forced break INSIDE a block that fits is reached by
+///     descending into it;
+///   · `break-inside: avoid` keeps a straddling block whole (it moves to the
+///     next frame) unless it is the first thing in the frame;
+///   · when a straddler moves whole, a boundary with `break-after: avoid` on
+///     the block above or `break-before: avoid` on the straddler pulls the
+///     block above along, as long as something stays in the frame.
+///
+/// A straddler that is none of 1–3 (an image, a single-line block too tall to
+/// fit) is left whole and moves to the next frame (halting the flow only if
 /// nothing else was consumed). Because [`Node::absolute_position`] is
 /// document-absolute at every depth, a child block's top/bottom compares to
 /// `limit_px` directly — the recursion needs no coordinate translation.
-fn plan_blocks_cut(doc: &BaseDocument, blocks: &[usize], limit_px: f32) -> FrameCut {
-    let mut delete_full = Vec::new();
+/// `frame_has_content`: something already sits above these blocks in this
+/// frame (a forced break or an avoid rule may then end the frame before
+/// them).
+fn plan_blocks_cut(
+    doc: &BaseDocument,
+    blocks: &[usize],
+    limit_px: f32,
+    rules: &BreakRules,
+    frame_has_content: bool,
+) -> FrameCut {
+    let mut delete_full: Vec<usize> = Vec::new();
+    let mut bottoms: Vec<f32> = Vec::new();
     let mut cut_px = 0.0f32;
+    let mut prev: Option<usize> = None;
+    let mut has_content = frame_has_content;
+    let stop = |cut_px: f32, delete_full: Vec<usize>, forced: bool| FrameCut {
+        cut_px,
+        delete_full,
+        split: None,
+        forced,
+    };
+    let mut straddler: Option<usize> = None;
     for &id in blocks {
         let Some(node) = doc.get_node(id) else {
             continue;
         };
+        // A forced break between the previous block and this one.
+        if has_content
+            && (prev.is_some_and(|p| forced_after(doc, rules, p)) || forced_before(doc, rules, id))
+        {
+            return stop(cut_px, delete_full, true);
+        }
         let top_px = node.absolute_position(0.0, 0.0).y;
         let bottom_px = top_px + node.final_layout.size.height;
         if bottom_px <= limit_px + 0.5 {
+            // It fits — but a forced break inside it still ends the frame.
+            if has_internal_forced(doc, rules, id) {
+                if let Some(children) = splittable_container_children(doc, id) {
+                    let sub = plan_blocks_cut(doc, &children, limit_px, rules, has_content);
+                    if sub.forced {
+                        delete_full.extend(sub.delete_full);
+                        return FrameCut {
+                            cut_px: cut_px.max(sub.cut_px),
+                            delete_full,
+                            split: sub.split,
+                            forced: true,
+                        };
+                    }
+                }
+            }
             delete_full.push(id);
+            bottoms.push(bottom_px);
             cut_px = cut_px.max(bottom_px);
+            prev = Some(id);
+            has_content = true;
             continue;
         }
         // The first block crossing the limit.
+        straddler = Some(id);
         if top_px >= limit_px {
             break; // it starts below the limit → a whole-block move next frame
         }
+        // `break-inside: avoid` keeps it whole — unless the frame would
+        // otherwise be empty (the rule cannot be honoured then).
+        if rules.inside(id) == Within::Avoid && has_content {
+            break;
+        }
         // (1) a plain-text paragraph splits at a line boundary.
-        if let Some((consumed_bottom_px, edits)) = try_split(doc, id, limit_px) {
+        if let Some((consumed_bottom_px, edits)) = try_split(doc, id, limit_px, rules, has_content)
+        {
             cut_px = cut_px.max(consumed_bottom_px);
             return FrameCut {
                 cut_px,
                 delete_full,
                 split: Some(edits),
+                forced: false,
             };
         }
         // (2) a TABLE fragments between its BODY rows, repeating any <thead>.
@@ -415,11 +510,7 @@ fn plan_blocks_cut(doc: &BaseDocument, blocks: &[usize], limit_px: f32) -> Frame
             if !consumed.is_empty() {
                 cut_px = cut_px.max(row_cut);
                 delete_full.extend(consumed);
-                return FrameCut {
-                    cut_px,
-                    delete_full,
-                    split: None,
-                };
+                return stop(cut_px, delete_full, false);
             }
         }
         // (3) a fragmentable container descends. Only commit the recursion when
@@ -427,24 +518,83 @@ fn plan_blocks_cut(doc: &BaseDocument, blocks: &[usize], limit_px: f32) -> Frame
         // container's own first child didn't fit either, so move the whole
         // container whole (fall through to the break below).
         if let Some(children) = splittable_container_children(doc, id) {
-            let sub = plan_blocks_cut(doc, &children, limit_px);
-            if !sub.delete_full.is_empty() || sub.split.is_some() {
+            let sub = plan_blocks_cut(doc, &children, limit_px, rules, has_content);
+            if !sub.delete_full.is_empty() || sub.split.is_some() || sub.forced {
                 cut_px = cut_px.max(sub.cut_px);
                 delete_full.extend(sub.delete_full);
                 return FrameCut {
                     cut_px,
                     delete_full,
                     split: sub.split,
+                    forced: sub.forced,
                 };
             }
         }
         break; // atomic / non-fragmentable straddler → whole-block move
     }
-    FrameCut {
-        cut_px,
-        delete_full,
-        split: None,
+    // The straddler moves whole. `break-after: avoid` above it, or
+    // `break-before: avoid` on it, pulls the block above along — while
+    // something stays in the frame.
+    if let Some(next) = straddler {
+        let mut next = next;
+        while let Some(&last) = delete_full.last() {
+            let avoid = rules.after(last) == Between::Avoid || rules.before(next) == Between::Avoid;
+            if !avoid || (delete_full.len() == 1 && !frame_has_content) {
+                break;
+            }
+            delete_full.pop();
+            bottoms.pop();
+            next = last;
+        }
+        cut_px = bottoms.iter().copied().fold(0.0f32, f32::max);
     }
+    stop(cut_px, delete_full, false)
+}
+
+/// Whether a forced break sits before `id`: its own `break-before`, or —
+/// propagated as CSS Fragmentation says — that of its first child, when it
+/// is a container whose children are blocks.
+fn forced_before(doc: &BaseDocument, rules: &BreakRules, id: usize) -> bool {
+    if rules.is_empty() {
+        return false;
+    }
+    if rules.before(id) == Between::Forced {
+        return true;
+    }
+    splittable_container_children(doc, id)
+        .and_then(|c| c.first().copied())
+        .is_some_and(|first| forced_before(doc, rules, first))
+}
+
+/// Whether a forced break sits after `id` (its own `break-after`, or its last
+/// block child's).
+fn forced_after(doc: &BaseDocument, rules: &BreakRules, id: usize) -> bool {
+    if rules.is_empty() {
+        return false;
+    }
+    if rules.after(id) == Between::Forced {
+        return true;
+    }
+    splittable_container_children(doc, id)
+        .and_then(|c| c.last().copied())
+        .is_some_and(|last| forced_after(doc, rules, last))
+}
+
+/// Whether a forced break falls BETWEEN two of `id`'s block descendants (not
+/// at its very start or end, which propagate to `id` itself).
+fn has_internal_forced(doc: &BaseDocument, rules: &BreakRules, id: usize) -> bool {
+    if rules.is_empty() {
+        return false;
+    }
+    let Some(children) = splittable_container_children(doc, id) else {
+        return false;
+    };
+    let n = children.len();
+    children.iter().enumerate().any(|(i, &c)| {
+        (i > 0 && forced_before(doc, rules, c))
+            || (i + 1 < n && forced_after(doc, rules, c))
+            || has_internal_forced(doc, rules, c)
+    })
 }
 
 /// A block's element children WHEN it is a fragmentable container — one whose
@@ -600,8 +750,11 @@ fn plan_table_rows_cut(doc: &BaseDocument, rows: &[usize], limit_px: f32) -> (f3
     (cut_px, delete_full)
 }
 
-/// Try to split a straddling paragraph at a line boundary: find the last line
-/// whose bottom fits `limit_px`, then map that split offset (in the inline
+/// Try to split a straddling paragraph at a line boundary: find the line to
+/// break after — the last one whose bottom fits `limit_px`, moved up so that
+/// at least `widows` lines go to the next frame; no split when fewer than
+/// `orphans` lines would stay (unless the frame holds nothing else, when the
+/// rules cannot be honoured) — then map that split offset (in the inline
 /// text) to per-text-node edits that DROP the consumed prefix and keep the
 /// remainder — preserving the remainder's inline formatting (`<b>`/`<span>`).
 /// Returns `(the split line's bottom in page px, the text-node edits)`.
@@ -617,28 +770,48 @@ fn try_split(
     doc: &BaseDocument,
     block_id: usize,
     limit_px: f32,
+    rules: &BreakRules,
+    frame_has_content: bool,
 ) -> Option<(f32, Vec<(usize, String)>)> {
     let node = doc.get_node(block_id)?;
     let ild = node.element_data()?.inline_layout_data.as_ref()?;
     let text: &str = &ild.text;
 
-    let mut split_offset: Option<usize> = None;
-    let mut consumed_bottom_px = 0.0f32;
-    for line in ild.layout.lines() {
-        // The line's bottom in page px (Parley layout coords → page via the
-        // block's absolute_position, the same mapping the capture uses).
-        let bottom = node
-            .absolute_position(0.0, line.metrics().block_max_coord)
-            .y;
-        if bottom <= limit_px + 0.5 {
-            split_offset = Some(line.text_range().end);
-            consumed_bottom_px = bottom;
-        } else {
-            break; // lines are ordered; the first overflow ends the prefix
-        }
+    // Every line's (end offset, bottom in page px), in order (Parley layout
+    // coords → page via the block's absolute_position, the same mapping the
+    // capture uses).
+    let lines: Vec<(usize, f32)> = ild
+        .layout
+        .lines()
+        .map(|line| {
+            let bottom = node
+                .absolute_position(0.0, line.metrics().block_max_coord)
+                .y;
+            (line.text_range().end, bottom)
+        })
+        .collect();
+    let fit = lines
+        .iter()
+        .take_while(|(_, bottom)| *bottom <= limit_px + 0.5)
+        .count();
+    if fit == 0 {
+        return None; // no line fits → unsplittable-to-fit
     }
-
-    let offset = split_offset?; // no line fits → unsplittable-to-fit
+    let total = lines.len();
+    // CSS initial values are 2 and 2 — Chrome honours them by default.
+    let orphans = rules.orphans(doc, block_id) as usize;
+    let widows = rules.widows(doc, block_id) as usize;
+    let mut keep = fit;
+    if total - keep < widows {
+        keep = total.saturating_sub(widows);
+    }
+    if keep < orphans || keep == 0 {
+        if frame_has_content {
+            return None; // move the paragraph whole
+        }
+        keep = fit; // an empty frame cannot honour the rules: fill it
+    }
+    let (offset, consumed_bottom_px) = lines[keep - 1];
     if offset == 0 || offset >= text.len() || !text.is_char_boundary(offset) {
         return None; // nothing consumed / everything fits / bad boundary
     }

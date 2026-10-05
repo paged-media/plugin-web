@@ -218,6 +218,15 @@ Counts are as recorded on the dates given (2026-07-18/19); the suites have grown
   no loss) + wasm boundary. **Caveats:** columns re-resolve per frame, so a non-`table-layout:fixed`
   table may shift columns between fragments (content is loss-free); `<tfoot>` rows flow as body rows
   (no bottom-repeat); a row taller than a frame moves whole.
+- **Fragmentation rules (2026-10-05).** `break-before`, `break-after`, `break-inside`,
+  `orphans`, `widows` and `@page` margins are honoured by the cut planner: the pinned style
+  engine does not compute them, so `break_rules.rs` reads them from the source CSS. A forced
+  break ends the frame (inside a block that fits too, and in the last frame as overset), an
+  avoid box moves whole unless it is the first thing in the frame, `break-after: avoid` pulls
+  the block above along, and a line split keeps `orphans` lines behind and `widows` lines
+  ahead (initial 2). A frame is a page box ([ADR 412](../adr/412-a-frame-is-a-page-box.md)).
+  Three Chrome fixtures check it (`flow-break-forced`, `flow-break-avoid`,
+  `flow-orphans-widows-rules`).
 - **Test determinism note:** the parley/fontique shaping stack shares process state, so cargo's
   parallel test runner made the flow tests' tight geometric assertions flaky; a `#[cfg(test)]`
   `SHAPE_LOCK` serializes shaping at `render_html` + the flow render (production unaffected).

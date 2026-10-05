@@ -52,7 +52,7 @@
 
 import type { BundleHost } from "@paged-media/plugin-api";
 
-import type { SceneLayer } from "../../web-model/src";
+import { parseInspected, type InspectedRender, type SceneLayer } from "../../web-model/src";
 
 /** The minimal surface of the wasm-bindgen `--target web` glue we use —
  *  declared locally so typecheck never depends on the GENERATED (and
@@ -72,6 +72,10 @@ interface BlitzGlue {
    *  `flow-into` selector (Regions syntax) or "" for the whole body; returns
    *  `{ frames: [{ layer, emitted }], overset }` as JSON. */
   render_web_flow: (html: string, framesJson: string, flowRoot: string) => string;
+  /** One frame plus the map from paint back to the DOM (text clusters →
+   *  text nodes, element boxes): `{ layer, text, boxes }` JSON. Absent in
+   *  an artifact built before the export existed. */
+  render_web_frame_inspect?: (html: string, widthPx: number, heightPx: number) => string;
 }
 
 /** A rendered flow: one C-1 layer per recipient frame (chain order) plus
@@ -95,6 +99,11 @@ export interface WebEngine {
     frames: { widthPx: number; heightPx: number }[],
     flowRoot?: string,
   ): WebFlowRender | null;
+  /** One frame with its text map and element boxes (in-frame editing, the
+   *  outline highlight), or `null` on a wasm failure or an engine without
+   *  the export. Optional so engines built for one purpose (test stubs)
+   *  need not provide it. */
+  renderInspected?(html: string, widthPx: number, heightPx: number): InspectedRender | null;
 }
 
 /** Inject the glue module (tests pass a stub / a disk-loaded module);
@@ -191,6 +200,17 @@ export async function loadWebEngine(
           } catch (err) {
             host.log.warn(
               `web engine: render_web_flow threw — ${stringifyErr(err)}`,
+            );
+            return null;
+          }
+        },
+        renderInspected(html, widthPx, heightPx): InspectedRender | null {
+          if (typeof glue.render_web_frame_inspect !== "function") return null;
+          try {
+            return parseInspected(glue.render_web_frame_inspect(html, widthPx, heightPx));
+          } catch (err) {
+            host.log.warn(
+              `web engine: render_web_frame_inspect threw — ${stringifyErr(err)}`,
             );
             return null;
           }

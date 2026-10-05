@@ -157,7 +157,7 @@ fn article_flowed_into_4_frames__feat__plugin_web_perf_budgets() {
         "text conserved across 4 frames"
     );
     assert_each_once(&ws, (0..ARTICLE_PARAS).map(article_marker));
-    check(&c, &ARTICLE_4);
+    check(&c, &ARTICLE_4_ORPHANS_WIDOWS);
 }
 
 #[test]
@@ -173,7 +173,33 @@ fn article_flowed_into_12_frames__feat__plugin_web_perf_budgets() {
         "text conserved across 12 frames"
     );
     assert_each_once(&ws, (0..ARTICLE_PARAS).map(article_marker));
-    check(&c, &ARTICLE_12);
+    check(&c, &ARTICLE_12_ORPHANS_WIDOWS);
+}
+
+/// The inspected render (in-frame editing, the outline highlight): one
+/// parse, resolve and paint like a plain frame render; what it adds is the
+/// maps it returns (bytes out).
+#[test]
+fn article_inspected_in_one_frame__feat__plugin_web_perf_budgets() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let html = article(ARTICLE_PARAS);
+    let (json, c) = measure(|| {
+        web_render::inspect::render_web_frame_inspect_json(&html, FRAME_W, ARTICLE_ONE_FRAME_H)
+    });
+    show("article/1-frame-inspected", &c);
+    let v: Value = serde_json::from_str(&json).expect("inspect JSON");
+    let ws = words(&layer_texts(&v["layer"]));
+    assert_eq!(
+        ws.len(),
+        ARTICLE_PARAS * article_words(),
+        "every word painted once"
+    );
+    assert_eq!(
+        v["text"]["nodes"].as_array().map(Vec::len),
+        Some(ARTICLE_PARAS),
+        "one text node per paragraph"
+    );
+    check(&c, &ARTICLE_1_INSPECTED);
 }
 
 #[test]
@@ -207,14 +233,14 @@ fn work_shapes__feat__plugin_web_perf_budgets() {
     // Resolves per flow = frames: each frame re-lays out the remainder at its
     // own width after the consumed prefix is deleted (the fragmentation model,
     // ADR 404 — a continuation re-applies box tops, margins and indents).
-    assert_eq!(ARTICLE_4.resolves, 4);
-    assert_eq!(ARTICLE_12.resolves, 12);
+    assert_eq!(ARTICLE_4_ORPHANS_WIDOWS.resolves, 4);
+    assert_eq!(ARTICLE_12_ORPHANS_WIDOWS.resolves, 12);
     // Each frame paints only its BAND (the last frame its remainder), so a
     // flow paints about its content once, however many frames: 12 frames
     // paint < 1.5 x one frame's commands (in the baseline each frame repainted
     // the whole remainder: ~ C x (F + 1) / 2, 1 360 for 12 frames).
-    const { assert!(2 * ARTICLE_4.painted_commands < 3 * ARTICLE_1.painted_commands) };
-    const { assert!(2 * ARTICLE_12.painted_commands < 3 * ARTICLE_1.painted_commands) };
+    const { assert!(2 * ARTICLE_4_ORPHANS_WIDOWS.painted_commands < 3 * ARTICLE_1.painted_commands) };
+    const { assert!(2 * ARTICLE_12_ORPHANS_WIDOWS.painted_commands < 3 * ARTICLE_1.painted_commands) };
     // Run matching is LINEAR: an index answers each captured run with ~one
     // candidate (the article's 200 line runs cost 200 comparisons; in
     // the baseline they cost 200^2 = 40 000, the table 815 409).
@@ -222,7 +248,7 @@ fn work_shapes__feat__plugin_web_perf_budgets() {
     assert_eq!(STYLED_200.run_match_comparisons, STYLED_RUNS as u64);
     const { assert!(TABLE_300.run_match_comparisons <= 4 * TABLE_ROWS as u64) };
     // The font context is built once per engine, not per render call.
-    assert_eq!(ARTICLE_12.font_context_builds, 0);
+    assert_eq!(ARTICLE_12_ORPHANS_WIDOWS.font_context_builds, 0);
 }
 
 /// The font context is built ONCE per engine (thread): the first render on a
@@ -350,25 +376,43 @@ const ARTICLE_1: Budget = Budget {
     bytes_in: 8894,
     bytes_out: 31634,
 };
-const ARTICLE_4: Budget = Budget {
+// The flow budgets of the earlier cut policy (break after the last line that
+// fits) were 217 / 250 painted commands and run-match comparisons, bytes out
+// 31646 / 31873. Fragmentation now honours `orphans` and `widows` at their
+// CSS initial value 2 (as Chrome does), which moves the article's cuts: a
+// different geometry, so these are that feature's own budgets, pinned as
+// measured 2026-10-05.
+const ARTICLE_4_ORPHANS_WIDOWS: Budget = Budget {
     html_parses: 1,
     resolves: 4,
     paint_captures: 4,
     font_context_builds: 0,
-    painted_commands: 217,
-    run_match_comparisons: 217,
+    painted_commands: 219,
+    run_match_comparisons: 219,
     bytes_in: 9023,
-    bytes_out: 31646,
+    bytes_out: 31645,
 };
-const ARTICLE_12: Budget = Budget {
+const ARTICLE_12_ORPHANS_WIDOWS: Budget = Budget {
     html_parses: 1,
     resolves: 12,
     paint_captures: 12,
     font_context_builds: 0,
-    painted_commands: 250,
-    run_match_comparisons: 250,
+    painted_commands: 252,
+    run_match_comparisons: 252,
     bytes_in: 9267,
     bytes_out: 31873,
+};
+/// The inspected render's own budget (in-frame editing), pinned as measured
+/// 2026-10-05: the same work as `ARTICLE_1`, plus the maps in bytes out.
+const ARTICLE_1_INSPECTED: Budget = Budget {
+    html_parses: 1,
+    resolves: 1,
+    paint_captures: 1,
+    font_context_builds: 0,
+    painted_commands: 200,
+    run_match_comparisons: 200,
+    bytes_in: 8894,
+    bytes_out: 236678,
 };
 const TABLE_300: Budget = Budget {
     html_parses: 1,

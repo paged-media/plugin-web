@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta name="paged-frames" content="240x160,240x160,240x160">
+<style>
+html { font-family: Inter; line-height: 1.25; font-optical-sizing: none; }
+body { margin: 0; }
+p, h2 { margin: 0; orphans: 1; widows: 1; }
+h2 { font-size: 16px; }
+.keep { break-inside: avoid; }
+.with-next { break-after: avoid; }
+</style></head>
+<body>
+<p>Opening paragraph of the first frame, long enough to fill six lines of the narrow frame with plain words, and then a few more words so that it really does reach the sixth line.</p>
+<p class="keep">This paragraph avoids a break inside, so it moves whole to frame two rather than splitting.</p>
+<p>Filler paragraph that stays in frame two after the kept one.</p>
+<h2 class="with-next">Heading kept with next</h2>
+<p class="keep">The paragraph after the heading avoids a break inside and pulls its heading along into frame three.</p>
+</body></html>
