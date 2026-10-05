@@ -74,7 +74,7 @@ Pinned in `perf_budgets.rs` as `#[should_panic]` defect tests (they start failin
    viewport-sized transparent root fill, so `overset` is true whenever the last frame is shorter
    than the 4 096 px paint viewport.
 
-## Wave 2 targets, ranked by measured cost
+## Targets, ranked by measured cost
 
 1. **Bake as one batch** — 1 410 door calls, 801 mutations (801 undo steps), 400 full story reads
    and 40 000 rows for 200 runs; 891 ms. Story ids from the `insertTextFrame` result instead of
@@ -89,11 +89,11 @@ Pinned in `perf_budgets.rs` as `#[should_panic]` defect tests (they start failin
    commands ≈ one pass, paint only each frame's band.
 5. **Font context once per engine** — 1 build per render call. Target: 1 per engine lifetime.
 6. **Wire size** — 815 KB of JSON for a 300-row table (borders as path segments, full float
-   precision). Not in the Wave 2 list; recorded so it can be weighed against the above.
+   precision). Not in the optimisation list above; recorded so it can be weighed against the above.
 7. **Parse once per flow, not per flow group** — 1 parse per group (the single-flow workloads here
    show 1); matters for multi-flow sources only.
 
-## After Wave 2 (host)
+## After the host-side optimisations
 
 Same workloads, same real headless host and engine wasm (`perf-budgets.spec.ts`; the headless
 host now boots the published `@paged-media/canvas-wasm` 0.67.0, pinned as a devDependency —
@@ -140,6 +140,6 @@ Recorded, not built (the engine half):
   every group from one parse.
 - **One source load per command.** The bake and flow commands load the source twice (the chain
   resolve and the render each call `loadWebSource`: 2 `getMetadata`). Small, host-side, left for
-  the Wave 4 command rework that touches the same paths.
+  the command rework that touches the same paths.
 - **Font faces on baked text.** `characterFontFamily` / `characterFontStyle` per run fit the same
-  batch (the core contract test carries them) once runs carry faces (Wave 5).
+  batch (the core contract test carries them) once runs carry their faces.

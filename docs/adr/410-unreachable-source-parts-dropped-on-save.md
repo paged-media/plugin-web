@@ -55,3 +55,8 @@ is deleted and the save proceeds.
 - A document carries at most the parts of one session's history beyond what its labels name.
 - Saving writes a deletion only for parts the opened file carried.
 - When the engine makes parts undoable, this collector can collect on every save.
+
+## Related
+
+- [ADR 409](409-label-is-the-truth-large-sources-by-pointer.md) — content-addressed source parts behind a label pointer
+- [ADR 406](406-web-frame-and-source-storage.md) — the earlier storage decision
