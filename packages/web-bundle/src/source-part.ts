@@ -191,3 +191,43 @@ export async function writeWebSource(
     ? { applied: true }
     : { applied: false, reason: describeRefusal(outcome.error) };
 }
+
+// ------------------------------------------------------- source resources
+
+/** Where a source's sub-resources (images, stylesheets, font files) live in
+ *  the container: `resources/<path as the source writes it>`. Parts are this
+ *  plugin's namespace; a source's relative URL `img/a.png` is the part
+ *  `resources/img/a.png`. */
+export const RESOURCE_PREFIX = "resources/";
+
+/** The bytes of a source resource the container carries, or `null` (no
+ *  parts door, or no such part). The one other part reader: resources are
+ *  not sources, and never the label's truth. */
+export async function readResourcePart(
+  host: Pick<BundleHost, "supports" | "parts">,
+  path: string,
+): Promise<Uint8Array | null> {
+  if (!host.supports("storage.parts@1")) return null;
+  try {
+    return await host.parts.read(RESOURCE_PREFIX + path);
+  } catch {
+    return null;
+  }
+}
+
+/** Store a source resource in the container (`resources/<path>`). Parts are
+ *  not undoable; a resource is content the source points at, like a linked
+ *  image file. Answers whether it was written. */
+export async function writeResourcePart(
+  host: Pick<BundleHost, "supports" | "parts">,
+  path: string,
+  bytes: Uint8Array,
+): Promise<boolean> {
+  if (!host.supports("storage.parts@1")) return false;
+  try {
+    await host.parts.write(RESOURCE_PREFIX + path, bytes);
+    return true;
+  } catch {
+    return false;
+  }
+}

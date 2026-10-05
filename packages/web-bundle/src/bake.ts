@@ -55,6 +55,7 @@ import {
 } from "../../web-model/src";
 
 import { engineDocument } from "./engine-document";
+import { faceDiagnostics, prepareEngineInputs, resourceDiagnostics } from "./engine-inputs";
 import type { WebEngine } from "./engine-loader";
 import { renderWithPolicy } from "./overflow";
 import { describeRefusal, loadWebSource } from "./source-part";
@@ -112,8 +113,11 @@ export function persistentSceneSurface(host: BundleHost): SceneLayerSurface | nu
     const held = framesWithLayers(host);
     surface = Object.assign(Object.create(inner) as SceneLayerSurface, {
       submit: async (id: string, layer: Parameters<SceneLayerSurface["submit"]>[1]) => {
-        await inner.submit(id, layer);
+        // From protocol 68 the reply names the faces drawn in the default
+        // font (`{ fontFallbacks }`); an older host answers nothing.
+        const reply: unknown = await inner.submit(id, layer);
         held.add(id);
+        return reply as void;
       },
       clear: async (id: string) => {
         await inner.clear(id);
@@ -241,8 +245,9 @@ export async function bakeWebFrame(
     // The local SceneLayer twin is the C-1 IR by construction
     // (fillPath/text + ScenePathSeg) — the wire `SceneLayer` shape, so
     // the submit is a structural pass-through.
-    await surface.submit(target.id, result.sceneLayer as never);
+    const reply: unknown = await surface.submit(target.id, result.sceneLayer as never);
     submitted = true;
+    result.diagnostics.push(...faceDiagnostics(reply));
   }
 
   return {
@@ -283,13 +288,16 @@ async function renderWithEngine(
   const widthPx = Math.round(frameWidthPt * PX_PER_PT);
   const heightPx = Math.round(frameHeightPt * PX_PER_PT);
   const policy = source.options.overflow;
+  // The faces the source names and the resources it points at, from the
+  // document (never the network).
+  await prepareEngineInputs(host, engine, html);
   // A threaded source's policy is its flow (render-flow-command.ts); a
   // single-frame render of it shows its own frame, clipped.
   const fit = renderWithPolicy(engine, html, widthPx, heightPx, policy);
   // The engine loaded but the render threw — honest not-loaded result (no
   // fake layer). The loader already logged the wasm error.
   if (fit === null) return notLoaded;
-  const diagnostics: WebDiagnostic[] = [...rendered.diagnostics];
+  const diagnostics: WebDiagnostic[] = [...rendered.diagnostics, ...resourceDiagnostics(engine)];
 
   if (policy === "grow" && fit.contentHeightPx !== null && bounds) {
     const contentPt = fit.contentHeightPx / PX_PER_PT;
@@ -443,7 +451,9 @@ export async function bakeWebFlow(
   // subtree flows across the chain (Stylo ignores the property, so the plugin
   // parses it). Absent → the whole body flows.
   const flowRoot = flowRootSelector(rendered.css);
+  await prepareEngineInputs(host, engine, html);
   const flow = engine.renderFlow(html, framesPx, flowRoot);
+  const missing = resourceDiagnostics(engine);
   if (flow === null) {
     // The engine loaded but the flow render threw — honest not-loaded.
     return {
@@ -463,6 +473,7 @@ export async function bakeWebFlow(
   // untouched, not cleared.
   const surface = persistentSceneSurface(host);
   const layers: (SceneLayer | null)[] = [];
+  const faces: WebDiagnostic[] = [];
   let submittedCount = 0;
   for (let i = 0; i < chain.length; i += 1) {
     const layer = flow.frames[i] ?? null;
@@ -471,7 +482,7 @@ export async function bakeWebFlow(
     // string-id page item (asFrameTarget → null) can't receive a layer.
     const target = asFrameTarget(chain[i]);
     if (doSubmit && surface && layer && target) {
-      await surface.submit(target.id, layer as never);
+      faces.push(...faceDiagnostics(await surface.submit(target.id, layer as never)));
       submittedCount += 1;
     }
   }
@@ -479,7 +490,12 @@ export async function bakeWebFlow(
   // Surface flow overset (content that didn't fit the chain) as an honest
   // warning in the Problems panel — alongside the render findings and any
   // CSS Regions (flow-into/flow-from) notes.
-  const diagnostics = [...rendered.diagnostics, ...namedFlowDiagnostics(rendered.css)];
+  const diagnostics = [
+    ...rendered.diagnostics,
+    ...namedFlowDiagnostics(rendered.css),
+    ...missing,
+    ...dedupe(faces),
+  ];
   if (flow.overset) {
     diagnostics.push({
       severity: "warning",
@@ -555,8 +571,10 @@ export async function bakeWebFlows(
 
   const surface = persistentSceneSurface(host);
   const layers: (SceneLayer | null)[] = [];
+  const faces: WebDiagnostic[] = [];
   let submittedCount = 0;
   let anyOverset = false;
+  await prepareEngineInputs(host, engine, doc.html);
 
   // Every group's frame geometry in ONE read (was one read per group).
   const allFrames = groups.flatMap((g) => g.frames as unknown as ElementId[]);
@@ -583,6 +601,7 @@ export async function bakeWebFlows(
     // body); a named group → that flow-into's selector.
     const flowRoot = flowSelectorFor(doc.css, group.name);
     const flow = engine.renderFlow(doc.html, framesPx, flowRoot);
+    diagnostics.push(...resourceDiagnostics(engine));
     if (flow === null) {
       present.forEach(() => layers.push(null));
       continue;
@@ -592,12 +611,13 @@ export async function bakeWebFlows(
       layers.push(layer);
       const target = asFrameTarget(groupFrames[i]);
       if (surface && layer && target) {
-        await surface.submit(target.id, layer as never);
+        faces.push(...faceDiagnostics(await surface.submit(target.id, layer as never)));
         submittedCount += 1;
       }
     }
     if (flow.overset) anyOverset = true;
   }
+  diagnostics.push(...dedupe(diagnostics.splice(0).concat(faces)));
 
   if (anyOverset) {
     diagnostics.push({
@@ -615,4 +635,15 @@ export async function bakeWebFlows(
     diagnostics,
     layers,
   };
+}
+
+/** Diagnostics without repeats (several frames report the same face). */
+function dedupe(list: WebDiagnostic[]): WebDiagnostic[] {
+  const seen = new Set<string>();
+  return list.filter((d) => {
+    const key = `${d.severity}\u0000${d.message}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }

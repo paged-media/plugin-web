@@ -16,7 +16,8 @@
       "webFrame"
     ],
     "assets": [
-      "fonts"
+      "fonts",
+      "images"
     ],
     "wasm": [
       {
