@@ -50,6 +50,11 @@ blitz = [
     "dep:parley",
     "dep:peniko",
 ]
+# Work counters (parses, resolves, paint captures, painted commands,
+# run-match comparisons, font-context builds, wasm bytes in/out) for the
+# perf budgets (`tests/perf_budgets.rs`) and the counting wasm. Off in the
+# shipped build, where every counter call compiles to nothing.
+perf-counters = []
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -69,5 +74,19 @@ peniko = { version = "0.6", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
+
+[dev-dependencies]
+criterion = { version = "0.5", default-features = false }
+
+# Count budgets — run with `--features blitz,perf-counters`.
+[[test]]
+name = "perf_budgets"
+required-features = ["blitz", "perf-counters"]
+
+# Wall-clock trend (not gated) — `cargo bench --features blitz`.
+[[bench]]
+name = "render"
+harness = false
+required-features = ["blitz"]
 
 [workspace]

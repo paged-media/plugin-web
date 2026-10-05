@@ -57,6 +57,7 @@ use crate::display_list::{
     WebGradientStop, WebImage,
 };
 use crate::fonts::{build_font_ctx, BUNDLED_FAMILY};
+use crate::perf::{self, Counter};
 use crate::wire::{RectPt, ScenePaint, ScenePathSeg};
 
 /// CSS px → PostScript points (1 px = 1/96 in, 1 pt = 1/72 in → 72/96).
@@ -803,8 +804,10 @@ pub fn render_html(html: &str, width_px: u32, height_px: u32) -> WebDisplayList 
         ..Default::default()
     };
     let mut doc = HtmlDocument::from_html(html, config);
+    perf::bump(Counter::HtmlParses, 1);
     doc.set_viewport(Viewport::new(width_px, height_px, 1.0, ColorScheme::Light));
     doc.resolve(0.0);
+    perf::bump(Counter::Resolves, 1);
     capture_resolved(&mut doc, width_px, height_px)
 }
 
@@ -818,6 +821,8 @@ pub fn capture_resolved(doc: &mut BaseDocument, width_px: u32, height_px: u32) -
     let mut scene = CapturingScene::new();
     paint_scene(&mut scene, doc, 1.0, width_px, height_px, 0, 0);
     let mut dl = scene.into_display_list();
+    perf::bump(Counter::PaintCaptures, 1);
+    perf::bump(Counter::PaintedCommands, dl.commands.len() as u64);
     // Recover run text from the resolved document + attach it by baseline.
     let recovered = recover_run_texts(doc);
     attach_run_texts(&mut dl, &recovered);
@@ -930,6 +935,7 @@ fn attach_run_texts(dl: &mut WebDisplayList, recovered: &[RecoveredRun]) {
         // Best candidate: smallest local-key distance; ties (a local-key
         // collision) broken by nearest untransformed absolute baseline.
         let mut best: Option<(usize, f32, f32)> = None;
+        perf::bump(Counter::RunMatchComparisons, recovered.len() as u64);
         for (i, rec) in recovered.iter().enumerate() {
             if used[i] {
                 continue;
