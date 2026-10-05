@@ -62,7 +62,10 @@ serde_json = "1"
 
 # --- capture layer (feature = "blitz") — pinned to the W0 spike's stack ---
 anyrender = { version = "0.10", optional = true }
-blitz-dom = { version = "=0.3.0-alpha.4", default-features = false, features = ["woff"], optional = true }
+# `floats`: Blitz's float layout (taffy `float_layout`) — off by default
+# upstream; without it line boxes do not shorten beside a float and
+# consecutive floats stack vertically.
+blitz-dom = { version = "=0.3.0-alpha.4", default-features = false, features = ["woff", "floats"], optional = true }
 blitz-html = { version = "=0.3.0-alpha.4", optional = true }
 blitz-paint = { version = "=0.3.0-alpha.4", optional = true }
 blitz-traits = { version = "=0.3.0-alpha.4", optional = true }
