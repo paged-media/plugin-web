@@ -94,6 +94,33 @@ forced break on the same word in every case except lists and the last table row.
 - Frames of different sizes in the flow lane (Chrome has no Regions; the multicol model needs
   equal columns).
 
+## The other oracles
+
+**InDesign** (`indesign/`). The real "Bake web frame to document" runs against a recording host
+(`indesign/bake-lane.ts`, real engine wasm, Inter advance widths as the text measure); its wire
+mutations become a core `paged script` (`indesign/scripts/<fixture>.js`, committed with the items
+and swatches it should produce). `indesign/run.sh` (local: core's `paged` CLI and InDesign 2025)
+applies the script to a blank 612 x 792 pt page, exports IDML with Inter staged in a
+`Document fonts` folder, and asks InDesign (`indesign/probe.jsx`) for every page item, swatch and
+font. `test/indesign-bake.spec.ts` checks in CI that the bake still produces the committed script
+and that InDesign's committed answer agrees: item kinds, geometry ±0.5 pt, fills, text per frame
+with nothing overset, point size, first baseline ±0.5 pt, RGB swatch values. Recorded with InDesign
+20.0.1 on 2026-10-05 for 3 fixtures (card, swatches, shapes: 7 rectangles, 2 polygons from
+`border-radius`, 4 text frames, 11 swatches): **every check agrees**; first baselines land exactly
+on the runs' baselines. One defect is pinned against the source's intent:
+
+| Id | Defect | Measured |
+|---|---|---|
+| IB-01 | The bake drops font weight and style: an `<h1>` (bold) arrives in InDesign as Inter Regular. | 1 of 4 runs |
+
+**Property tests** (fast-check). `web-model/test/properties.spec.ts` found three sanitizer defects,
+pinned with `it.fails`: S-01 an unterminated tag at the end of a paste keeps its surface
+(`<script`, `<a href='javascript:`); S-02 a removal splices its neighbours into a new construct
+(`<scr<script>ipt>alert(1)</scr<script>ipt>` becomes `<script>alert(1)`; `<a ON onclick="x"A=y>`
+becomes `<a ONA=y>`); S-03 an empty `onerror=` is kept. The template pass, the envelope round-trip
+and (`web-bundle/test/flow-properties.spec.ts`, real engine) text conservation across random frame
+chains hold, except lists (FW-02).
+
 ## Measured tables
 
 <!-- GENERATED:BEGIN (chrome/parity-table.mjs) -->

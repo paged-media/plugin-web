@@ -1,0 +1,98 @@
+{
+ "items": [
+  {
+   "kind": "rectangle",
+   "bounds": [
+    36,
+    36,
+    66,
+    66
+   ],
+   "fill": "Color/wb-ff0000"
+  },
+  {
+   "kind": "rectangle",
+   "bounds": [
+    36,
+    72,
+    66,
+    102
+   ],
+   "fill": "Color/wb-00a050"
+  },
+  {
+   "kind": "rectangle",
+   "bounds": [
+    36,
+    108,
+    66,
+    138
+   ],
+   "fill": "Color/wb-0040ff"
+  },
+  {
+   "kind": "rectangle",
+   "bounds": [
+    36,
+    144,
+    66,
+    174
+   ],
+   "fill": "Color/wb-ffcc00"
+  },
+  {
+   "kind": "textFrame",
+   "bounds": [
+    72.28125,
+    36,
+    83.1708984375,
+    158.2783203125
+   ],
+   "text": "Four swatches, one caption.",
+   "pointSize": 9,
+   "textFill": "Color/wb-000000"
+  }
+ ],
+ "swatches": [
+  {
+   "name": "Color/wb-000000",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "name": "Color/wb-ff0000",
+   "rgb": [
+    255,
+    0,
+    0
+   ]
+  },
+  {
+   "name": "Color/wb-00a050",
+   "rgb": [
+    0,
+    160,
+    80
+   ]
+  },
+  {
+   "name": "Color/wb-0040ff",
+   "rgb": [
+    0,
+    64,
+    255
+   ]
+  },
+  {
+   "name": "Color/wb-ffcc00",
+   "rgb": [
+    255,
+    204,
+    0
+   ]
+  }
+ ]
+}
