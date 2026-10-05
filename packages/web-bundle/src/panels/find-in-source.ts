@@ -19,9 +19,10 @@
 // "Find in source" — the panel-side selection glue over web-model's
 // `tagOutline`.
 //
-// HONEST SUBSET (the W-01 boundary): the sandboxed preview runs no JS
-// and nothing is laid out (the Blitz render lane is not built), so there
-// is no rendered box to hover. What works today is the SOURCE side:
+// HONEST SUBSET (the W-01 boundary): the sandboxed preview runs no JS,
+// and the canvas render does not hand the panel a map from painted runs
+// back to source nodes, so there is no rendered box to hover. What works
+// is the SOURCE side:
 // `tagOutline` scans the markup for its opening tags, the panel lists
 // them, and clicking one SELECTS that tag's character range in the code
 // editor. That is a navigation aid over the text — NOT inspection of a

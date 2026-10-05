@@ -119,7 +119,7 @@ export interface SceneLayer {
 }
 
 /**
- * The render request — everything the (future) engine needs to lay out
+ * The render request — everything the engine needs to lay out
  * and paint one web frame, and nothing host-specific. `vars` carries the
  * §6.2 deterministic template map (applied BEFORE layout, exactly as the
  * source-lane preview applies it); `dpi` lets the engine rasterize any
@@ -142,10 +142,8 @@ export interface WebRenderRequest {
 /**
  * The render result — the engine-agnostic output. `sceneLayer` is the
  * C-1 IR when the engine painted, or `null` on the not-loaded path (and
- * on a future hard engine failure). `diagnostics` always carries at
- * least the not-loaded note today; the engine lane adds layout/paint
- * findings (unsupported-property warnings from the pinned compatibility
- * table — docs/concept.md §9) alongside.
+ * when the engine threw). `diagnostics` carries the not-loaded note on
+ * that path, and the template and overflow findings otherwise.
  */
 export interface WebRenderResult {
   sceneLayer: SceneLayer | null;
@@ -237,8 +235,8 @@ export interface WebFlowFrameResult {
 /**
  * The flow render result — one layer per recipient frame in chain order,
  * plus `overset` (content remained past the LAST frame — the CSS-Regions /
- * IDML-story status the host surfaces) and `diagnostics` (>= the not-loaded
- * note today).
+ * IDML-story status the host surfaces) and `diagnostics` (the not-loaded
+ * note on that path).
  */
 export interface WebRenderFlowResult {
   flowId: FlowId;

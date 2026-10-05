@@ -138,20 +138,20 @@ export interface BakeOutcome {
    *  capability wired + submit applied). False on the not-loaded path
    *  and when the host has no scene channel. */
   submitted: boolean;
-  /** The render contract's diagnostics — at minimum the not-loaded note
-   *  today; engine layout/paint findings once the lane lands. */
+  /** The render contract's diagnostics — the not-loaded note when the
+   *  engine is absent; template and overflow findings otherwise. */
   diagnostics: WebDiagnostic[];
   /** The scene layer, when one was produced (else null) — exposed for
    *  the B2 IDML-bake step (engine-gated) and for tests. */
   sceneLayer: SceneLayer | null;
 }
 
-/** Read the selected frame's source + geometry and run the render
- *  contract. Pure-ish: the only side effect (a `sceneLayer.submit`) is
- *  reached ONLY when the engine produced a real layer — i.e. never
- *  today. Returns the honest outcome either way; never throws (a missing
- *  target / non-web-frame selection reports `rendered:false` with a
- *  diagnostic, not an error). */
+/** Read a frame's source + geometry and render it under its overflow
+ *  policy. Side effects: a `sceneLayer.submit` when the engine produced a
+ *  layer, and — for `grow`, when `opts.allowGrow` is not false — one
+ *  undoable `resizeFrame`. Returns the honest outcome either way; never
+ *  throws (a missing target / non-web-frame selection reports
+ *  `rendered:false` with a diagnostic, not an error). */
 export async function bakeWebFrame(
   host: BundleHost,
   id: ElementId,
@@ -344,7 +344,7 @@ export interface FlowBakeOutcome {
   submittedCount: number;
   /** Whether content remained past the last frame (the flow overset). */
   overset: boolean;
-  /** The render diagnostics — at minimum the not-loaded note today. */
+  /** The render diagnostics — the not-loaded note when the engine is absent. */
   diagnostics: WebDiagnostic[];
   /** The per-frame layers (chain order), for the B2 IDML-bake step +
    *  tests; `null` where a frame got no layer or on the not-loaded path. */

@@ -1068,9 +1068,9 @@ function SourceEditor({
       </div>
       {/* Find in source — the W-01 source-side subset of click-to-inspect.
           Lists the markup's opening tags (the pure `tagOutline` scan);
-          clicking one selects its source range in the editor. Full live
-          element inspection (hovering a rendered box) awaits the engine
-          render lane. */}
+          clicking one selects its source range in the editor. Inspecting
+          a rendered box (clicking the canvas to reach its source) needs
+          the engine's run-to-node map in the panel and is not built. */}
       {outline.length > 0 && (
         <details data-web-outline style={{ margin: "var(--space-1, 4px) 0 0" }}>
           <summary
@@ -1126,9 +1126,8 @@ function SourceEditor({
           </ul>
           {lane.native && (
             <p style={{ margin: "var(--space-1, 4px) 0 0", ...mutedNote }}>
-              The host code editor has no selection channel yet — these
-              show the line; full element inspection ships with the engine
-              render lane.
+              The host code editor has no selection channel — these show
+              the line only.
             </p>
           )}
         </details>
@@ -1213,10 +1212,10 @@ function SourceEditor({
       <div style={kicker}>Variables</div>
       {/* §6.2 — the DETERMINISTIC template slice: {{name}} substitution
           plus a closed whitelist of pure filters, applied between the
-          source and the preview (and, via the persisted vars map, any
-          future render lane). NOT a scripting surface: the Boa-powered
-          transform lane (ADR-001 engine, W-08) is the W2 follow-on, and
-          this panel never pretends otherwise. */}
+          source and the preview, and before every canvas render (the
+          persisted vars map). NOT a scripting surface: a Boa-powered
+          transform lane (W-08) is not built, and this panel never
+          pretends otherwise. */}
       {varEntries.map(([name, value], i) => (
         <div key={i} data-web-var-row style={optionRow}>
           <input
@@ -1290,7 +1289,7 @@ function SourceEditor({
         </button>
         <span style={mutedNote}>
           {"{{name}}"} substitution + {TEMPLATE_FILTERS.join(" · ")} —
-          deterministic; scripted (Boa) transforms ship with the W2 lane
+          deterministic; scripted transforms are not available
         </span>
       </div>
       {/* Persistence is EXPLICIT: one undoable metadata mutation per

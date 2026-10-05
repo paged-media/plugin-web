@@ -98,3 +98,19 @@ describe("preview = canvas", () => {
     expect(text).toMatch(/@media/);
   });
 });
+
+describe("no stale promises in the panel", () => {
+  it("no text promises a lane that ships later", async () => {
+    const h = reachHost();
+    const r = await mountPanel(h);
+    const texts: string[] = [];
+    const walk = (node: unknown) => {
+      if (typeof node === "string") texts.push(node);
+      else if (Array.isArray(node)) node.forEach(walk);
+      else if (node && typeof node === "object" && "children" in node) walk((node as { children: unknown }).children);
+    };
+    walk(r.toJSON());
+    const all = texts.join(" ");
+    expect(all).not.toMatch(/ships? with|W2 lane|render lane|not built yet|when you run/i);
+  });
+});

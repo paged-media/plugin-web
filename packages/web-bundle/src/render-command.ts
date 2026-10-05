@@ -44,9 +44,10 @@ export async function renderSelectedWebFrame(host: BundleHost): Promise<void> {
   }
   const id = selection[0];
   // Load the Blitz/WASM engine (memoized; null when it can't be loaded —
-  // the bake path then stays on the honest not-loaded diagnostic). This is
-  // the EXPERIMENTAL render affordance turning real: a loaded engine
-  // produces a real C-1 sceneLayer that core composes inside the frame.
+  // the bake path then stays on the honest not-loaded diagnostic). A loaded
+  // engine produces a real C-1 sceneLayer that core composes inside the
+  // frame. The canvas also re-renders by itself (auto-render.ts); this
+  // command renders now, whatever changed.
   const engine = await loadWebEngine(host);
   const outcome = await bakeWebFrame(host, id, engine);
 
@@ -73,7 +74,7 @@ export async function renderSelectedWebFrame(host: BundleHost): Promise<void> {
     host.log.info("renderWebFrame: scene layer submitted to canvas");
   } else if (outcome.rendered) {
     // A layer was produced but the host wired no scene channel — honest
-    // no-op (the future case under a host without rendering.sceneLayer).
+    // no-op (a host without rendering.sceneLayer).
     host.log.info(
       "renderWebFrame: rendered, but the host wired no scene channel — not composited",
     );
