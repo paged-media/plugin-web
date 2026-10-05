@@ -120,6 +120,7 @@ export async function recordBake(
   heightPt: number,
   render: (html: string, w: number, h: number) => string,
   face: Face,
+  extras: Partial<WebEngine> = {},
 ): Promise<WireOp[]> {
   const ops: WireOp[] = [];
   const stories: { selfId: string }[] = [];
@@ -159,6 +160,7 @@ export async function recordBake(
     },
   } as unknown as BundleHost;
   const engine: WebEngine = {
+    ...extras,
     render: (h, w, ht) => parseSceneLayer(render(h, w, ht)),
     renderFlow: () => null,
   };
@@ -191,6 +193,15 @@ export function toPagedScript(ops: WireOp[], header: string): string {
       case "createSwatch":
         lines.push(`paged.createSwatch(${lit(a.spec)});`);
         return;
+      case "createGradient":
+        lines.push(`paged.createGradient(${lit(a.spec)});`);
+        return;
+      case "replaceImageBytes": {
+        const el = elementVar.get(a.elementId);
+        if (!el) throw new Error(`replaceImageBytes on an unknown element ${a.elementId}`);
+        lines.push(`paged.replaceImageBytes(${el}, ${lit(a.bytes)});`);
+        return;
+      }
       case "insertFrame":
         lines.push(`const e${++n} = paged.insertFrame(pid, ${lit(a.bounds)});`);
         return;
@@ -227,6 +238,12 @@ export function toPagedScript(ops: WireOp[], header: string): string {
           lines.push(set(`\`storyRange:\${${v}}@${el.id.start}..${el.id.end}\``, a.path, a.value));
         } else if (el.id === "$created" && created) {
           lines.push(set(created, a.path, a.value));
+        } else if (typeof el.id === "string" && elementVar.has(el.id) && a.path === "framePath") {
+          // `paged.set` cannot type a path geometry; the wire mutation can.
+          const v = elementVar.get(el.id)!;
+          lines.push(
+            `paged.batch([{ op: "setElementProperty", args: { elementId: { kind: ${lit(el.kind)}, id: ${v}.split(":")[1] }, path: "framePath", value: ${lit(a.value)} } }]);`,
+          );
         } else if (typeof el.id === "string" && elementVar.has(el.id)) {
           lines.push(set(elementVar.get(el.id)!, a.path, a.value));
         } else {
@@ -262,6 +279,19 @@ export interface ExpectedItem {
   text?: string;
   textFill?: string;
   pointSize?: number;
+  /** The face a text run was set in. */
+  family?: string;
+  fontStyle?: string;
+  stroke?: string;
+  strokeWeight?: number;
+  /** Item opacity, percent. */
+  opacity?: number;
+  /** A native drop shadow was set. */
+  shadow?: boolean;
+  /** Subpaths, when the bake gave the path more than one. */
+  subpaths?: number;
+  /** The item carries image pixels. */
+  image?: boolean;
 }
 
 export interface Expected {
@@ -284,11 +314,24 @@ export function expectedFrom(ops: WireOp[]): Expected {
       const ys = a.anchors.map((p: { anchor: number[] }) => p.anchor[1]);
       items.push({ kind: "polygon", bounds: [Math.min(...ys), Math.min(...xs), Math.max(...ys), Math.max(...xs)] });
     } else if (o.op === "insertText") items[items.length - 1].text = a.text;
+    else if (o.op === "replaceImageBytes") items[items.length - 1].image = true;
     else if (o.op === "setElementProperty") {
       const last = items[items.length - 1];
       if (a.path === "frameFillColor") last.fill = a.value.value;
       if (a.path === "characterFillColor") last.textFill = a.value.value;
       if (a.path === "characterFontSize") last.pointSize = a.value.value;
+      if (a.path === "characterFontFamily") last.family = a.value.value;
+      if (a.path === "characterFontStyle") last.fontStyle = a.value.value;
+      if (a.path === "frameStrokeColor") last.stroke = a.value.value;
+      if (a.path === "frameStrokeWeight") last.strokeWeight = a.value.value;
+      if (a.path === "frameOpacity") last.opacity = a.value.value;
+      if (a.path === "frameDropShadowMode") last.shadow = true;
+      if (a.path === "framePath") {
+        last.subpaths = a.value.value.subpathStarts.length;
+        const xs = a.value.value.anchors.map((p: { anchor: number[] }) => p.anchor[0]);
+        const ys = a.value.value.anchors.map((p: { anchor: number[] }) => p.anchor[1]);
+        last.bounds = [Math.min(...ys), Math.min(...xs), Math.max(...ys), Math.max(...xs)];
+      }
     }
   }
   return { items, swatches };

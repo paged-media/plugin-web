@@ -284,11 +284,24 @@ pub struct SceneTextItem {
     /// Point size.
     pub size: f32,
     pub paint: ScenePaint,
-    /// Reserved face hint — core v1 renders in the document default font.
+    /// The run's font family. From protocol 68 core resolves it through the
+    /// faces the host registered for the document and draws the run in it
+    /// (falling back to the document default font, reported in the submit
+    /// reply's `fontFallbacks`); before 68 core draws every run in the
+    /// document default font.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub family: Option<String>,
+    /// The face within `family`, spelled like IDML's `FontStyle` (`"Bold"`,
+    /// `"Bold Italic"`). Absent: core derives it from `weight` / `italic`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub style: Option<String>,
+    /// CSS weight `100..=900` (protocol 68). Sets a variable face's `wght`
+    /// axis. The web lane omits the regular weight (400).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weight: Option<f32>,
+    /// Italic (protocol 68). The web lane omits an upright run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub italic: Option<bool>,
 }
 
 /// A bezier path segment in frame-content coordinates (points).

@@ -19,3 +19,4 @@ const s5 = JSON.parse(paged.stories()).at(-1).selfId;
 paged.insertText(s5, 0, "Four swatches, one caption.");
 paged.set(`storyRange:${s5}@0..27`, "characterFontSize", 9);
 paged.set(`storyRange:${s5}@0..27`, "characterFillColor", "Color/wb-000000");
+paged.set(`storyRange:${s5}@0..27`, "characterFontFamily", "Inter");

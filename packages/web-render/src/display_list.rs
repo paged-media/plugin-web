@@ -243,9 +243,12 @@ pub struct WebGlyphRun {
     pub size: f32,
     pub text: String,
     pub paint: ScenePaint,
-    /// The resolved family name, if the capture knows it (a face HINT for
-    /// the renderer; C-1.1 still reshapes in the doc default font).
+    /// The family of the face the run was shaped with, if the capture knows
+    /// it. Crosses the wire so the renderer draws the run in that face.
     pub family: Option<String>,
+    /// The rest of the face the run asked for (weight, italic) and its shaped
+    /// advance — see [`RunFace`].
+    pub face: RunFace,
     /// The run's first-glyph point in the inline root's UNTRANSFORMED
     /// content-local space (content points) — the capture's
     /// transform-INVARIANT correlation key. The DOM run-text recovery
@@ -254,6 +257,20 @@ pub struct WebGlyphRun {
     /// CSS transform moved its painted (`baseline_x`/`baseline_y`) position.
     /// The lowering IGNORES it (it only crosses the wire via the baseline).
     pub local_key: LocalKey,
+}
+
+/// The face of a captured text run beyond its family: the CSS weight and
+/// slope the run asked for (what the renderer resolves the face and sets a
+/// variable face's `wght` axis from) and the run's shaped advance in content
+/// points (what a native text frame baked from the run must hold).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct RunFace {
+    /// CSS weight `100..=900`; `None` when the capture does not know it.
+    pub weight: Option<f32>,
+    /// Italic or oblique; `None` when the capture does not know it.
+    pub italic: Option<bool>,
+    /// The shaped advance of the run, content points.
+    pub advance: Option<f32>,
 }
 
 /// A run's transform-invariant correlation key: the first-glyph point in the

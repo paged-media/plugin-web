@@ -18,7 +18,8 @@
 
 // Ask InDesign what a baked web frame became: every page item on page 1 in
 // creation order (type, geometric bounds in points from the page origin,
-// fill swatch; for text frames the contents, overset state, point size,
+// fill swatch, stroke, opacity, drop-shadow mode, path and graphic counts;
+// for text frames the contents, overset state, point size,
 // text fill, font style and first baseline), every swatch with its colour
 // space and value, and the fonts the document uses with their status. run.sh drives it; the answer is
 // committed as answers/<fixture>.json and checked by
@@ -42,8 +43,23 @@
         var list = [];
         for (var i = items.length - 1; i >= 0; i--) {
             var it = items[i];
+            // A placed graphic is reported on its frame ("graphics"), not as
+            // an item of its own.
+            if (it.hasOwnProperty("imageTypeName")) continue;
+            var fill;
+            try { fill = it.fillColor.name; } catch (e0) { fill = "?"; }
             var s = '{"type":' + q(it.constructor.name) + ',"bounds":' + arr(it.geometricBounds) +
-                ',"fill":' + q(it.fillColor.name);
+                ',"fill":' + q(fill);
+            // Paint and effects: stroke, item opacity, drop shadow, the
+            // number of paths (subpaths) and placed graphics.
+            try {
+                s += ',"stroke":' + q(it.strokeColor.name) + ',"strokeWeight":' + r3(it.strokeWeight);
+                s += ',"opacity":' + r3(it.transparencySettings.blendingSettings.opacity);
+                s += ',"shadow":' + q(String(it.transparencySettings.dropShadowSettings.mode).replace(/^.*\./, ""));
+                s += ',"paths":' + it.paths.length + ',"graphics":' + it.allGraphics.length;
+            } catch (e) {
+                s += ',"effectsError":' + q(e.message);
+            }
             if (it.constructor.name === "TextFrame") {
                 var ch = it.parentStory.characters;
                 s += ',"contents":' + q(it.parentStory.contents) + ',"overflows":' + it.overflows +

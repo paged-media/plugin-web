@@ -58,7 +58,7 @@ import { parseInspected, type InspectedRender, type SceneLayer } from "../../web
  *  declared locally so typecheck never depends on the GENERATED (and
  *  gitignored) `bin/blitz_web.d.ts`. `default` is `__wbg_init`; `initSync`
  *  takes a compiled module or bytes. */
-interface BlitzGlue {
+export interface BlitzGlue {
   default: (
     init?: { module_or_path: unknown } | unknown,
   ) => Promise<unknown>;
@@ -76,6 +76,17 @@ interface BlitzGlue {
    *  text nodes, element boxes): `{ layer, text, boxes }` JSON. Absent in
    *  an artifact built before the export existed. */
   render_web_frame_inspect?: (html: string, widthPx: number, heightPx: number) => string;
+  /** Register a face (TTF/OTF/WOFF/WOFF2 bytes) under `family` ("" = its own
+   *  name); answers the registered family names as JSON. */
+  register_font?: (bytes: Uint8Array, family: string) => string;
+  /** Register a sub-resource's bytes under the URL the source writes. */
+  register_resource?: (url: string, bytes: Uint8Array) => void;
+  has_resource?: (url: string) => boolean;
+  /** The URLs the last render could not load, as JSON. */
+  take_resource_misses?: () => string;
+  /** The shaped advance (pt) of each text item of the last render, one list
+   *  per layer, as JSON. */
+  take_text_advances?: () => string;
 }
 
 /** A rendered flow: one C-1 layer per recipient frame (chain order) plus
@@ -104,6 +115,57 @@ export interface WebEngine {
    *  the export. Optional so engines built for one purpose (test stubs)
    *  need not provide it. */
   renderInspected?(html: string, widthPx: number, heightPx: number): InspectedRender | null;
+  /** Register a face with the engine; every later render shapes with it.
+   *  Answers the registered family names (empty: not a face). Absent on an
+   *  engine built before faces. */
+  registerFont?(bytes: Uint8Array, family: string): string[];
+  /** Register a sub-resource (image, stylesheet, font file) under the URL the
+   *  source writes for it. */
+  registerResource?(url: string, bytes: Uint8Array): void;
+  hasResource?(url: string): boolean;
+  /** The URLs the last render asked for and could not load. */
+  takeResourceMisses?(): string[];
+  /** The shaped advance (points) of each text item of the last render, one
+   *  list per layer in item order. */
+  takeTextAdvances?(): number[][];
+}
+
+/** The optional engine methods over a wasm-bindgen glue — shared by the
+ *  bundle's loader and the test glues so they cannot drift. */
+export function engineExtras(glue: Partial<BlitzGlue>, warn: (m: string) => void = () => {}): Pick<
+  WebEngine,
+  "registerFont" | "registerResource" | "hasResource" | "takeResourceMisses" | "takeTextAdvances"
+> {
+  const json = <T>(f: (() => string) | undefined, fallback: T): T => {
+    if (!f) return fallback;
+    try {
+      return JSON.parse(f()) as T;
+    } catch (err) {
+      warn(`web engine: ${stringifyErr(err)}`);
+      return fallback;
+    }
+  };
+  return {
+    registerFont: glue.register_font
+      ? (bytes, family) => json(() => glue.register_font!(bytes, family), [] as string[])
+      : undefined,
+    registerResource: glue.register_resource
+      ? (url, bytes) => {
+          try {
+            glue.register_resource!(url, bytes);
+          } catch (err) {
+            warn(`web engine: register_resource threw — ${stringifyErr(err)}`);
+          }
+        }
+      : undefined,
+    hasResource: glue.has_resource ? (url) => glue.has_resource!(url) : undefined,
+    takeResourceMisses: glue.take_resource_misses
+      ? () => json(glue.take_resource_misses, [] as string[])
+      : undefined,
+    takeTextAdvances: glue.take_text_advances
+      ? () => json(glue.take_text_advances, [] as number[][])
+      : undefined,
+  };
 }
 
 /** Inject the glue module (tests pass a stub / a disk-loaded module);
@@ -178,6 +240,7 @@ export async function loadWebEngine(
       // the honest not-loaded diagnostic.
       await glue.default();
       return {
+        ...engineExtras(glue, (m) => host.log.warn(m)),
         render(html, widthPx, heightPx): SceneLayer | null {
           try {
             const json = glue.render_web_frame(html, widthPx, heightPx);

@@ -25,6 +25,7 @@ the code as it stood, for decisions made earlier; their status says so.
 | [408](408-no-page-javascript.md) | Page JavaScript never executes; templating is a closed pass | Accepted, recorded retroactively 2026-10-02 |
 | [409](409-label-is-the-truth-large-sources-by-pointer.md) | The label names the live source; a large source is a content-addressed part behind a pointer | Accepted 2026-10-05 |
 | [410](410-unreachable-source-parts-dropped-on-save.md) | Source parts no label or undo step can reach are dropped on save | Accepted 2026-10-05 |
+| [411](411-faces-and-resources-from-the-document.md) | A render takes its faces and resources from the document, never the network | Accepted 2026-10-05 |
 | [412](412-a-frame-is-a-page-box.md) | A frame is a page box; fragmentation rules are read from the source CSS | Accepted 2026-10-05 |
 
 Decisions made in other repositories that this plugin's code rests on are listed in

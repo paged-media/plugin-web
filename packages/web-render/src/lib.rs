@@ -48,8 +48,9 @@
 //! Not lowered, COUNTED and REPORTED by [`lower::LowerReport`], never faked:
 //! image/pattern brushes, gradient text, rotated/sheared image destinations
 //! (no per-image transform on the wire), the CSS `spread` of inset shadows,
-//! and gradient/image fills inside a blend layer. Text runs carry a family
-//! HINT only: core redraws scene text in the document's default face.
+//! and gradient/image fills inside a blend layer. Text runs carry their face
+//! (family, weight, italic): from protocol 68 core draws each run in it when
+//! the host registered the family, else in the document default face.
 //!
 //! # Entry points
 //!
@@ -67,7 +68,10 @@ pub mod perf;
 #[cfg(feature = "blitz")]
 mod boundary;
 #[cfg(feature = "blitz")]
-pub use boundary::{render_web_flow_boundary_json, render_web_frame_json};
+pub use boundary::{
+    register_font_json, register_resource_bytes, render_web_flow_boundary_json,
+    render_web_frame_json, take_resource_misses_json, take_text_advances_json,
+};
 pub mod wire;
 
 #[cfg(feature = "blitz")]
@@ -75,6 +79,11 @@ pub mod capture;
 
 #[cfg(feature = "blitz")]
 pub mod fonts;
+
+// Sub-resources (images, stylesheets, `@font-face` sources) from the host,
+// never the network.
+#[cfg(feature = "blitz")]
+pub mod resources;
 
 // Layout geometry readout (box rects + line boxes) for the Chrome
 // conformance replay — read-only, never part of a render.
@@ -97,8 +106,8 @@ pub mod break_rules;
 pub mod flow;
 
 pub use display_list::{
-    LocalKey, UnsupportedKind, WebBlendMode, WebDisplayList, WebDrawCmd, WebGlyphRun, WebGradient,
-    WebGradientStop, WebImage,
+    LocalKey, RunFace, UnsupportedKind, WebBlendMode, WebDisplayList, WebDrawCmd, WebGlyphRun,
+    WebGradient, WebGradientStop, WebImage,
 };
 pub use lower::{lower, LowerReport, Lowered};
 pub use wire::{
@@ -137,6 +146,45 @@ pub fn render_web_flow(html: &str, frames_json: &str, flow_root: &str) -> String
     // `flow_root` is a CSS `flow-into` selector (Regions syntax) or "" for the
     // whole body.
     render_web_flow_boundary_json(html, frames_json, flow_root)
+}
+
+/// Register a face with the engine (document fonts, `@font-face` faces): every
+/// later render shapes with it. `family` names it as the source's CSS does (""
+/// = the face's own family). Answers the registered family names as JSON.
+#[cfg(all(feature = "blitz", target_arch = "wasm32"))]
+#[wasm_bindgen::prelude::wasm_bindgen]
+pub fn register_font(bytes: &[u8], family: &str) -> String {
+    register_font_json(bytes, family)
+}
+
+/// Register a sub-resource's bytes under the URL the source writes for it
+/// (relative to the source: `images/a.png`). Later renders load it.
+#[cfg(all(feature = "blitz", target_arch = "wasm32"))]
+#[wasm_bindgen::prelude::wasm_bindgen]
+pub fn register_resource(url: &str, bytes: &[u8]) {
+    register_resource_bytes(url, bytes)
+}
+
+/// Whether a sub-resource is registered under `url`.
+#[cfg(all(feature = "blitz", target_arch = "wasm32"))]
+#[wasm_bindgen::prelude::wasm_bindgen]
+pub fn has_resource(url: &str) -> bool {
+    resources::has_resource(url)
+}
+
+/// The URLs the last render asked for and could not load, as JSON.
+#[cfg(all(feature = "blitz", target_arch = "wasm32"))]
+#[wasm_bindgen::prelude::wasm_bindgen]
+pub fn take_resource_misses() -> String {
+    take_resource_misses_json()
+}
+
+/// The shaped advance (points) of each text item of the last render, one list
+/// per layer, as JSON.
+#[cfg(all(feature = "blitz", target_arch = "wasm32"))]
+#[wasm_bindgen::prelude::wasm_bindgen]
+pub fn take_text_advances() -> String {
+    take_text_advances_json()
 }
 
 /// The hash of the sources this wasm was built from (`scripts/source-hash.mjs`,

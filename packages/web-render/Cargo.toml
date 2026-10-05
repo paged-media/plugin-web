@@ -49,6 +49,7 @@ blitz = [
     "dep:kurbo",
     "dep:parley",
     "dep:peniko",
+    "dep:skrifa",
 ]
 # Work counters (parses, resolves, paint captures, painted commands,
 # run-match comparisons, font-context builds, wasm bytes in/out) for the
@@ -74,6 +75,9 @@ kurbo = { version = "0.13", optional = true }
 # recovery walk — pinned to the version blitz-dom 0.3.0-alpha.4 re-exports.
 parley = { version = "0.9", optional = true }
 peniko = { version = "0.6", optional = true }
+# Reads a shaped run's face family from its `name` table (the version parley
+# 0.9 already builds — no new compile).
+skrifa = { version = "0.42", default-features = false, features = ["std"], optional = true }
 
 # The Chrome conformance replay (packages/web-conformance/chrome) needs the
 # engine; `cargo test` without `--features blitz` skips it.
@@ -87,6 +91,10 @@ required-features = ["blitz"]
 
 [[test]]
 name = "page_breaks"
+required-features = ["blitz"]
+
+[[test]]
+name = "faces_resources"
 required-features = ["blitz"]
 
 [[example]]

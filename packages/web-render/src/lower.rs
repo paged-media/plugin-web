@@ -85,7 +85,7 @@
 //! see docs/concept.md §4.3 (lowering-lane status).
 
 use crate::display_list::{
-    WebBlendMode, WebDisplayList, WebDrawCmd, WebGlyphRun, WebGradient, WebImage,
+    RunFace, WebBlendMode, WebDisplayList, WebDrawCmd, WebGlyphRun, WebGradient, WebImage,
 };
 use crate::wire::{
     SceneBlendMode, SceneGradient, SceneGradientStop, SceneItem, SceneLayer, SceneTextItem,
@@ -184,6 +184,10 @@ impl LowerReport {
 pub struct Lowered {
     pub layer: SceneLayer,
     pub report: LowerReport,
+    /// The shaped advance (content points) of each `text` item in `layer`,
+    /// in item order — what a native text frame baked from the run must
+    /// hold. Not part of the wire layer.
+    pub text_advances: Vec<f32>,
 }
 
 /// Lower a captured web display list to a C-1 [`SceneLayer`] + report.
@@ -193,6 +197,7 @@ pub struct Lowered {
 pub fn lower(dl: &WebDisplayList) -> Lowered {
     let mut layer = SceneLayer::default();
     let mut report = LowerReport::default();
+    let mut text_advances = Vec::new();
 
     for cmd in &dl.commands {
         match cmd {
@@ -233,6 +238,7 @@ pub fn lower(dl: &WebDisplayList) -> Lowered {
             WebDrawCmd::GlyphRun(run) => match lower_text(run) {
                 Some(item) => {
                     layer.items.push(item);
+                    text_advances.push(run.face.advance.unwrap_or(0.0));
                     report.text_runs += 1;
                 }
                 None => report.skipped_empty += 1,
@@ -377,7 +383,11 @@ pub fn lower(dl: &WebDisplayList) -> Lowered {
     }
 
     report.emitted = layer.items.len();
-    Lowered { layer, report }
+    Lowered {
+        layer,
+        report,
+        text_advances,
+    }
 }
 
 /// Lower a captured text run to a C-1 `text` item, or `None` for an empty
@@ -387,6 +397,9 @@ fn lower_text(run: &WebGlyphRun) -> Option<SceneItem> {
     if run.text.trim().is_empty() {
         return None;
     }
+    let weight = wire_weight(&run.face);
+    let italic = run.face.italic.filter(|i| *i);
+    count_face_bytes(weight, italic);
     Some(SceneItem::Text(SceneTextItem {
         x: run.baseline_x,
         y: run.baseline_y,
@@ -395,7 +408,34 @@ fn lower_text(run: &WebGlyphRun) -> Option<SceneItem> {
         paint: run.paint,
         family: run.family.clone(),
         style: None,
+        weight,
+        italic,
     }))
+}
+
+/// Count the JSON bytes the face fields add to a text item
+/// (`,"weight":700.0`, `,"italic":true`) — the face budget.
+fn count_face_bytes(weight: Option<f32>, italic: Option<bool>) {
+    if !crate::perf::ENABLED {
+        return;
+    }
+    let mut n = 0u64;
+    if let Some(w) = weight {
+        n += (",\"weight\":".len() + serde_json::to_string(&w).map_or(0, |s| s.len())) as u64;
+    }
+    if italic.is_some() {
+        n += ",\"italic\":true".len() as u64;
+    }
+    crate::perf::bump(crate::perf::Counter::FaceBytesOut, n);
+}
+
+/// The weight a text item carries on the wire: the run's CSS weight, omitted
+/// when it is the regular weight (core resolves a run without one to the
+/// family's regular face, and the bytes stay what they were before faces).
+fn wire_weight(face: &RunFace) -> Option<f32> {
+    face.weight
+        .filter(|w| w.is_finite() && (w - 400.0).abs() >= 0.5)
+        .map(|w| w.clamp(1.0, 1000.0))
 }
 
 /// Lower a captured raster image to the EXISTING C-1 `SceneItem::Image`
@@ -684,6 +724,7 @@ mod tests {
     fn glyph_run_lowers_to_a_single_line_text_item() {
         let mut dl = WebDisplayList::new();
         dl.push(WebDrawCmd::GlyphRun(WebGlyphRun {
+            face: RunFace::default(),
             baseline_x: 12.0,
             baseline_y: 34.0,
             size: 13.0,
@@ -714,6 +755,7 @@ mod tests {
         // the same line, each its own run).
         let mut dl = WebDisplayList::new();
         dl.push(WebDrawCmd::GlyphRun(WebGlyphRun {
+            face: RunFace::default(),
             baseline_x: 10.0,
             baseline_y: 20.0,
             size: 12.0,
@@ -723,6 +765,7 @@ mod tests {
             local_key: LocalKey::new(10.0, 20.0),
         }));
         dl.push(WebDrawCmd::GlyphRun(WebGlyphRun {
+            face: RunFace::default(),
             baseline_x: 48.0,
             baseline_y: 20.0,
             size: 12.0,
@@ -752,6 +795,7 @@ mod tests {
     fn whitespace_only_text_run_is_skipped() {
         let mut dl = WebDisplayList::new();
         dl.push(WebDrawCmd::GlyphRun(WebGlyphRun {
+            face: RunFace::default(),
             baseline_x: 0.0,
             baseline_y: 0.0,
             size: 12.0,
@@ -852,6 +896,7 @@ mod tests {
             dest: RectPt::new(8.0, 8.0, 40.0, 40.0),
         }));
         dl.push(WebDrawCmd::GlyphRun(WebGlyphRun {
+            face: RunFace::default(),
             baseline_x: 8.0,
             baseline_y: 60.0,
             size: 11.0,
@@ -924,6 +969,7 @@ mod tests {
             paint: blue(),
         });
         dl.push(WebDrawCmd::GlyphRun(WebGlyphRun {
+            face: RunFace::default(),
             baseline_x: 84.0,
             baseline_y: 28.0,
             size: 20.0,
@@ -1785,6 +1831,7 @@ mod tests {
             paint: blue(),
         });
         dl.push(WebDrawCmd::GlyphRun(WebGlyphRun {
+            face: RunFace::default(),
             baseline_x: 8.0,
             baseline_y: 60.0,
             size: 11.0,
@@ -1840,6 +1887,7 @@ mod wire_json_tests {
     fn text_serializes_to_the_c1_wire_shape() {
         let mut dl = WebDisplayList::new();
         dl.push(WebDrawCmd::GlyphRun(WebGlyphRun {
+            face: RunFace::default(),
             baseline_x: 1.0,
             baseline_y: 2.0,
             size: 12.0,

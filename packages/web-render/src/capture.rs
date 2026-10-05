@@ -42,7 +42,7 @@
 
 use anyrender::{Glyph, NormalizedCoord, PaintRef, PaintScene, RenderContext};
 use blitz_dom::node::TextBrush;
-use blitz_dom::{BaseDocument, DocumentConfig};
+use blitz_dom::BaseDocument;
 use blitz_html::HtmlDocument;
 use blitz_paint::paint_scene;
 use blitz_traits::shell::{ColorScheme, Viewport};
@@ -53,10 +53,10 @@ use peniko::{BlendMode, Color, Fill, FontData, StyleRef};
 use peniko::Mix;
 
 use crate::display_list::{
-    LocalKey, UnsupportedKind, WebBlendMode, WebDisplayList, WebDrawCmd, WebGlyphRun, WebGradient,
-    WebGradientStop, WebImage,
+    LocalKey, RunFace, UnsupportedKind, WebBlendMode, WebDisplayList, WebDrawCmd, WebGlyphRun,
+    WebGradient, WebGradientStop, WebImage,
 };
-use crate::fonts::{font_ctx, BUNDLED_FAMILY};
+use crate::fonts::BUNDLED_FAMILY;
 use crate::perf::{self, Counter};
 use crate::wire::{RectPt, ScenePaint, ScenePathSeg};
 
@@ -737,6 +737,7 @@ impl PaintScene for CapturingScene {
         };
         let baseline = transform * Point::new(first.x as f64, first.y as f64);
         self.dl.push(WebDrawCmd::GlyphRun(WebGlyphRun {
+            face: RunFace::default(),
             baseline_x: CapturingScene::px_pt(baseline.x),
             baseline_y: CapturingScene::px_pt(baseline.y),
             size: CapturingScene::px_pt(font_size as f64),
@@ -841,6 +842,10 @@ struct RecoveredRun {
     abs_x: f32,
     abs_y: f32,
     text: String,
+    /// The family of the face the run was shaped with, and the rest of its
+    /// face ([`crate::fonts::run_face`]).
+    family: Option<String>,
+    face: RunFace,
 }
 
 /// Drive parse→style→layout→paint over `html` at `width_px`×`height_px`
@@ -848,7 +853,7 @@ struct RecoveredRun {
 /// run's PLAIN TEXT recovered from the DOM. Mirrors the W0 spike's
 /// `render_fragment`, but records commands instead of counting them, and:
 ///
-///   1. registers the bundled fallback face ([`font_ctx`], built once per
+///   1. registers the bundled fallback face ([`crate::fonts::font_ctx`], built once per
 ///      engine) so text SHAPES on wasm (parley/fontique exposes no system fonts there —
 ///      the spike's 22-vs-19 delta); the same context drives the native
 ///      build so tests exercise real shaping deterministically;
@@ -861,17 +866,12 @@ struct RecoveredRun {
 pub fn render_html(html: &str, width_px: u32, height_px: u32) -> WebDisplayList {
     #[cfg(test)]
     let _shape_guard = SHAPE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let config = DocumentConfig {
-        font_ctx: Some(font_ctx()),
-        ..Default::default()
-    };
-    let mut doc = HtmlDocument::from_html(html, config);
+    let mut doc = HtmlDocument::from_html(html, crate::resources::document_config());
     perf::bump(Counter::HtmlParses, 1);
     // A frame is a page box: `@page` margins inset its content (ADR 412).
     crate::break_rules::apply_page_box(&mut doc);
     doc.set_viewport(Viewport::new(width_px, height_px, 1.0, ColorScheme::Light));
-    doc.resolve(0.0);
-    perf::bump(Counter::Resolves, 1);
+    crate::resources::resolve(&mut doc);
     capture_resolved(&mut doc, width_px, height_px)
 }
 
@@ -1024,6 +1024,11 @@ fn recover_layout_runs(
                 abs_x: CapturingScene::px_pt(abs.x as f64),
                 abs_y: CapturingScene::px_pt(abs.y as f64),
                 text: slice.to_string(),
+                family: crate::fonts::face_family(run.font()),
+                face: crate::fonts::run_face(
+                    run,
+                    CapturingScene::px_pt(glyph_run.advance() as f64),
+                ),
             });
         }
     }
@@ -1223,7 +1228,11 @@ fn attach_run_texts(dl: &mut WebDisplayList, recovered: &[RecoveredRun]) {
         if let Some((i, _, _)) = best {
             used[i] = true;
             run.text = recovered[i].text.clone();
-            run.family = Some(BUNDLED_FAMILY.to_string());
+            run.family = recovered[i]
+                .family
+                .clone()
+                .or_else(|| Some(BUNDLED_FAMILY.to_string()));
+            run.face = recovered[i].face;
         }
     }
 }

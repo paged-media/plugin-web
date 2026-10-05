@@ -224,7 +224,7 @@ describe.skipIf(!bundledPresent)("web perf budgets (real host + real Blitz)", ()
     // The linear shape, stated: one measurement per run, everything else
     // a constant — the whole bake is ONE batch.
     expect(work.count("text.measureString")).toBe(RUNS);
-    expect(work.mutations).toEqual([{ op: "batch", ops: b.batchOps }]);
+    expect(work.mutations).toEqual([{ op: "batch", ops: b.batchOps + b.faceOps }]);
     expect(lane.stats.frameCalls).toBe(1);
 
     // … and the whole bake is ONE undo step: one undo removes every story.
@@ -275,7 +275,8 @@ describe.skipIf(!bundledPresent)("web perf budgets (real host + real Blitz)", ()
     expect(burst.total()).toBe(BUDGET.fontWatch.doorCalls);
 
     // Behaviour: a change that DOES bring a new family is delivered.
-    const family = "Inter";
+    // A family no earlier step of this suite used (the bake sets Inter).
+    const family = "Lora";
     const out = await h.host.document.mutate({
       op: "batch",
       args: {
@@ -337,6 +338,10 @@ const BUDGET = {
     doorCalls: 207,
     mutates: 1,
     batchOps: 1001,
+    // The face each run was shaped in (its family; its style when not the
+    // regular face): budgeted on its own, so the pre-face batch stays pinned.
+    // The workload's runs are all regular: one family op per run.
+    faceOps: 200,
     collections: 1,
     storiesReads: 0,
     storyRowsRead: 0,

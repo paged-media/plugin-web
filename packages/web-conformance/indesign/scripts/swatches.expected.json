@@ -50,7 +50,8 @@
    ],
    "text": "Four swatches, one caption.",
    "pointSize": 9,
-   "textFill": "Color/wb-000000"
+   "textFill": "Color/wb-000000",
+   "family": "Inter"
   }
  ],
  "swatches": [

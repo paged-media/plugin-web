@@ -176,7 +176,7 @@ describe("sceneLayerToBakePlan — fills", () => {
     ]);
   });
 
-  it("defers a MULTI-subpath fill (a second moveTo) — v1 is single-subpath", () => {
+  it("bakes a MULTI-subpath fill as one path carrying every subpath @feat:plugin-web.bake-to-native", () => {
     const layer: SceneLayer = {
       items: [
         {
@@ -193,8 +193,10 @@ describe("sceneLayerToBakePlan — fills", () => {
       ],
     };
     const plan = sceneLayerToBakePlan(layer);
-    expect(plan.paths).toEqual([]);
-    expect(plan.deferred).toEqual({ "fillPath.multiSubpath": 1 });
+    expect(plan.deferred).toEqual({});
+    expect(plan.paths).toHaveLength(1);
+    expect(plan.paths[0].subpaths?.map((sp) => sp.length)).toEqual([3, 2]);
+    expect(plan.paths[0].anchors).toHaveLength(3);
   });
 });
 
@@ -227,7 +229,7 @@ describe("pathToAnchors", () => {
 });
 
 describe("sceneLayerToBakePlan — deferred kinds", () => {
-  it("counts images honestly", () => {
+  it("plans images as native image frames @feat:plugin-web.bake-to-native", () => {
     const layer: SceneLayer = {
       items: [
         { kind: "image", rgba: [0, 0, 0, 255], width: 1, height: 1, x: 0, y: 0, w: 10, h: 10 },
@@ -235,7 +237,11 @@ describe("sceneLayerToBakePlan — deferred kinds", () => {
       ],
     };
     const plan = sceneLayerToBakePlan(layer);
-    expect(plan.deferred).toEqual({ image: 2 });
+    expect(plan.deferred).toEqual({});
+    expect(plan.images.map((i) => i.bounds)).toEqual([
+      [0, 0, 10, 10],
+      [0, 0, 10, 10],
+    ]);
     expect(plan.texts).toEqual([]);
     expect(plan.rects).toEqual([]);
   });
@@ -251,7 +257,8 @@ describe("sceneLayerToBakePlan — deferred kinds", () => {
     const plan = sceneLayerToBakePlan(layer);
     expect(plan.rects).toHaveLength(1);
     expect(plan.texts).toHaveLength(1);
-    expect(plan.deferred).toEqual({ image: 1 });
+    // 1 x 1 RGBA needs 4 bytes; a short buffer is counted, never baked.
+    expect(plan.deferred).toEqual({ "image.malformed": 1 });
     expect(plan.swatches).toHaveLength(2); // the bg blue + the black text
   });
 });
@@ -271,7 +278,7 @@ describe("bakeBatchOps — the whole bake as ONE batch", () => {
       { plan, pageId: "uP", top: 100, left: 50, metrics: [M] },
     ]);
     expect(swatchIds).toEqual(["Color/wb-ff0000", "Color/wb-000000"]);
-    expect(handles).toEqual({ rects: ["r0"], paths: [], texts: ["t0"] });
+    expect(handles).toEqual({ rects: ["r0"], paths: [], texts: ["t0"], images: [] });
     expect(ops.map((o) => o.op)).toEqual([
       "createSwatch",
       "createSwatch",
@@ -327,7 +334,7 @@ describe("bakeBatchOps — the whole bake as ONE batch", () => {
     expect(swatchIds).toEqual(["Color/wb-000000"]);
     expect(ops.filter((o) => o.op === "createSwatch")).toHaveLength(1);
     // Handles stay unique across the frames of one batch.
-    expect(handles).toEqual({ rects: ["r0", "r1"], paths: [], texts: ["t0", "t1"] });
+    expect(handles).toEqual({ rects: ["r0", "r1"], paths: [], texts: ["t0", "t1"], images: [] });
   });
 
   it("a story range ends at the CHARACTER count (the engine's), not UTF-16 units", () => {

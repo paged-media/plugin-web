@@ -71,8 +71,17 @@ export interface SceneTextItem {
   text: string;
   size: number;
   paint: ScenePaintRgba;
+  /** The family of the face the run was shaped with. From protocol 68 core
+   *  draws the run in it when the host registered the family (else in the
+   *  document default font, reported as a font fallback). */
   family?: string;
+  /** The face within `family`, IDML `FontStyle` spelling (`"Bold Italic"`);
+   *  absent ⇒ derived from `weight` / `italic`. */
   style?: string;
+  /** CSS weight 100..900 (protocol 68); absent ⇒ regular (400). */
+  weight?: number;
+  /** Italic (protocol 68); absent ⇒ upright. */
+  italic?: boolean;
 }
 
 /** A filled path in frame-content points — the C-1 `fillPath`
@@ -102,12 +111,63 @@ export interface SceneImageItem {
   h: number;
 }
 
+/** A stroked path — the C-1 `strokePath` item (solid paint, width in
+ *  points). */
+export interface SceneStrokeItem {
+  kind: "strokePath";
+  path: ScenePathSeg[];
+  paint: ScenePaintRgba;
+  width: number;
+}
+
+/** One gradient stop (offset 0..1, sRGB 0..1). */
+export interface SceneGradientStop {
+  offset: number;
+  r: number;
+  g: number;
+  b: number;
+  a: number;
+}
+
+/** A gradient in frame-content points — the C-1 `SceneGradient`. */
+export type SceneGradient =
+  | { type: "linear"; x0: number; y0: number; x1: number; y1: number; stops: SceneGradientStop[] }
+  | { type: "radial"; cx: number; cy: number; radius: number; stops: SceneGradientStop[] }
+  | { type: "sweep"; cx: number; cy: number; start_angle: number; stops: SceneGradientStop[] };
+
+/** A gradient-filled path — the C-1 `fillPathGradient` item. */
+export interface SceneGradientItem {
+  kind: "fillPathGradient";
+  path: ScenePathSeg[];
+  gradient: SceneGradient;
+}
+
+/** An outer box shadow — the C-1 `dropShadow` item. The wire keeps the
+ *  variant's multi-word fields snake_case. */
+export interface SceneDropShadowItem {
+  kind: "dropShadow";
+  path: ScenePathSeg[];
+  offset_x: number;
+  offset_y: number;
+  blur_radius: number;
+  r: number;
+  g: number;
+  b: number;
+  a: number;
+}
+
 /** One drawable in a {@link SceneLayer} — the subset of the C-1
  *  `SceneItem` union the web render lane lowers to: filled paths,
  *  (multi-run, transform-correct) single-line text runs, and axis-aligned
  *  raster images. `strokePath` is the remaining wire kind the lane widens
  *  into as C-1's stages mature (ADR-011 Option C). */
-export type SceneItem = SceneTextItem | ScenePathItem | SceneImageItem;
+export type SceneItem =
+  | SceneTextItem
+  | ScenePathItem
+  | SceneImageItem
+  | SceneStrokeItem
+  | SceneGradientItem
+  | SceneDropShadowItem;
 
 /** A plugin-submitted vector layer in frame-content coordinates — the
  *  C-1 `SceneLayer` IR (the wire.d.ts shape). The bundle lowers this to
