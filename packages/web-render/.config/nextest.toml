@@ -1,0 +1,11 @@
+# cargo-nextest configuration. The `ci` profile writes JUnit XML that the
+# rust workflow uploads as the `nextest-junit` artifact (the evidence the
+# private feature registry pulls). The default profile is unchanged.
+
+[profile.ci]
+# Don't stop at the first failure: every red test should be reported.
+fail-fast = false
+
+[profile.ci.junit]
+path = "junit.xml"
+report-name = "paged-web-nextest"

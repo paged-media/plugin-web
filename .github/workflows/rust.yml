@@ -52,9 +52,19 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: packages/web-render
-      # No `|| true`: a red test reddens the job. `--features blitz` is the
-      # superset (the default-feature tests run in it too).
-      - name: cargo test (default features)
+      - uses: taiki-e/install-action@nextest
+      # No `|| true`: a red test reddens the job; the JUnit still uploads
+      # (the step below runs under !cancelled()). `--features blitz` is the
+      # superset — the default-feature tests run in it too.
+      - name: cargo nextest (blitz — lowering, capture, flow fragmentation)
+        run: cargo nextest run --features blitz --profile ci
+      - name: cargo test (default features — the pure lowering build)
         run: cargo test --no-fail-fast
-      - name: cargo test (blitz — capture + flow fragmentation)
-        run: cargo test --features blitz --no-fail-fast
+      - name: upload nextest results artifact
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: nextest-junit
+          path: packages/web-render/target/nextest/ci/junit.xml
+          if-no-files-found: error
+          retention-days: 14
