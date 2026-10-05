@@ -72,6 +72,9 @@ import {
   MAX_VIEWPORT_WIDTH,
   namedFlowDiagnostics,
   normalizeViewportWidth,
+  normalizeOverflow,
+  OVERFLOW_POLICIES,
+  type OverflowPolicy,
   renderWebFrameSource,
   sourceFromTemplate,
   sourceKeyFor,
@@ -384,6 +387,20 @@ function FlowPicker({
     </div>
   );
 }
+
+/** Overflow policy labels and what each one does, in the panel's words. */
+const OVERFLOW_LABEL: Record<OverflowPolicy, string> = {
+  clip: "clip",
+  shrink: "shrink to fit",
+  grow: "grow frame",
+  thread: "continue into thread",
+};
+const OVERFLOW_NOTE: Record<OverflowPolicy, string> = {
+  clip: "content past the frame is cut off",
+  shrink: "the content is scaled down until it fits the frame",
+  grow: "the frame's height follows the content (an undoable resize)",
+  thread: "content continues into the threaded frames (Thread web flow into frames)",
+};
 
 // ----------------------------------------------------------------- panel
 
@@ -1130,15 +1147,27 @@ function SourceEditor({
       </label>
       <label style={optionRow}>
         Overflow
-        {/* Declared but FIXED: "clip" is the only policy implemented
-            (content past the last frame of a flow is reported as overset).
-            A disabled single-option control is the visible seam — never
-            a fake choice. */}
-        <select data-web-overflow value="clip" disabled style={{ ...field, opacity: 0.6 }}>
-          <option value="clip">clip</option>
+        {/* What the canvas does with content taller than the frame —
+            overflow.ts; the canvas re-renders on save. */}
+        <select
+          data-web-overflow
+          value={draft.options.overflow}
+          onChange={(e) =>
+            setDraft({
+              ...draft,
+              options: { ...draft.options, overflow: normalizeOverflow(e.target.value) },
+            })
+          }
+          style={field}
+        >
+          {OVERFLOW_POLICIES.map((p) => (
+            <option key={p} value={p}>
+              {OVERFLOW_LABEL[p]}
+            </option>
+          ))}
         </select>
-        <span style={mutedNote}>
-          content past the frame is clipped; to continue it, thread the frame into more frames
+        <span data-web-overflow-note style={mutedNote}>
+          {OVERFLOW_NOTE[draft.options.overflow]}
         </span>
       </label>
       <div style={kicker}>Variables</div>

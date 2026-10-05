@@ -55,7 +55,8 @@ import {
 } from "../../web-model/src";
 
 import type { WebEngine } from "./engine-loader";
-import { loadWebSource } from "./source-part";
+import { renderWithPolicy } from "./overflow";
+import { describeRefusal, loadWebSource } from "./source-part";
 
 /** Points per inch — frame bounds are in points already; `dpi` only
  *  drives a raster escape hatch, defaulted at the page's print
@@ -124,6 +125,7 @@ export async function bakeWebFrame(
   host: BundleHost,
   id: ElementId,
   engine?: WebEngine | null,
+  opts?: { allowGrow?: boolean },
 ): Promise<BakeOutcome> {
   const notRendered = (diagnostics: WebDiagnostic[]): BakeOutcome => ({
     rendered: false,
@@ -170,7 +172,7 @@ export async function bakeWebFrame(
   // size in CSS px, and take the REAL C-1 layer the engine painted. With
   // the engine NOT loaded (or it threw): the honest not-loaded path.
   const result: WebRenderResult = engine
-    ? renderWithEngine(engine, source, frameWidthPt, frameHeightPt)
+    ? await renderWithEngine(host, id, engine, source, bounds ?? null, opts?.allowGrow ?? true)
     : renderWebFrame({
         html: source.html,
         css: source.css,
@@ -219,49 +221,81 @@ export async function bakeWebFrame(
   };
 }
 
-/** Run the loaded engine over a frame's source → a {@link WebRenderResult}.
- *  Composes the document the engine lays out (template vars applied first,
- *  then html+css → one document, exactly the preview's `composeSrcdoc`),
- *  feeds the content size in CSS px, and returns the REAL C-1 layer. On a
- *  wasm-side failure (`engine.render` → null) it falls back to the honest
- *  not-loaded result so the command never crashes. */
-function renderWithEngine(
+/** Run the loaded engine over a frame's source → a {@link WebRenderResult},
+ *  under the source's overflow policy (overflow.ts). Composes the document
+ *  the engine lays out (template vars applied first, then html+css → one
+ *  document, exactly the preview's `composeSrcdoc`) and feeds the content
+ *  size in CSS px. `grow` resizes the frame to the content (one undoable
+ *  `resizeFrame`) when `allowGrow`; the auto renderer withholds it after an
+ *  undo so undoing a grow sticks. On a wasm-side failure it falls back to
+ *  the honest not-loaded result so the command never crashes. */
+async function renderWithEngine(
+  host: BundleHost,
+  id: ElementId,
   engine: WebEngine,
   source: WebFrameSource,
-  frameWidthPt: number,
-  frameHeightPt: number,
-): WebRenderResult {
+  bounds: [number, number, number, number] | null,
+  allowGrow: boolean,
+): Promise<WebRenderResult> {
+  const notLoaded: WebRenderResult = {
+    sceneLayer: null,
+    diagnostics: [
+      { severity: "info", message: ENGINE_NOT_LOADED_MESSAGE, source: "render" },
+    ],
+  };
+  const frameWidthPt = bounds ? Math.max(0, bounds[3] - bounds[1]) : 0;
+  const frameHeightPt = bounds ? Math.max(0, bounds[2] - bounds[0]) : 0;
   // Apply the §6.2 deterministic template pass, then compose the document.
   const rendered = renderWebFrameSource(source);
-  const composed: WebFrameSource = {
-    ...source,
-    html: rendered.html,
-    css: rendered.css,
-  };
-  const html = composeSrcdoc(composed);
+  const html = composeSrcdoc({ ...source, html: rendered.html, css: rendered.css });
   const widthPx = Math.round(frameWidthPt * PX_PER_PT);
   const heightPx = Math.round(frameHeightPt * PX_PER_PT);
+  const policy = source.options.overflow;
+  // A threaded source's policy is its flow (render-flow-command.ts); a
+  // single-frame render of it shows its own frame, clipped.
+  const fit = renderWithPolicy(engine, html, widthPx, heightPx, policy);
+  // The engine loaded but the render threw — honest not-loaded result (no
+  // fake layer). The loader already logged the wasm error.
+  if (fit === null) return notLoaded;
+  const diagnostics: WebDiagnostic[] = [...rendered.diagnostics];
 
-  const layer = engine.render(html, widthPx, heightPx);
-  if (layer === null) {
-    // The engine loaded but the render threw — honest not-loaded result
-    // (no fake layer). The loader already logged the wasm error.
-    return {
-      sceneLayer: null,
-      diagnostics: [
-        {
-          severity: "info",
-          message: ENGINE_NOT_LOADED_MESSAGE,
+  if (policy === "grow" && fit.contentHeightPx !== null && bounds) {
+    const contentPt = fit.contentHeightPx / PX_PER_PT;
+    if (allowGrow && Math.abs(contentPt - frameHeightPt) > GROW_TOLERANCE_PT) {
+      const target = asFrameTarget(id);
+      const out = target
+        ? await host.document.mutate({
+            op: "resizeFrame",
+            args: { frameId: target.id, bounds: [bounds[0], bounds[1], bounds[0] + contentPt, bounds[3]] },
+          })
+        : { applied: false, error: "not a page item" };
+      if (!out.applied) {
+        diagnostics.push({
+          severity: "warning",
+          message: `overflow grow: the frame could not be resized (${describeRefusal(out.error)})`,
           source: "render",
-        },
-      ],
-    };
+        });
+      }
+    }
   }
-  return {
-    sceneLayer: layer,
-    diagnostics: [...rendered.diagnostics],
-  };
+  if (fit.overset) {
+    diagnostics.push({
+      severity: "warning",
+      message:
+        policy === "thread" && !source.flow
+          ? "content continues past the frame — thread it into more frames (Thread web flow into frames)"
+          : policy === "shrink"
+            ? "content does not fit even at 5 % — it is clipped"
+            : "content does not fit the frame — it is clipped",
+      source: "render",
+    });
+  }
+  return { sceneLayer: fit.layer, diagnostics };
 }
+
+/** grow leaves a frame alone when it is within this of the content height
+ *  (points) — a re-render after the resize must not resize again. */
+const GROW_TOLERANCE_PT = 0.5;
 
 // ===================================================================
 // The FLOW bake path — one source threaded across a chain of frames
