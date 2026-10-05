@@ -75,8 +75,6 @@ enum Expect {
 /// (fixture, aspect, expectation). Absent = must agree.
 #[rustfmt::skip]
 const EXPECT: &[(&str, &str, Expect)] = &[
-    ("lists", "paint", Expect::Defect("CW-02 an outside list marker's glyph run takes the next item's text")),
-    ("lists-long", "paint", Expect::Defect("CW-02 an outside list marker's glyph run takes the next item's text")),
     ("lists-nested", "paint", Expect::Defect("CW-03 text in an anonymous block box is never recovered")),
     ("inline-line-height-normal", "boxes", Expect::Defect("CW-04 line-height: normal is 1.2em, Chrome uses rounded ascent+descent")),
     ("inline-line-height-normal", "lines", Expect::Defect("CW-04 line-height: normal is 1.2em, Chrome uses rounded ascent+descent")),
@@ -416,8 +414,10 @@ fn compare(rec: &Recording, html: &str) -> WidthResult {
                         && l.right.is_none_or(|b| x <= b + 1.0)
                         && norm(&l.text).contains(&t)
                 });
-            // Transformed content paints away from its layout box.
-            if !on_line && !html.contains("transform:") {
+            // Transformed content paints away from its layout box; an
+            // outside list marker paints left of its item's lines by design.
+            let marker = !t.is_empty() && t.split(' ').all(is_marker);
+            if !on_line && !marker && !html.contains("transform:") {
                 misplaced.push(t);
             }
         }

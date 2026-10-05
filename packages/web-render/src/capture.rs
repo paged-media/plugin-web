@@ -922,10 +922,17 @@ fn collect_inline_runs(
     let Some(node) = doc.get_node(node_id) else {
         return;
     };
-    if node.flags.is_inline_root() && node.absolute_position(0.0, 0.0).y <= paint_height_px {
+    if node.absolute_position(0.0, 0.0).y <= paint_height_px {
         if let Some(element) = node.element_data() {
-            if let Some(ild) = element.inline_layout_data.as_ref() {
-                recover_layout_runs(node, &ild.text, &ild.layout, out);
+            let inline = element
+                .inline_layout_data
+                .as_ref()
+                .filter(|_| node.flags.is_inline_root());
+            if let Some(ild) = inline {
+                recover_layout_runs(node, &ild.text, &ild.layout, (0.0, 0.0), out);
+            }
+            if let Some(item) = element.list_item_data.as_deref() {
+                recover_outside_marker(node, item, inline.map(|ild| &ild.layout), out);
             }
         }
     }
@@ -948,15 +955,17 @@ fn recover_layout_runs(
     inline_root: &blitz_dom::Node,
     text: &str,
     layout: &Layout<TextBrush>,
+    origin: (f32, f32),
     out: &mut Vec<RecoveredRun>,
 ) {
     // Paint draws an inline layout at the root's CONTENT box (border +
     // padding in from the box `absolute_position` measures), so the run's
     // untransformed absolute baseline adds that inset — the point where an
-    // untransformed run's capture lands.
+    // untransformed run's capture lands. `origin` moves a layout paint draws
+    // away from the content box (an outside list marker).
     let lay = &inline_root.final_layout;
-    let inset_x = lay.border.left + lay.padding.left;
-    let inset_y = lay.border.top + lay.padding.top;
+    let inset_x = lay.border.left + lay.padding.left + origin.0;
+    let inset_y = lay.border.top + lay.padding.top + origin.1;
     for line in layout.lines() {
         // Parley splits one shaping run into several glyph runs where the
         // STYLE changes (spans differing only in colour shape as one run).
@@ -1002,6 +1011,41 @@ fn recover_layout_runs(
             });
         }
     }
+}
+
+/// Recover an OUTSIDE list marker: blitz-paint draws it from its own parley
+/// layout, right-aligned left of the item's content box and on the item's
+/// first baseline. Without its own recovered run the marker's capture fell
+/// back to its local key — the first glyph of ANY layout's first line — and
+/// took the next item's text, painting it at the marker position. The marker
+/// layout is built from the marker string itself, so its runs slice that.
+/// The offset replicates blitz-paint's `draw_marker` at scale 1.
+fn recover_outside_marker(
+    item: &blitz_dom::Node,
+    list_item: &blitz_dom::node::ListItemLayout,
+    item_layout: Option<&Layout<TextBrush>>,
+    out: &mut Vec<RecoveredRun>,
+) {
+    use blitz_dom::node::{ListItemLayoutPosition, Marker};
+    let ListItemLayoutPosition::Outside(layout) = &list_item.position else {
+        return;
+    };
+    let (text, x_padding) = match &list_item.marker {
+        Marker::Char(c) => (c.to_string(), 8.0),
+        Marker::String(s) => (s.clone(), 0.0),
+    };
+    let scale = layout.scale();
+    let x_offset = -(layout.full_width() / scale + x_padding);
+    let y_offset = match (
+        item_layout.and_then(|l| l.lines().next()),
+        layout.lines().next(),
+    ) {
+        (Some(first), Some(marker)) => {
+            (first.metrics().baseline - marker.metrics().baseline) / scale
+        }
+        _ => 0.0,
+    };
+    recover_layout_runs(item, &text, layout, (x_offset, y_offset), out);
 }
 
 /// The source-text range of glyphs `start..start + count` of `run` (in the
@@ -1605,6 +1649,40 @@ mod tests {
         for w in ["red", "blue", "green"] {
             let n = words.iter().filter(|x| *x == w).count();
             assert_eq!(n, 1, "{w:?} must occur exactly once: {items:?}");
+        }
+    }
+
+    #[test]
+    fn outside_list_markers_carry_their_own_text() {
+        // An outside marker is painted from its own parley layout. Before it
+        // was recovered, its capture matched by local key the first unused
+        // run of ANY layout and took the next item's text (painted one line
+        // up, at the marker position).
+        let items = text_items(
+            "<html><body><ul style=\"margin:0\">\
+             <li>alpha one</li><li>bravo two</li><li>charlie three</li></ul>\
+             <ol style=\"margin:0\"><li>delta</li><li>echo</li></ol></body></html>",
+        );
+        let texts: Vec<&str> = items.iter().map(|(t, ..)| t.trim()).collect();
+        for w in ["alpha one", "bravo two", "charlie three", "delta", "echo"] {
+            let n = texts.iter().filter(|t| **t == w).count();
+            assert_eq!(n, 1, "{w:?} must be painted exactly once: {texts:?}");
+        }
+        assert_eq!(texts.iter().filter(|t| **t == "•").count(), 3, "{texts:?}");
+        for m in ["1.", "2."] {
+            assert!(texts.contains(&m), "marker {m:?} recovered: {texts:?}");
+        }
+        // Each marker sits left of its own item, on the item's baseline.
+        for (marker, item) in [("1.", "delta"), ("2.", "echo")] {
+            let m = items.iter().find(|(t, ..)| t.trim() == marker).unwrap();
+            let i = items.iter().find(|(t, ..)| t.trim() == item).unwrap();
+            assert!(
+                (m.2 - i.2).abs() < 0.01,
+                "{marker} baseline {} vs {}",
+                m.2,
+                i.2
+            );
+            assert!(m.1 < i.1, "{marker} left of its item");
         }
     }
 

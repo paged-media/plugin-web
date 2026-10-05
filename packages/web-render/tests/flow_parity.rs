@@ -53,8 +53,6 @@ enum Expect {
 
 #[rustfmt::skip]
 const EXPECT: &[(&str, &str, Expect)] = &[
-    ("flow-list", "breaks", Expect::Defect("FW-02 list items: frames repeat and drop items (CW-02 marker text theft)")),
-    ("flow-list", "conserve", Expect::Defect("FW-02 list items: frames repeat and drop items (CW-02 marker text theft)")),
     ("flow-table-rows", "breaks", Expect::Defect("FW-03 the last frame keeps a table row that does not fit its height")),
 ];
 
@@ -98,10 +96,26 @@ fn words(s: &str) -> Vec<String> {
         .collect()
 }
 
+fn is_marker_run(t: &str) -> bool {
+    let ws = words(t);
+    !ws.is_empty()
+        && ws.iter().all(|w| {
+            matches!(w.as_str(), "•" | "◦" | "▪")
+                || (w.len() > 1
+                    && w.ends_with('.')
+                    && w[..w.len() - 1].chars().all(|c| c.is_ascii_digit()))
+        })
+}
+
 fn frame_words(dl: &web_render::WebDisplayList) -> Vec<String> {
     let mut text = String::new();
     for c in &dl.commands {
         if let WebDrawCmd::GlyphRun(r) = c {
+            // An outside list marker is painted text in Blitz but no part of
+            // Chrome's recorded text (Range cannot see `::marker`).
+            if is_marker_run(&r.text) {
+                continue;
+            }
             text.push_str(&r.text);
             text.push(' ');
         }
