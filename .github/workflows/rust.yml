@@ -41,6 +41,7 @@ jobs:
       # `blitz` build adds the capture layer and the flow fragmentation.
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo clippy --all-targets --features blitz -- -D warnings
+      - run: cargo clippy --all-targets --features blitz,perf-counters -- -D warnings
 
   test:
     runs-on: ubuntu-latest
@@ -60,6 +61,10 @@ jobs:
         run: cargo nextest run --features blitz --profile ci
       - name: cargo test (default features — the pure lowering build)
         run: cargo test --no-fail-fast
+      # Count budgets (docs/design/perf-baseline-2026-10-05.md): a pinned
+      # count that moves fails here; wall-clock is printed, never gated.
+      - name: cargo test (perf budgets — engine work counts)
+        run: cargo test --features blitz,perf-counters --test perf_budgets
       - name: upload nextest results artifact
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
