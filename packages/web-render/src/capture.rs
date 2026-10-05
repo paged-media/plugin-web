@@ -1667,6 +1667,29 @@ mod tests {
     }
 
     #[test]
+    fn style_split_runs_each_recover_only_their_own_text() {
+        // Decoration, `<code>` and `<small>` split a line into several glyph
+        // runs (some sharing one shaping run, some not); each carries only its
+        // own words, so the canvas paints nothing twice.
+        let items = text_items(
+            "<html><body><p style=\"margin:0\">plain <u>under</u> <s>strike</s> \
+             <code>mono</code> <small>tiny</small> <b>heavy</b> \
+             <span style=\"text-decoration:overline\">over</span> end</p></body></html>",
+        );
+        let words: Vec<String> = items
+            .iter()
+            .flat_map(|(t, ..)| t.split_whitespace().map(str::to_string))
+            .collect();
+        let mut sorted = words.clone();
+        sorted.sort();
+        let mut want = vec![
+            "plain", "under", "strike", "mono", "tiny", "heavy", "over", "end",
+        ];
+        want.sort();
+        assert_eq!(sorted, want, "each word exactly once: {items:?}");
+    }
+
+    #[test]
     fn text_in_an_anonymous_block_box_is_recovered() {
         // Inline text beside a block child lives in an anonymous block box, a
         // layout-only node no DOM child list reaches. It was never recovered,
