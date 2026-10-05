@@ -42,9 +42,13 @@ import type {
   ObjectTypeContribution,
 } from "@paged-media/plugin-api";
 import {
+  asFrameTarget,
   isWebFrameEnvelope,
+  sourceKeyFor,
   type WebSourceEnvelope,
 } from "../../web-model/src";
+
+import type { DraftSession } from "./panels/draft-store";
 
 export const WEB_FRAME_TYPE = "webFrame";
 
@@ -71,8 +75,35 @@ export const webFrameObjectType: ObjectTypeContribution = {
  *  makes the open explicit + survives a cockpit that ignores emphasis). */
 export function makeWebFrameEditContext(
   panelId: string,
+  session?: DraftSession,
 ): EditContextContribution {
+  // ADR 012 — while the context is active, the host routes Cmd+Z /
+  // Shift+Cmd+Z here: they step the source DRAFT of the frame the context
+  // was entered on (the panel's history, draft-store.ts), not the document.
+  // A save is the document step. When the draft history is exhausted the
+  // hooks answer false and Undo greys out (the host does not fall through
+  // to the document mid-context, by ADR 012); leaving the frame hands undo
+  // back to the document.
+  let active: string | null = null;
+  const undoHooks: Partial<EditContextContribution> = session
+    ? {
+        onEnter: (ctx) => {
+          const t = asFrameTarget(ctx.id);
+          active = t ? sourceKeyFor(t) : null;
+        },
+        onExit: () => {
+          active = null;
+        },
+        onUndo: () => (active ? session.undo(active) : false),
+        onRedo: () => (active ? session.redo(active) : false),
+        onCanUndo: () => (active ? session.canUndo(active) : false),
+        onCanRedo: () => (active ? session.canRedo(active) : false),
+        undoLabel: () => "Undo source edit",
+        redoLabel: () => "Redo source edit",
+      }
+    : {};
   return {
+    ...undoHooks,
     type: WEB_FRAME_TYPE,
     entry: "doubleClick",
     // No `matches` here: the OBJECT TYPE already routes the double-click

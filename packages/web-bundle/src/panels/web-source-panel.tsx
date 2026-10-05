@@ -97,7 +97,7 @@ import {
   subscribeRenderReport,
 } from "../render-report";
 import { loadWebSource, writeWebSource } from "../source-part";
-import { createDraftStore, type DraftStore } from "./draft-store";
+import { createDraftSession, type DraftSession, type DraftStore } from "./draft-store";
 
 import { createDebouncer } from "./debounce";
 import {
@@ -402,9 +402,13 @@ const OVERFLOW_NOTE: Record<OverflowPolicy, string> = {
 
 // ----------------------------------------------------------------- panel
 
-export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
-  // Unsaved drafts per frame — they outlive the editor's remounts.
-  const drafts = createDraftStore();
+export function makeWebSourcePanel(
+  host: BundleHost,
+  // Unsaved drafts per frame (they outlive the editor's remounts) and their
+  // undo history, shared with the web frame's edit context (ADR 012).
+  session: DraftSession = createDraftSession(),
+): () => ReactElement {
+  const drafts = session.drafts;
   // The lane is stable for the host's lifetime — probe once.
   const lane = resolveEditorLane(host);
   return function WebSourcePanel(): ReactElement {
@@ -630,6 +634,7 @@ export function makeWebSourcePanel(host: BundleHost): () => ReactElement {
         sourceKey={key}
         initial={source}
         drafts={drafts}
+        session={session}
         fontFamilies={fontFamilies}
         onPersisted={setSource}
       />
@@ -685,6 +690,9 @@ interface SourceEditorProps {
   initial: WebFrameSource;
   /** Unsaved drafts per frame — the editor starts from a kept one. */
   drafts: DraftStore;
+  /** The draft history the host's undo steps while the frame's edit
+   *  context is active. */
+  session: DraftSession;
   fontFamilies: string[];
   /** Reports a successful save so the owner's persisted state tracks. */
   onPersisted(next: WebFrameSource): void;
@@ -697,6 +705,7 @@ function SourceEditor({
   sourceKey,
   initial,
   drafts,
+  session,
   fontFamilies,
   onPersisted,
 }: SourceEditorProps): ReactElement {
@@ -711,6 +720,18 @@ function SourceEditor({
   useEffect(() => {
     drafts.track(sourceKey, draft, persisted);
   }, [draft, persisted, sourceKey]);
+  // Every draft state goes into the frame's history (quick edits coalesce);
+  // a step the host's undo/redo takes comes back as the draft.
+  useEffect(() => {
+    session.record(sourceKey, draft);
+  }, [draft, sourceKey]);
+  useEffect(
+    () =>
+      session.onApply((key, next) => {
+        if (key === sourceKey) setDraft(next);
+      }),
+    [sourceKey],
+  );
   // Why the last save was refused (shown beside the save button).
   const [saveError, setSaveError] = useState<string | null>(null);
   const preview = useDebouncedValue(draft, PREVIEW_DEBOUNCE_MS);

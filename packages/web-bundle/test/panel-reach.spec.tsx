@@ -20,83 +20,12 @@
 // choice that persists. Rendered with react-test-renderer against a minimal
 // host.
 
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { act, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it } from "vitest";
 
-import type { BundleHost, ElementId } from "@paged-media/plugin-api";
 import { DEFAULT_SOURCE, envelopeFor, sourceFromEnvelope, type WebSourceEnvelope } from "@paged-media/web-model";
 
-import { makeWebSourcePanel } from "../src/panels/web-source-panel";
-
-const A = { kind: "rectangle", id: "uA" } as ElementId;
-
-export function reachHost(bounds: [number, number, number, number] = [0, 0, 150, 300]) {
-  let selection: ElementId[] = [];
-  const selectionListeners = new Set<(ids: ElementId[]) => void>();
-  const docListeners = new Set<(e: unknown) => void>();
-  const labels = new Map<string, unknown>([["uA", envelopeFor(DEFAULT_SOURCE)]]);
-  const geometry = { bounds };
-  const host = {
-    supports: () => false,
-    widgets: {},
-    selection: {
-      get: () => selection,
-      onDidChange: (l: (ids: ElementId[]) => void) => {
-        selectionListeners.add(l);
-        return { dispose: () => selectionListeners.delete(l) };
-      },
-    },
-    document: {
-      getMetadata: async (id: ElementId) => labels.get(String((id as { id: unknown }).id)) ?? null,
-      setMetadata: async (id: ElementId, env: unknown) => {
-        labels.set(String((id as { id: unknown }).id), env);
-        return { applied: true, createdId: null, pageIds: [] };
-      },
-      elementGeometry: async (ids: ElementId[]) => ids.map((id) => ({ id, bounds: geometry.bounds })),
-      collection: async () => [],
-      onDidChange: (l: (e: unknown) => void) => {
-        docListeners.add(l);
-        return { dispose: () => docListeners.delete(l) };
-      },
-    },
-    parts: { read: async () => null, write: async () => {}, list: async () => [] },
-    storage: { get: () => undefined, delete: () => {} },
-    diagnostics: { set: () => {} },
-    assets: { getFontFace: async () => null },
-    log: { debug() {}, info() {}, warn() {}, error() {} },
-  } as unknown as BundleHost;
-  return {
-    host,
-    labels,
-    geometry,
-    select: (ids: ElementId[]) => {
-      selection = ids;
-      for (const l of selectionListeners) l(ids);
-    },
-    emit: (e: unknown) => {
-      for (const l of docListeners) l(e);
-    },
-  };
-}
-
-export const settle = async () => {
-  for (let i = 0; i < 5; i++) {
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 0));
-    });
-  }
-};
-
-export async function mountPanel(h: ReturnType<typeof reachHost>, id: ElementId = A) {
-  const Panel = makeWebSourcePanel(h.host);
-  let r!: ReactTestRenderer;
-  h.select([id]);
-  await act(async () => {
-    r = create(<Panel />);
-  });
-  await settle();
-  return r;
-}
+import { mountPanel, reachHost, settle } from "./fixtures/panel-host";
 
 const byData = (r: ReactTestRenderer, attr: string) =>
   r.root.find((n) => typeof n.type === "string" && n.props[attr] !== undefined);

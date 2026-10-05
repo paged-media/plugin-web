@@ -49,16 +49,20 @@ import {
   webFrameObjectType,
 } from "./edit-context";
 import { sourceFromHtmlFile } from "../../web-model/src";
+import { createDraftSession } from "./panels/draft-store";
 import { makeWebSourcePanel } from "./panels/web-source-panel";
 
 const PANEL_ID = "media.paged.web.panel.source";
 
 export function activate(host: BundleHost): BundleHandle {
+  // The panel's drafts and their undo history, shared with the edit context
+  // so the host's Cmd+Z reaches source edits (ADR 012).
+  const drafts = createDraftSession();
   contributePanel(host, {
     id: PANEL_ID,
     title: "Web frame",
     icon: "panel-canvas",
-    component: makeWebSourcePanel(host),
+    component: makeWebSourcePanel(host, drafts),
     defaultDock: "right",
   });
   host.contribute.command({
@@ -131,7 +135,7 @@ export function activate(host: BundleHost): BundleHandle {
   // metadata; double-clicking one now enters the source context (and
   // raises the source panel) instead of descending into a group.
   contributeObjectType(host, webFrameObjectType);
-  contributeEditContext(host, makeWebFrameEditContext(PANEL_ID));
+  contributeEditContext(host, makeWebFrameEditContext(PANEL_ID, drafts));
   // `.html` FILE intake (editor-ui-coverage S): File▸Open + drag-drop of
   // an .html file inserts a web frame with that file as its source —
   // <style> blocks land in the css lane, sanitize runs ON INGEST (§6.1:
