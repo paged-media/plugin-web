@@ -1,0 +1,147 @@
+{
+ "fixture": "text-hyphens",
+ "width": 240,
+ "height": 1000,
+ "sourceSha256": "bfc230c20dc85b418174d23153e537644bc0d0ac765ede9cfa1b82fc267bd3e7",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "manual",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 150,
+   "h": 100
+  },
+  {
+   "id": "none",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 108,
+   "w": 150,
+   "h": 80
+  },
+  {
+   "id": "hard",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 196,
+   "w": 150,
+   "h": 80
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "manual",
+   "text": "Extra­ordinarily in­",
+   "top": 0,
+   "bottom": 20,
+   "left": 0,
+   "right": 127.203
+  },
+  {
+   "owner": "manual",
+   "text": "compre­hensible ",
+   "top": 20,
+   "bottom": 40,
+   "left": 0,
+   "right": 121.203
+  },
+  {
+   "owner": "manual",
+   "text": "counter­",
+   "top": 40,
+   "bottom": 60,
+   "left": 0,
+   "right": 58.078
+  },
+  {
+   "owner": "manual",
+   "text": "revolutionary inter­",
+   "top": 60,
+   "bottom": 80,
+   "left": 0,
+   "right": 137.047
+  },
+  {
+   "owner": "manual",
+   "text": "nationalization.",
+   "top": 80,
+   "bottom": 100,
+   "left": 0,
+   "right": 113.922
+  },
+  {
+   "owner": "none",
+   "text": "Extra­ordinarily ",
+   "top": 108,
+   "bottom": 128,
+   "left": 0,
+   "right": 109.375
+  },
+  {
+   "owner": "none",
+   "text": "in­compre­hensible ",
+   "top": 128,
+   "bottom": 148,
+   "left": 0,
+   "right": 134.531
+  },
+  {
+   "owner": "none",
+   "text": "counter­revolutionary ",
+   "top": 148,
+   "bottom": 168,
+   "left": 0,
+   "right": 157.125
+  },
+  {
+   "owner": "none",
+   "text": "inter­nationalization.",
+   "top": 168,
+   "bottom": 188,
+   "left": 0,
+   "right": 147.922
+  },
+  {
+   "owner": "hard",
+   "text": "Well-known state-",
+   "top": 196,
+   "bottom": 216,
+   "left": 0,
+   "right": 138.484
+  },
+  {
+   "owner": "hard",
+   "text": "of-the-art long-",
+   "top": 216,
+   "bottom": 236,
+   "left": 0,
+   "right": 118.891
+  },
+  {
+   "owner": "hard",
+   "text": "term cost-effective ",
+   "top": 236,
+   "bottom": 256,
+   "left": 0,
+   "right": 144.328
+  },
+  {
+   "owner": "hard",
+   "text": "self-contained.",
+   "top": 256,
+   "bottom": 276,
+   "left": 0,
+   "right": 114.031
+  }
+ ],
+ "scrollHeight": 1000
+}

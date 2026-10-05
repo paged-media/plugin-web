@@ -124,7 +124,11 @@ function extract() {
       const rects = range.getClientRects();
       i += len;
       if (rects.length === 0) continue;
-      const r = rects[0];
+      // After a soft-hyphen break Chrome also reports the generated hyphen
+      // (end of the previous line) as the next character's first rect; that
+      // character's own glyph is its last rect. (A space at a wrap has a rect
+      // on both lines too; it stays with the line it ends.)
+      const r = /\s/.test(ch) ? rects[0] : rects[rects.length - 1];
       if (r.height === 0) continue;
       const top = r.top + scrollY;
       const bottom = r.bottom + scrollY;

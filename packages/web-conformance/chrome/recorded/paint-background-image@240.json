@@ -1,0 +1,103 @@
+{
+ "fixture": "paint-background-image",
+ "width": 240,
+ "height": 1000,
+ "sourceSha256": "109c53f3a5c36749212e721529a5e62e022bdc103d6c777164f5c751b4e80a84",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "lin",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 240,
+   "h": 60
+  },
+  {
+   "id": "rad",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 68,
+   "w": 240,
+   "h": 60
+  },
+  {
+   "id": "multi",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 136,
+   "w": 240,
+   "h": 60
+  },
+  {
+   "id": "url",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 204,
+   "w": 240,
+   "h": 60
+  },
+  {
+   "id": "cov",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 272,
+   "w": 240,
+   "h": 60
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "lin",
+   "text": "Linear gradient image.",
+   "top": 10,
+   "bottom": 30,
+   "left": 10,
+   "right": 179
+  },
+  {
+   "owner": "rad",
+   "text": "Radial gradient image.",
+   "top": 78,
+   "bottom": 98,
+   "left": 10,
+   "right": 177.875
+  },
+  {
+   "owner": "multi",
+   "text": "Two layered gradients.",
+   "top": 146,
+   "bottom": 166,
+   "left": 10,
+   "right": 181.656
+  },
+  {
+   "owner": "url",
+   "text": "Repeated data image.",
+   "top": 214,
+   "bottom": 234,
+   "left": 10,
+   "right": 174.563
+  },
+  {
+   "owner": "cov",
+   "text": "Cover data image.",
+   "top": 282,
+   "bottom": 302,
+   "left": 10,
+   "right": 147.703
+  }
+ ],
+ "scrollHeight": 1000
+}

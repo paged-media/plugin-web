@@ -1,0 +1,173 @@
+{
+ "fixture": "text-align-last",
+ "width": 240,
+ "height": 1000,
+ "sourceSha256": "fb37dcfcb5eec436c9cb469861531e1302092d4d04769845182e365a182be64e",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "jl",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 240,
+   "h": 80
+  },
+  {
+   "id": "jc",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 88,
+   "w": 240,
+   "h": 80
+  },
+  {
+   "id": "ji",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 176,
+   "w": 240,
+   "h": 80.25
+  },
+  {
+   "id": "end",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 264.25,
+   "w": 240,
+   "h": 60
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "jl",
+   "text": "Justify every line including the ",
+   "top": 0,
+   "bottom": 20,
+   "left": 0,
+   "right": 240
+  },
+  {
+   "owner": "jl",
+   "text": "last. Alpha bravo charlie delta ",
+   "top": 20,
+   "bottom": 40,
+   "left": 0,
+   "right": 240
+  },
+  {
+   "owner": "jl",
+   "text": "echo foxtrot golf hotel india ",
+   "top": 40,
+   "bottom": 60,
+   "left": 0,
+   "right": 240
+  },
+  {
+   "owner": "jl",
+   "text": "juliet kilo lima.",
+   "top": 60,
+   "bottom": 80,
+   "left": 0,
+   "right": 240
+  },
+  {
+   "owner": "jc",
+   "text": "Justified with a centred last ",
+   "top": 88,
+   "bottom": 108,
+   "left": 0,
+   "right": 240
+  },
+  {
+   "owner": "jc",
+   "text": "line. Alpha bravo charlie delta ",
+   "top": 108,
+   "bottom": 128,
+   "left": 0,
+   "right": 240
+  },
+  {
+   "owner": "jc",
+   "text": "echo foxtrot golf hotel india ",
+   "top": 128,
+   "bottom": 148,
+   "left": 0,
+   "right": 240
+  },
+  {
+   "owner": "jc",
+   "text": "juliet kilo lima.",
+   "top": 148,
+   "bottom": 168,
+   "left": 66.922,
+   "right": 173.063
+  },
+  {
+   "owner": "ji",
+   "text": "Justified with bold words and ",
+   "top": 176,
+   "bottom": 196,
+   "left": 0,
+   "right": 240.016
+  },
+  {
+   "owner": "ji",
+   "text": "italic words and a code span",
+   "top": 196,
+   "bottom": 216,
+   "left": 0,
+   "right": 240.016
+  },
+  {
+   "owner": "ji",
+   "text": " mixed in. Alpha bravo charlie ",
+   "top": 216.25,
+   "bottom": 236.25,
+   "left": 0,
+   "right": 240
+  },
+  {
+   "owner": "ji",
+   "text": "delta echo foxtrot.",
+   "top": 236.25,
+   "bottom": 256.25,
+   "left": 0,
+   "right": 138.219
+  },
+  {
+   "owner": "end",
+   "text": "Aligned to the end. Alpha bravo ",
+   "top": 264.25,
+   "bottom": 284.25,
+   "left": 2.438,
+   "right": 240
+  },
+  {
+   "owner": "end",
+   "text": "charlie delta echo foxtrot golf ",
+   "top": 284.25,
+   "bottom": 304.25,
+   "left": 17.25,
+   "right": 240
+  },
+  {
+   "owner": "end",
+   "text": "hotel.",
+   "top": 304.25,
+   "bottom": 324.25,
+   "left": 198.047,
+   "right": 240
+  }
+ ],
+ "scrollHeight": 1000
+}

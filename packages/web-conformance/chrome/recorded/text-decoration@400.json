@@ -1,0 +1,109 @@
+{
+ "fixture": "text-decoration",
+ "width": 400,
+ "height": 1000,
+ "sourceSha256": "ddf366542bbc4cbfa785a22c753d18d4a3b0c5fa7bafd8c9b7f2f54201472b0a",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "u",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 400,
+   "h": 60
+  },
+  {
+   "id": "mix",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 68,
+   "w": 400,
+   "h": 40
+  },
+  {
+   "id": "nest",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 116,
+   "w": 400,
+   "h": 20
+  },
+  {
+   "id": "dotted",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 144,
+   "w": 400,
+   "h": 20
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "u",
+   "text": "Underlined paragraph that wraps across lines. Alpha ",
+   "top": 0,
+   "bottom": 20,
+   "left": 0,
+   "right": 396.484
+  },
+  {
+   "owner": "u",
+   "text": "bravo charlie delta echo foxtrot golf hotel india juliet ",
+   "top": 20,
+   "bottom": 40,
+   "left": 0,
+   "right": 392.563
+  },
+  {
+   "owner": "u",
+   "text": "kilo lima.",
+   "top": 40,
+   "bottom": 60,
+   "left": 0,
+   "right": 65.984
+  },
+  {
+   "owner": "mix",
+   "text": "Plain underline then line through then overline then ",
+   "top": 68,
+   "bottom": 88,
+   "left": 0,
+   "right": 384.609
+  },
+  {
+   "owner": "mix",
+   "text": "wavy red then double and thick offset end.",
+   "top": 88,
+   "bottom": 108,
+   "left": 0,
+   "right": 322.938
+  },
+  {
+   "owner": "nest",
+   "text": "Outer underline adds a strike and a link inside.",
+   "top": 116,
+   "bottom": 136,
+   "left": 0,
+   "right": 349.063
+  },
+  {
+   "owner": "dotted",
+   "text": "Dotted uppercase spaced decoration.",
+   "top": 144,
+   "bottom": 164,
+   "left": 0,
+   "right": 379.422
+  }
+ ],
+ "scrollHeight": 1000
+}

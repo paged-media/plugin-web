@@ -1,0 +1,149 @@
+{
+ "fixture": "text-decoration",
+ "width": 240,
+ "height": 1000,
+ "sourceSha256": "ddf366542bbc4cbfa785a22c753d18d4a3b0c5fa7bafd8c9b7f2f54201472b0a",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "u",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 240,
+   "h": 80
+  },
+  {
+   "id": "mix",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 88,
+   "w": 240,
+   "h": 80
+  },
+  {
+   "id": "nest",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 176,
+   "w": 240,
+   "h": 40
+  },
+  {
+   "id": "dotted",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 224,
+   "w": 240,
+   "h": 40
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "u",
+   "text": "Underlined paragraph that ",
+   "top": 0,
+   "bottom": 20,
+   "left": 0,
+   "right": 199.031
+  },
+  {
+   "owner": "u",
+   "text": "wraps across lines. Alpha ",
+   "top": 20,
+   "bottom": 40,
+   "left": 0,
+   "right": 192.953
+  },
+  {
+   "owner": "u",
+   "text": "bravo charlie delta echo foxtrot ",
+   "top": 40,
+   "bottom": 60,
+   "left": 0,
+   "right": 236.391
+  },
+  {
+   "owner": "u",
+   "text": "golf hotel india juliet kilo lima.",
+   "top": 60,
+   "bottom": 80,
+   "left": 0,
+   "right": 222.156
+  },
+  {
+   "owner": "mix",
+   "text": "Plain underline then line ",
+   "top": 88,
+   "bottom": 108,
+   "left": 0,
+   "right": 180.766
+  },
+  {
+   "owner": "mix",
+   "text": "through then overline then ",
+   "top": 108,
+   "bottom": 128,
+   "left": 0,
+   "right": 199.344
+  },
+  {
+   "owner": "mix",
+   "text": "wavy red then double and thick ",
+   "top": 128,
+   "bottom": 148,
+   "left": 0,
+   "right": 237.297
+  },
+  {
+   "owner": "mix",
+   "text": "offset end.",
+   "top": 148,
+   "bottom": 168,
+   "left": 0,
+   "right": 81.156
+  },
+  {
+   "owner": "nest",
+   "text": "Outer underline adds a strike",
+   "top": 176,
+   "bottom": 196,
+   "left": 0,
+   "right": 218.469
+  },
+  {
+   "owner": "nest",
+   "text": " and a link inside.",
+   "top": 196,
+   "bottom": 216,
+   "left": 0,
+   "right": 126.094
+  },
+  {
+   "owner": "dotted",
+   "text": "Dotted uppercase ",
+   "top": 224,
+   "bottom": 244,
+   "left": 0,
+   "right": 180.188
+  },
+  {
+   "owner": "dotted",
+   "text": "spaced decoration.",
+   "top": 244,
+   "bottom": 264,
+   "left": 0,
+   "right": 193.734
+  }
+ ],
+ "scrollHeight": 1000
+}

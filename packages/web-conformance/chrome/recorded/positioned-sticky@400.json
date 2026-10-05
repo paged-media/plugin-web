@@ -1,0 +1,131 @@
+{
+ "fixture": "positioned-sticky",
+ "width": 400,
+ "height": 1000,
+ "sourceSha256": "28514abb6cd8e28238780f08adfc9840873bedb71bb42e86c53feaabea8ac8db",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "b1",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 400,
+   "h": 40
+  },
+  {
+   "id": "s1",
+   "tag": "div",
+   "display": "block",
+   "position": "sticky",
+   "x": 0,
+   "y": 48,
+   "w": 400,
+   "h": 20
+  },
+  {
+   "id": "s2",
+   "tag": "div",
+   "display": "block",
+   "position": "sticky",
+   "x": 0,
+   "y": 68,
+   "w": 400,
+   "h": 20
+  },
+  {
+   "id": "wrap",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 88,
+   "w": 400,
+   "h": 120
+  },
+  {
+   "id": "b2",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 88,
+   "w": 400,
+   "h": 40
+  },
+  {
+   "id": "s3",
+   "tag": "div",
+   "display": "block",
+   "position": "sticky",
+   "x": 0,
+   "y": 136,
+   "w": 400,
+   "h": 20
+  },
+  {
+   "id": "after",
+   "tag": "div",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 208,
+   "w": 400,
+   "h": 20
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "b1",
+   "text": "Above.",
+   "top": 0,
+   "bottom": 20,
+   "left": 0,
+   "right": 52.734
+  },
+  {
+   "owner": "s1",
+   "text": "Sticky top ten, already below it.",
+   "top": 48,
+   "bottom": 68,
+   "left": 0,
+   "right": 236.797
+  },
+  {
+   "owner": "s2",
+   "text": "Sticky bottom ten.",
+   "top": 68,
+   "bottom": 88,
+   "left": 0,
+   "right": 137.078
+  },
+  {
+   "owner": "b2",
+   "text": "Inside a clipped box.",
+   "top": 88,
+   "bottom": 108,
+   "left": 0,
+   "right": 155.672
+  },
+  {
+   "owner": "s3",
+   "text": "Sticky in a clip.",
+   "top": 136,
+   "bottom": 156,
+   "left": 0,
+   "right": 113.406
+  },
+  {
+   "owner": "after",
+   "text": "After the sticky boxes.",
+   "top": 208,
+   "bottom": 228,
+   "left": 0,
+   "right": 168.625
+  }
+ ],
+ "scrollHeight": 1000
+}

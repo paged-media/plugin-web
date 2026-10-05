@@ -1,0 +1,89 @@
+{
+ "fixture": "paint-object-fit",
+ "width": 400,
+ "height": 1000,
+ "sourceSha256": "1e383b74c031c4743e2b9f614b256ceaabe4382575ed46908962ed9b6e166173",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "fill",
+   "tag": "img",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 120,
+   "h": 60
+  },
+  {
+   "id": "contain",
+   "tag": "img",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 68,
+   "w": 120,
+   "h": 90
+  },
+  {
+   "id": "cover",
+   "tag": "img",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 166,
+   "w": 60,
+   "h": 60
+  },
+  {
+   "id": "none",
+   "tag": "img",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 234,
+   "w": 120,
+   "h": 60
+  },
+  {
+   "id": "down",
+   "tag": "img",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 302,
+   "w": 120,
+   "h": 60
+  },
+  {
+   "id": "cap",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 370,
+   "w": 400,
+   "h": 40
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "cap",
+   "text": "Five images with fixed boxes and object-fit fill, ",
+   "top": 370,
+   "bottom": 390,
+   "left": 0,
+   "right": 350.875
+  },
+  {
+   "owner": "cap",
+   "text": "contain, cover, none and scale-down.",
+   "top": 390,
+   "bottom": 410,
+   "left": 0,
+   "right": 284.094
+  }
+ ],
+ "scrollHeight": 1000
+}

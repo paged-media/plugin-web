@@ -1,0 +1,125 @@
+{
+ "fixture": "text-align-last",
+ "width": 400,
+ "height": 1000,
+ "sourceSha256": "fb37dcfcb5eec436c9cb469861531e1302092d4d04769845182e365a182be64e",
+ "chrome": "153.0.8010.12",
+ "elements": [
+  {
+   "id": "jl",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 0,
+   "w": 400,
+   "h": 60
+  },
+  {
+   "id": "jc",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 68,
+   "w": 400,
+   "h": 40
+  },
+  {
+   "id": "ji",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 116,
+   "w": 400,
+   "h": 40.5
+  },
+  {
+   "id": "end",
+   "tag": "p",
+   "display": "block",
+   "position": "static",
+   "x": 0,
+   "y": 164.5,
+   "w": 400,
+   "h": 40
+  }
+ ],
+ "pseudo": [],
+ "lines": [
+  {
+   "owner": "jl",
+   "text": "Justify every line including the last. Alpha bravo ",
+   "top": 0,
+   "bottom": 20,
+   "left": 0,
+   "right": 400
+  },
+  {
+   "owner": "jl",
+   "text": "charlie delta echo foxtrot golf hotel india juliet kilo ",
+   "top": 20,
+   "bottom": 40,
+   "left": 0,
+   "right": 400
+  },
+  {
+   "owner": "jl",
+   "text": "lima.",
+   "top": 40,
+   "bottom": 60,
+   "left": 0,
+   "right": 35.359
+  },
+  {
+   "owner": "jc",
+   "text": "Justified with a centred last line. Alpha bravo charlie ",
+   "top": 68,
+   "bottom": 88,
+   "left": 0,
+   "right": 400
+  },
+  {
+   "owner": "jc",
+   "text": "delta echo foxtrot golf hotel india juliet kilo lima.",
+   "top": 88,
+   "bottom": 108,
+   "left": 19.859,
+   "right": 380.125
+  },
+  {
+   "owner": "ji",
+   "text": "Justified with bold words and italic words and a code ",
+   "top": 116,
+   "bottom": 136,
+   "left": 0,
+   "right": 400.031
+  },
+  {
+   "owner": "ji",
+   "text": "span mixed in. Alpha bravo charlie delta echo foxtrot.",
+   "top": 136.25,
+   "bottom": 156.25,
+   "left": 0,
+   "right": 396.703
+  },
+  {
+   "owner": "end",
+   "text": "Aligned to the end. Alpha bravo charlie delta echo ",
+   "top": 164.5,
+   "bottom": 184.5,
+   "left": 22.938,
+   "right": 400
+  },
+  {
+   "owner": "end",
+   "text": "foxtrot golf hotel.",
+   "top": 184.5,
+   "bottom": 204.5,
+   "left": 270.297,
+   "right": 400
+  }
+ ],
+ "scrollHeight": 1000
+}

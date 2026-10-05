@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+html { font-family: Inter; line-height: 1.25; font-optical-sizing: none; }
+body { margin: 0; }
+.box { height: 40px; background: #eee; margin-bottom: 8px; }
+</style></head>
+<body>
+<div data-id="b1" class="box">Above.</div>
+<div data-id="s1" style="position: sticky; top: 10px; background: #fc9;">Sticky top ten, already below it.</div>
+<div data-id="s2" style="position: sticky; bottom: 10px; background: #9cf;">Sticky bottom ten.</div>
+<div data-id="wrap" style="height: 120px; overflow: hidden; background: #efe;"><div data-id="b2" class="box">Inside a clipped box.</div><div data-id="s3" style="position: sticky; top: 4px; left: 12px; background: #fcf;">Sticky in a clip.</div></div>
+<div data-id="after">After the sticky boxes.</div>
+</body></html>
