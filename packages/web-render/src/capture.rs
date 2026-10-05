@@ -939,6 +939,20 @@ fn collect_inline_runs(
     for child in &node.children {
         collect_inline_runs(doc, *child, paint_height_px, out);
     }
+    // An anonymous block box (inline content beside a block child, e.g.
+    // `<li>text<ul>…`) is a LAYOUT child only — no DOM node lists it — yet it
+    // is an inline root that paint draws. Every other layout child is also a
+    // DOM child, walked above.
+    if let Some(layout_children) = node.layout_children.borrow().as_deref() {
+        for child in layout_children {
+            if doc
+                .get_node(*child)
+                .is_some_and(|c| matches!(c.data, blitz_dom::node::NodeData::AnonymousBlock(_)))
+            {
+                collect_inline_runs(doc, *child, paint_height_px, out);
+            }
+        }
+    }
 }
 
 /// Recover every glyph run of one inline formatting context: for each run
@@ -1649,6 +1663,25 @@ mod tests {
         for w in ["red", "blue", "green"] {
             let n = words.iter().filter(|x| *x == w).count();
             assert_eq!(n, 1, "{w:?} must occur exactly once: {items:?}");
+        }
+    }
+
+    #[test]
+    fn text_in_an_anonymous_block_box_is_recovered() {
+        // Inline text beside a block child lives in an anonymous block box, a
+        // layout-only node no DOM child list reaches. It was never recovered,
+        // so its glyph runs reached the canvas empty (skipped).
+        let items = text_items(
+            "<html><body><div style=\"margin:0\">lead text<p style=\"margin:0\">block child</p>\
+             tail text</div></body></html>",
+        );
+        let texts: Vec<&str> = items.iter().map(|(t, ..)| t.trim()).collect();
+        for w in ["lead text", "block child", "tail text"] {
+            assert_eq!(
+                texts.iter().filter(|t| **t == w).count(),
+                1,
+                "{w:?}: {texts:?}"
+            );
         }
     }
 

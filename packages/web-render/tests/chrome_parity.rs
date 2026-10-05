@@ -75,7 +75,6 @@ enum Expect {
 /// (fixture, aspect, expectation). Absent = must agree.
 #[rustfmt::skip]
 const EXPECT: &[(&str, &str, Expect)] = &[
-    ("lists-nested", "paint", Expect::Defect("CW-03 text in an anonymous block box is never recovered")),
     ("inline-line-height-normal", "boxes", Expect::Defect("CW-04 line-height: normal is 1.2em, Chrome uses rounded ascent+descent")),
     ("inline-line-height-normal", "lines", Expect::Defect("CW-04 line-height: normal is 1.2em, Chrome uses rounded ascent+descent")),
     ("text-optical-sizing", "boxes", Expect::Defect("CW-05 font-optical-sizing: auto ignored (variable opsz axis stays at its default)")),
