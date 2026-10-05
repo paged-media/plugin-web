@@ -18,23 +18,27 @@
 
 // The BAKE ORCHESTRATOR (Phase C) — the IMPURE half of "flatten a rendered
 // web frame into NATIVE Paged content". It renders the frame's source to a
-// C-1 SceneLayer, plans the native content (`sceneLayerToBakePlan`), and
-// executes it as host mutations: create swatches, then a native rectangle per
-// solid fill and a native text frame per text run. So a foreign IDML open — or
-// core's own PDF/IDML export — sees REAL content, with no plugin engine.
+// C-1 SceneLayer, plans the native content (`sceneLayerToBakePlan`), measures
+// every text run, and applies the whole bake as ONE `batch` mutation
+// (`bakeBatchOps`): swatches, a native rectangle per solid fill, a native path
+// per single-subpath fill, and a native text frame per run — inserted, poured,
+// sized and coloured through `bindCreated` handles. One bake is one undo step,
+// and the created ids come back in the outcome's `minted` list, so nothing is
+// re-discovered by reading the stories collection. A flow bake is one batch
+// across all its frames. So a foreign IDML open — or core's own PDF/IDML
+// export — sees REAL content, with no plugin engine.
 //
-// Follows plugin-sheets' `sheet-bundle/src/lower.ts`: multi-phase, resolving
-// ids between phases (a text frame's minted story is found by DIFFING the
-// stories collection — an empty frame's story is not hit-test-visible). Colours
-// go through the swatch layer (`colorRef` is a swatch id, not raw rgba); we mint
-// each swatch with a deterministic `Color/wb-…` self-id so we reference it
-// without a read-back.
+// Colours go through the swatch layer (`colorRef` is a swatch id, not raw
+// rgba) with deterministic `Color/wb-…` self-ids; the swatches collection is
+// read once per bake so an already-present swatch is not created again (the
+// engine refuses a duplicate id, which would roll the whole batch back).
 //
 // HONEST v0: text (position + size + fill colour, in the document default face
 // — `SceneTextItem.family` is a hint core renders in the default font) and
-// solid axis-aligned fill rectangles. Every other kind is reported (never
-// faked) via the plan's `deferred` counts. Vertical text placement is
-// baseline-exact when `host.text.measureString` is available, else estimated.
+// solid fills (rectangles and single-subpath paths). Every other kind is
+// reported (never faked) via the plan's `deferred` counts. Vertical text
+// placement is baseline-exact when `host.text.measureString` is available,
+// else estimated. A refused batch bakes nothing and says why.
 
 import type { BundleHost, ElementId, PageId } from "@paged-media/plugin-api";
 import {
@@ -45,49 +49,34 @@ import {
 } from "../../web-model/src";
 
 import { bakeWebFlow } from "./bake";
-import { sceneLayerToBakePlan, type BakePlan, type BakeText } from "./bake-plan";
+import {
+  bakeBatchOps,
+  sceneLayerToBakePlan,
+  type BakeText,
+  type PlacedBakePlan,
+  type RunMetrics,
+} from "./bake-plan";
 import { loadWebEngine, type WebEngine } from "./engine-loader";
 import { publishRenderReport } from "./render-report";
 import { resolveFlowChain } from "./render-flow-command";
-import { loadWebSource } from "./source-part";
+import { describeRefusal, loadWebSource } from "./source-part";
 
 /** CSS px per point (the engine lays out in px; frame geometry is in pt). */
 const PX_PER_PT = 96 / 72;
-
-/** A little width slack on a baked text frame so the run never clips at the
- *  right edge (points). */
-const TEXT_PAD_PT = 2;
 
 /** The outcome of a bake-to-document — surfaced to the command handler. */
 export interface FrameBakeToDocOutcome {
   /** Whether any native content was created. */
   baked: boolean;
-  /** How many native page items (rects + text frames) were created. */
+  /** How many native page items (rects, paths and text frames) were created. */
   createdCount: number;
   /** How many swatches were minted. */
   swatchCount: number;
   /** Un-baked SceneItem kinds, counted honestly. */
   deferred: Record<string, number>;
-  /** Diagnostics (the not-loaded note, or the unsupported-items warning). */
+  /** Diagnostics (the not-loaded note, a refused bake, or the
+   *  unsupported-items warning). */
   diagnostics: WebDiagnostic[];
-}
-
-/** Snapshot the document's story ids (to diff a freshly inserted frame's
- *  minted story — an empty frame's story is not hit-test-visible). */
-async function storyIdSnapshot(host: BundleHost): Promise<Set<string>> {
-  const stories = await host.document.collection<{ selfId: string }>("stories");
-  return new Set(stories.map((s) => s.selfId));
-}
-
-/** The single story id present now but not in `before`, or null when the diff
- *  is ambiguous (0 or >1 new). */
-async function newStoryId(
-  host: BundleHost,
-  before: ReadonlySet<string>,
-): Promise<string | null> {
-  const after = await host.document.collection<{ selfId: string }>("stories");
-  const fresh = after.map((s) => s.selfId).filter((id) => !before.has(id));
-  return fresh.length === 1 ? fresh[0] : null;
 }
 
 /** Measure a run for exact frame bounds, or estimate when the host wires no
@@ -95,7 +84,7 @@ async function newStoryId(
 async function measureRun(
   host: BundleHost,
   t: BakeText,
-): Promise<{ advance: number; ascender: number; descender: number }> {
+): Promise<RunMetrics> {
   const text = (host as { text?: { measureString?: unknown } }).text;
   if (text && typeof (text as { measureString?: unknown }).measureString === "function") {
     try {
@@ -106,7 +95,7 @@ async function measureRun(
             style: string | null,
             text: string,
             sizePt: number,
-          ) => Promise<{ advance: number; ascender: number; descender: number }>;
+          ) => Promise<RunMetrics>;
         }
       ).measureString("", null, t.text, t.sizePt);
     } catch {
@@ -119,12 +108,6 @@ async function measureRun(
     descender: -t.sizePt * 0.2,
   };
 }
-
-const storyRange = (storyId: string, len: number): ElementId =>
-  ({
-    kind: "storyRange",
-    id: { story_id: storyId, start: 0, end: len },
-  }) as unknown as ElementId;
 
 /**
  * Render the selected web frame and MATERIALISE it as native Paged content.
@@ -178,146 +161,74 @@ export async function bakeWebFrameToDocument(
   }
 
   const plan = sceneLayerToBakePlan(layer);
-  const created = await materializePlan(host, plan, pageId, top, left);
+  const placed = await placePlan(host, plan, pageId, top, left);
+  const applied = await applyBake(host, [placed]);
+  if ("refused" in applied) return fail(applied.refused);
 
   return {
-    baked: created > 0,
-    createdCount: created,
-    swatchCount: plan.swatches.length,
+    baked: applied.created > 0,
+    createdCount: applied.created,
+    swatchCount: applied.swatchCount,
     deferred: plan.deferred,
-    diagnostics: deferredDiagnostics(created, plan.deferred),
+    diagnostics: deferredDiagnostics(applied.created, plan.deferred),
   };
 }
 
-/**
- * Execute a {@link BakePlan} as native host mutations at a frame's page origin
- * (`top`/`left`, points): create the swatches, a rectangle per fill, and a text
- * frame per run. Returns how many native page items were created. Shared by the
- * single-frame and flow bakes — the per-frame content geometry is already in
- * frame-content points, offset here by the frame's page position.
- */
-async function materializePlan(
+/** Measure every text run of a plan (all requests in flight at once) and
+ *  place the plan at its frame's page origin. */
+async function placePlan(
   host: BundleHost,
-  plan: BakePlan,
+  plan: PlacedBakePlan["plan"],
   pageId: PageId,
   top: number,
   left: number,
-): Promise<number> {
-  let created = 0;
+): Promise<PlacedBakePlan> {
+  const metrics = await Promise.all(plan.texts.map((t) => measureRun(host, t)));
+  return { plan, pageId, top, left, metrics };
+}
 
-  // Phase 1 — swatches (one batch; deterministic self-ids so later ops
-  // reference them by id, no read-back).
-  if (plan.swatches.length > 0) {
-    await host.document.mutate({
-      op: "batch",
-      args: {
-        ops: plan.swatches.map((s) => ({
-          op: "createSwatch",
-          args: {
-            spec: {
-              selfId: s.id,
-              name: s.id,
-              space: "RGB",
-              value: [s.r, s.g, s.b],
-              model: "Process",
-            },
-          },
-        })),
-      },
-    });
+/** The swatch ids the document already holds (one read per bake). A failed
+ *  read answers "none", and the batch then reports a duplicate honestly. */
+async function existingSwatchIds(host: BundleHost): Promise<Set<string>> {
+  try {
+    const rows = await host.document.collection<{ selfId?: unknown }>("swatches");
+    return new Set(rows.map((r) => r.selfId).filter((id): id is string => typeof id === "string"));
+  } catch {
+    return new Set();
   }
+}
 
-  // Phase 2 — a native rectangle per solid fill (insert + fill in one 2-op
-  // batch via the `$created` sentinel = one undo step).
-  for (const rect of plan.rects) {
-    const [rt, rl, rb, rr] = rect.bounds;
-    const outcome = await host.document.mutate({
-      op: "batch",
-      args: {
-        ops: [
-          {
-            op: "insertFrame",
-            args: { pageId, bounds: [rt + top, rl + left, rb + top, rr + left] },
-          },
-          {
-            op: "setElementProperty",
-            args: {
-              elementId: { kind: "rectangle", id: "$created" } as unknown as ElementId,
-              path: "frameFillColor",
-              value: { type: "colorRef", value: rect.fillColorId },
-            },
-          },
-        ],
-      },
-    });
-    if (outcome.applied) created += 1;
+/**
+ * Apply placed plans as ONE `batch` mutation — one undo step for the whole
+ * bake. Returns how many native page items were created (rectangles, paths
+ * and text frames, counted from the outcome's `minted` handles) and how many
+ * swatches the batch created, or the refusal when the engine rejected it
+ * (nothing was created then: a batch applies whole or not at all).
+ */
+async function applyBake(
+  host: BundleHost,
+  placed: readonly PlacedBakePlan[],
+): Promise<{ created: number; swatchCount: number } | { refused: string }> {
+  const items = placed.reduce(
+    (n, p) => n + p.plan.rects.length + p.plan.paths.length + p.plan.texts.length,
+    0,
+  );
+  const anySwatch = placed.some((p) => p.plan.swatches.length > 0);
+  if (items === 0 && !anySwatch) return { created: 0, swatchCount: 0 };
+
+  const batch = bakeBatchOps(placed, anySwatch ? await existingSwatchIds(host) : new Set());
+  if (batch.ops.length === 0) return { created: 0, swatchCount: 0 };
+  const outcome = await host.document.mutate({ op: "batch", args: { ops: batch.ops } });
+  if (!outcome.applied) {
+    return { refused: `the document refused the bake: ${describeRefusal(outcome.error)}` };
   }
-
-  // Phase 2b — a native PATH per non-rect solid fill (rounded rects,
-  // decorative shapes). `insertPath` with `open:false` mints a filled polygon;
-  // the anchors are offset from frame-content points to page points.
-  for (const p of plan.paths) {
-    const anchors = p.anchors.map((a) => ({
-      anchor: [a.anchor[0] + left, a.anchor[1] + top] as [number, number],
-      left: [a.left[0] + left, a.left[1] + top] as [number, number],
-      right: [a.right[0] + left, a.right[1] + top] as [number, number],
-    }));
-    const outcome = await host.document.mutate({
-      op: "batch",
-      args: {
-        ops: [
-          { op: "insertPath", args: { pageId, anchors, open: false } },
-          {
-            op: "setElementProperty",
-            args: {
-              elementId: { kind: "polygon", id: "$created" } as unknown as ElementId,
-              path: "frameFillColor",
-              value: { type: "colorRef", value: p.fillColorId },
-            },
-          },
-        ],
-      },
-    });
-    if (outcome.applied) created += 1;
-  }
-
-  // Phase 3 — a native text frame per run: measure → insert (resolve the
-  // minted story via a stories-diff) → pour → size + colour.
-  for (const t of plan.texts) {
-    const m = await measureRun(host, t);
-    const pageLeft = t.left + left;
-    const pageBaseline = t.baseline + top;
-    const bounds: [number, number, number, number] = [
-      pageBaseline - m.ascender,
-      pageLeft,
-      pageBaseline - m.descender,
-      pageLeft + Math.max(1, m.advance) + TEXT_PAD_PT,
-    ];
-    const before = await storyIdSnapshot(host);
-    const ins = await host.document.mutate({
-      op: "insertTextFrame",
-      args: { pageId, bounds },
-    });
-    if (!ins.applied || !ins.createdId) continue;
-    const storyId = await newStoryId(host, before);
-    if (!storyId) continue;
-    await host.document.mutate({
-      op: "insertText",
-      args: { storyId, offset: 0, text: t.text },
-    });
-    const range = storyRange(storyId, t.text.length);
-    await host.document.mutate({
-      op: "setElementProperty",
-      args: { elementId: range, path: "characterFontSize", value: { type: "length", value: t.sizePt } },
-    });
-    await host.document.mutate({
-      op: "setElementProperty",
-      args: { elementId: range, path: "characterFillColor", value: { type: "colorRef", value: t.fillColorId } },
-    });
-    created += 1;
-  }
-
-  return created;
+  const named = new Set([...batch.handles.rects, ...batch.handles.paths, ...batch.handles.texts]);
+  // `minted` is additive on the wire; an engine that omits it applied the
+  // whole batch all the same (a batch is all-or-nothing).
+  const created = outcome.minted
+    ? outcome.minted.filter((m) => m.handle !== null && named.has(m.handle)).length
+    : named.size;
+  return { created, swatchCount: batch.swatchIds.length };
 }
 
 /** The unsupported-items warning for a bake (empty when nothing was deferred). */
@@ -406,26 +317,23 @@ export async function bakeWebFlowToDocument(
   // Each frame's page origin, chain order.
   const geos = await host.document.elementGeometry(chain);
 
-  let created = 0;
-  let swatchCount = 0;
   const deferred: Record<string, number> = {};
+  const placed: PlacedBakePlan[] = [];
   for (let i = 0; i < chain.length; i += 1) {
     const layer = flow.layers[i];
     const geo = geos[i];
     if (!layer || !geo?.bounds || !geo.pageId) continue;
     const plan = sceneLayerToBakePlan(layer);
-    created += await materializePlan(
-      host,
-      plan,
-      geo.pageId as PageId,
-      geo.bounds[0],
-      geo.bounds[1],
-    );
-    swatchCount += plan.swatches.length;
+    placed.push(await placePlan(host, plan, geo.pageId as PageId, geo.bounds[0], geo.bounds[1]));
     for (const [k, v] of Object.entries(plan.deferred)) {
       deferred[k] = (deferred[k] ?? 0) + v;
     }
   }
+
+  // The whole flow — every frame's content — as ONE batch: one undo step.
+  const applied = await applyBake(host, placed);
+  if ("refused" in applied) return fail(applied.refused);
+  const { created, swatchCount } = applied;
 
   return {
     baked: created > 0,

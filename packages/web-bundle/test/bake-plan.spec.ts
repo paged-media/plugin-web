@@ -24,7 +24,14 @@ import { describe, expect, it } from "vitest";
 
 import type { SceneLayer } from "@paged-media/web-model";
 
-import { pathAsRect, pathToAnchors, sceneLayerToBakePlan } from "../src/bake-plan";
+import {
+  TEXT_PAD_PT,
+  bakeBatchOps,
+  charCount,
+  pathAsRect,
+  pathToAnchors,
+  sceneLayerToBakePlan,
+} from "../src/bake-plan";
 
 /** A closed axis-aligned rectangle path `[left,top]..[right,bottom]`. */
 const rectPath = (l: number, t: number, r: number, b: number) => [
@@ -246,5 +253,97 @@ describe("sceneLayerToBakePlan — deferred kinds", () => {
     expect(plan.texts).toHaveLength(1);
     expect(plan.deferred).toEqual({ image: 1 });
     expect(plan.swatches).toHaveLength(2); // the bg blue + the black text
+  });
+});
+
+describe("bakeBatchOps — the whole bake as ONE batch", () => {
+  const M = { advance: 40, ascender: 9, descender: -3 };
+  const layer: SceneLayer = {
+    items: [
+      { kind: "fillPath", path: rectPath(0, 0, 200, 100), paint: RED },
+      { kind: "text", x: 8, y: 24, text: "Title", size: 18, paint: BLACK },
+    ],
+  };
+
+  it("swatches first, then insert → bindCreated → address by handle (no read-back)", () => {
+    const plan = sceneLayerToBakePlan(layer);
+    const { ops, handles, swatchIds } = bakeBatchOps([
+      { plan, pageId: "uP", top: 100, left: 50, metrics: [M] },
+    ]);
+    expect(swatchIds).toEqual(["Color/wb-ff0000", "Color/wb-000000"]);
+    expect(handles).toEqual({ rects: ["r0"], paths: [], texts: ["t0"] });
+    expect(ops.map((o) => o.op)).toEqual([
+      "createSwatch",
+      "createSwatch",
+      "insertFrame",
+      "bindCreated",
+      "setElementProperty",
+      "insertTextFrame",
+      "bindCreated",
+      "insertText",
+      "setElementProperty",
+      "setElementProperty",
+    ]);
+    // The rectangle sits at the frame's page origin.
+    expect(ops[2]).toEqual({ op: "insertFrame", args: { pageId: "uP", bounds: [100, 50, 200, 250] } });
+    expect(ops[4]).toMatchObject({
+      args: { elementId: { kind: "rectangle", id: "$h:r0" }, path: "frameFillColor" },
+    });
+    // The text frame: baseline-exact bounds from the measured metrics.
+    expect(ops[5]).toEqual({
+      op: "insertTextFrame",
+      args: { pageId: "uP", bounds: [124 - 9, 58, 124 + 3, 58 + 40 + TEXT_PAD_PT] },
+    });
+    expect(ops[6]).toEqual({ op: "bindCreated", args: { handle: "t0" } });
+    // The minted STORY is addressed through the frame's handle.
+    expect(ops[7]).toEqual({
+      op: "insertText",
+      args: { storyId: "$h:t0", offset: 0, text: "Title" },
+    });
+    const range = { kind: "storyRange", id: { story_id: "$h:t0", start: 0, end: 5 } };
+    expect(ops[8]).toEqual({
+      op: "setElementProperty",
+      args: { elementId: range, path: "characterFontSize", value: { type: "length", value: 18 } },
+    });
+    expect(ops[9]).toEqual({
+      op: "setElementProperty",
+      args: {
+        elementId: range,
+        path: "characterFillColor",
+        value: { type: "colorRef", value: "Color/wb-000000" },
+      },
+    });
+  });
+
+  it("skips swatches the document already has, and creates each once across frames", () => {
+    const plan = sceneLayerToBakePlan(layer);
+    const { ops, swatchIds, handles } = bakeBatchOps(
+      [
+        { plan, pageId: "uP", top: 0, left: 0, metrics: [M] },
+        { plan, pageId: "uQ", top: 0, left: 0, metrics: [M] },
+      ],
+      new Set(["Color/wb-ff0000"]),
+    );
+    expect(swatchIds).toEqual(["Color/wb-000000"]);
+    expect(ops.filter((o) => o.op === "createSwatch")).toHaveLength(1);
+    // Handles stay unique across the frames of one batch.
+    expect(handles).toEqual({ rects: ["r0", "r1"], paths: [], texts: ["t0", "t1"] });
+  });
+
+  it("a story range ends at the CHARACTER count (the engine's), not UTF-16 units", () => {
+    expect(charCount("a😀b")).toBe(3);
+    const plan = sceneLayerToBakePlan({
+      items: [{ kind: "text", x: 0, y: 10, text: "a😀b", size: 10, paint: BLACK }],
+    });
+    const { ops } = bakeBatchOps([{ plan, pageId: "uP", top: 0, left: 0, metrics: [M] }]);
+    const size = ops.find(
+      (o) => o.op === "setElementProperty" && (o.args as { path: string }).path === "characterFontSize",
+    ) as { args: { elementId: { id: { end: number } } } };
+    expect(size.args.elementId.id.end).toBe(3);
+  });
+
+  it("an empty plan is an empty batch", () => {
+    const plan = sceneLayerToBakePlan({ items: [] });
+    expect(bakeBatchOps([{ plan, pageId: "uP", top: 0, left: 0, metrics: [] }]).ops).toEqual([]);
   });
 });

@@ -207,9 +207,10 @@ describe.skipIf(!bundledPresent)("web perf budgets (real host + real Blitz)", ()
     await settle();
     report("bake-200-runs", work, { ...boundary(), ms });
 
-    // Behaviour: one native story per run.
-    const storiesAfter = (await h.host.document.collection("stories")).length;
-    expect(storiesAfter - storiesBefore).toBe(RUNS);
+    // Behaviour: one native story per run, carrying the run's text …
+    const after = await h.host.document.collection<{ characterCount: number }>("stories");
+    expect(after.length - storiesBefore).toBe(RUNS);
+    expect(after.slice(-RUNS).every((s) => s.characterCount > 0)).toBe(true);
 
     const b = BUDGET.bake;
     expect(work.total()).toBe(b.doorCalls);
@@ -217,9 +218,17 @@ describe.skipIf(!bundledPresent)("web perf budgets (real host + real Blitz)", ()
     expect(work.count("document.collection")).toBe(b.collections);
     expect(work.count("document.collection:stories")).toBe(b.storiesReads);
     expect(work.rowsRead.stories ?? 0).toBe(b.storyRowsRead);
-    // The quadratic shape, stated: ~7 awaited calls per run.
-    expect(work.total()).toBeGreaterThanOrEqual(7 * RUNS);
+    // The linear shape, stated: one measurement per run, everything else
+    // a constant — the whole bake is ONE batch.
+    expect(work.count("text.measureString")).toBe(RUNS);
+    expect(work.mutations).toEqual([{ op: "batch", ops: b.batchOps }]);
     expect(lane.stats.frameCalls).toBe(1);
+
+    // … and the whole bake is ONE undo step: one undo removes every story.
+    await h.host.document.undo();
+    expect((await h.host.document.collection("stories")).length).toBe(storiesBefore);
+    await h.host.document.redo();
+    expect((await h.host.document.collection("stories")).length).toBe(storiesBefore + RUNS);
   });
 
   it(`${CHANGES} document changes with the panel's font watch live [plugin-web.perf-budgets]`, async () => {
@@ -279,12 +288,17 @@ const BUDGET = {
   // 9 / 1 before the single source reader (ADR 409): it also reads the
   // pre-pointer part of a frame, so an old document's larger source wins.
   renderFlow: { doorCalls: 11, reads: 3, bytesIn: 9309, bytesOut: 78153 },
+  // Was 1410 / 801 / 400 / 400 / 40000 (one story-diffing mutate chain per
+  // run, 801 undo steps). Now ONE batch of 5 ops per run + 1 swatch, story
+  // ids through `bindCreated` handles; the one collection read is the
+  // swatches (an existing swatch is not re-created).
   bake: {
-    doorCalls: 1410,
-    mutates: 801,
-    collections: 400,
-    storiesReads: 400,
-    storyRowsRead: 40000,
+    doorCalls: 211,
+    mutates: 1,
+    batchOps: 1001,
+    collections: 1,
+    storiesReads: 0,
+    storyRowsRead: 0,
   },
   fontWatch: { fontsReads: 1001, doorCalls: 1003 },
   coldBoot: { boots: 1, loaderImports: 1 },

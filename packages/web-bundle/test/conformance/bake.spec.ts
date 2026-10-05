@@ -39,6 +39,7 @@ import { sceneLayerToBakePlan } from "../../src/bake-plan";
 import { bakeWebFrameToDocument, bakeWebFlowToDocument } from "../../src/bake-to-document";
 import { parseSceneLayer, parseFlowResult, type WebEngine } from "../../src/engine-loader";
 import { writeWebSource } from "../../src/source-part";
+import { countingHost, settle } from "../perf/counting-host";
 import { W1_EMPTY_PAGE } from "../fixtures/corpus";
 import { openHost } from "./host";
 
@@ -112,7 +113,14 @@ describe.skipIf(!artifactPresent)(
     it("bakes the web frame into native content (swatches + rect + text frame)", async () => {
       const storiesBefore = await storyCount(h);
 
-      const outcome = await bakeWebFrameToDocument(h.host, frame, engine);
+      const { host, work } = countingHost(h.host);
+      const outcome = await bakeWebFrameToDocument(host, frame, engine);
+      await settle();
+
+      // ONE batch, no story read-back: the minted story comes back through
+      // the text frame's `bindCreated` handle.
+      expect(work.mutations.map((m) => m.op)).toEqual(["batch"]);
+      expect(work.count("document.collection:stories")).toBe(0);
 
       // Real native content was created — not the not-loaded fallback.
       expect(outcome.baked).toBe(true);
@@ -128,6 +136,30 @@ describe.skipIf(!artifactPresent)(
       // rect/text `colorRef`s resolve — not a dangling reference).
       const swatches = await h.host.document.collection<{ selfId: string }>("swatches");
       expect(swatches.some((s) => s.selfId.startsWith("Color/wb-"))).toBe(true);
+
+      // The run's text was poured into a minted story (not an empty frame).
+      const stories = await h.host.document.collection<{ selfId: string; characterCount: number }>(
+        "stories",
+      );
+      expect(stories.slice(storiesBefore).some((s) => s.characterCount === "Bake me".length)).toBe(
+        true,
+      );
+    });
+
+    it("a bake is ONE undo step, and re-baking reuses the swatches it made", async () => {
+      const storiesBefore = await storyCount(h);
+      const first = await bakeWebFrameToDocument(h.host, frame, engine);
+      expect(first.baked).toBe(true);
+      // The swatches exist from the bake above: they are not created again
+      // (a duplicate self-id would refuse — and roll back — the whole batch).
+      expect(first.swatchCount).toBe(0);
+      const storiesAfter = await storyCount(h);
+      expect(storiesAfter).toBeGreaterThan(storiesBefore);
+
+      await h.host.document.undo();
+      expect(await storyCount(h)).toBe(storiesBefore);
+      await h.host.document.redo();
+      expect(await storyCount(h)).toBe(storiesAfter);
     });
 
     it("a real Blitz border-radius fill bakes as a native PATH (Phase F, real wasm)", () => {
@@ -180,7 +212,13 @@ describe.skipIf(!artifactPresent)(
       });
 
       const before = await storyCount(h);
-      const outcome = await bakeWebFlowToDocument(h.host, [src, rcp], engine);
+      const { host, work } = countingHost(h.host);
+      const outcome = await bakeWebFlowToDocument(host, [src, rcp], engine);
+      await settle();
+
+      // Both frames' content in ONE batch — one undo step for the flow.
+      expect(work.mutations.map((m) => m.op)).toEqual(["batch"]);
+      expect(work.count("document.collection:stories")).toBe(0);
 
       expect(outcome.baked).toBe(true);
       // A single ~180pt frame holds ~9 rows; >10 baked proves the spill into
