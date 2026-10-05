@@ -54,6 +54,7 @@ import {
   type WebRenderResult,
 } from "../../web-model/src";
 
+import { engineDocument } from "./engine-document";
 import type { WebEngine } from "./engine-loader";
 import { loadWebSource } from "./source-part";
 
@@ -464,16 +465,17 @@ export async function bakeWebFlows(
     );
   }
 
-  const rendered = renderWebFrameSource(source);
-  const composedHtml = composeSrcdoc({
-    ...source,
-    html: rendered.html,
-    css: rendered.css,
-  });
+  // The template pass and composition run once for all groups (memoized
+  // per source content across commands). The ENGINE still parses the
+  // composed document once per group: `render_web_flow` takes one flow root
+  // per call, so a source with N named flows costs N parses + N resolves
+  // until the engine takes every group in one call (recorded for the
+  // engine half, perf-baseline-2026-10-05 "after Wave 2 (host)").
+  const doc = engineDocument(source);
   const groups = flowGroups(source, sourceTarget);
   const diagnostics: WebDiagnostic[] = [
-    ...rendered.diagnostics,
-    ...namedFlowDiagnostics(rendered.css),
+    ...doc.diagnostics,
+    ...namedFlowDiagnostics(doc.css),
   ];
 
   if (!engine) {
@@ -491,9 +493,15 @@ export async function bakeWebFlows(
   let submittedCount = 0;
   let anyOverset = false;
 
+  // Every group's frame geometry in ONE read (was one read per group).
+  const allFrames = groups.flatMap((g) => g.frames as unknown as ElementId[]);
+  const allGeos = await host.document.elementGeometry(allFrames);
+  let offset = 0;
+
   for (const group of groups) {
     const groupFrames = group.frames as unknown as ElementId[];
-    const geos = await host.document.elementGeometry(groupFrames);
+    const geos = allGeos.slice(offset, offset + groupFrames.length);
+    offset += groupFrames.length;
     const framesPx = group.frames.map((_, i) => {
       const b = geos[i]?.bounds;
       const widthPt = b ? Math.max(0, b[3] - b[1]) : 0;
@@ -505,8 +513,8 @@ export async function bakeWebFlows(
     });
     // The flow root for this group: `""` → the primary (first flow-into / whole
     // body); a named group → that flow-into's selector.
-    const flowRoot = flowSelectorFor(rendered.css, group.name);
-    const flow = engine.renderFlow(composedHtml, framesPx, flowRoot);
+    const flowRoot = flowSelectorFor(doc.css, group.name);
+    const flow = engine.renderFlow(doc.html, framesPx, flowRoot);
     if (flow === null) {
       group.frames.forEach(() => layers.push(null));
       continue;

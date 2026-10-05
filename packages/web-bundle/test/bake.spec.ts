@@ -260,10 +260,12 @@ describe("bakeWebFlow — the threaded-flow bake (ADR-020 rung 2)", () => {
 
     // An engine that records (flowRoot, frame count) per group + paints one item/frame.
     const calls: { flowRoot?: string; n: number }[] = [];
+    const widths: number[][] = [];
     const engine: WebEngine = {
       render: () => null,
       renderFlow: (_html, frames, flowRoot) => {
         calls.push({ flowRoot, n: frames.length });
+        widths.push(frames.map((f) => f.widthPx));
         return {
           frames: frames.map(() => ({
             items: [
@@ -280,19 +282,29 @@ describe("bakeWebFlow — the threaded-flow bake (ADR-020 rung 2)", () => {
     };
 
     const submit = vi.fn(async (_id: string, _layer: unknown) => {});
+    const widthPt: Record<string, number> = { S: 180, F1: 90, F2: 45 };
+    const elementGeometry = vi.fn(async (ids: ElementId[]) =>
+      ids.map((id) => ({
+        id,
+        pageId: "p1",
+        bounds: [0, 0, 180, widthPt[(id as { id: string }).id]],
+      })),
+    );
     const host = {
       log: silent,
       selection: { get: () => [S] },
       document: {
         getMetadata: async () => envelopeFor(src),
-        elementGeometry: async (ids: ElementId[]) =>
-          ids.map((id) => ({ id, pageId: "p1", bounds: [0, 0, 180, 240] })),
+        elementGeometry,
       },
       contribute: { sceneLayer: () => ({ submit, clear: async () => {}, dispose: vi.fn() }) },
       supports: (f: string) => f === "rendering.sceneLayer@1",
     } as unknown as BundleHost;
 
     const out = await bakeWebFlows(host, S, engine);
+    // Every group's geometry in ONE read, each frame's width to its group.
+    expect(elementGeometry).toHaveBeenCalledTimes(1);
+    expect(widths).toEqual([[240, 120], [60]]);
     expect(out.rendered).toBe(true);
     // Primary group [S, F1] with #story; the "side" group [F2] with #notes.
     expect(calls).toEqual([

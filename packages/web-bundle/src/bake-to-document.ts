@@ -41,12 +41,7 @@
 // else estimated. A refused batch bakes nothing and says why.
 
 import type { BundleHost, ElementId, PageId } from "@paged-media/plugin-api";
-import {
-  asFrameTarget,
-  composeSrcdoc,
-  renderWebFrameSource,
-  type WebDiagnostic,
-} from "../../web-model/src";
+import { asFrameTarget, type WebDiagnostic } from "../../web-model/src";
 
 import { bakeWebFlow } from "./bake";
 import {
@@ -56,6 +51,7 @@ import {
   type PlacedBakePlan,
   type RunMetrics,
 } from "./bake-plan";
+import { engineDocument } from "./engine-document";
 import { loadWebEngine, type WebEngine } from "./engine-loader";
 import { publishRenderReport } from "./render-report";
 import { resolveFlowChain } from "./render-flow-command";
@@ -149,8 +145,7 @@ export async function bakeWebFrameToDocument(
     return fail("web rendering engine not loaded — the bake needs the engine");
   }
 
-  const composed = renderWebFrameSource(source);
-  const html = composeSrcdoc({ ...source, html: composed.html, css: composed.css });
+  const { html } = engineDocument(source);
   const layer = engine.render(
     html,
     Math.round(frameWidthPt * PX_PER_PT),
