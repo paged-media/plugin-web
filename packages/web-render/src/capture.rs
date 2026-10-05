@@ -871,13 +871,21 @@ fn collect_inline_runs(doc: &BaseDocument, node_id: usize, out: &mut Vec<Recover
 ///     space, the SAME point the capture records as `WebGlyphRun::local_key`
 ///     (so it survives a CSS transform on the inline root); and
 ///   · the untransformed absolute baseline via `Node::absolute_position`
-///     (the disambiguator for a local-key collision across inline roots).
+///     plus the root's border + padding inset (where paint draws it — the
+///     disambiguator for a local-key collision across inline roots).
 fn recover_layout_runs(
     inline_root: &blitz_dom::Node,
     text: &str,
     layout: &Layout<TextBrush>,
     out: &mut Vec<RecoveredRun>,
 ) {
+    // Paint draws an inline layout at the root's CONTENT box (border +
+    // padding in from the box `absolute_position` measures), so the run's
+    // untransformed absolute baseline adds that inset — the point where an
+    // untransformed run's capture lands.
+    let lay = &inline_root.final_layout;
+    let inset_x = lay.border.left + lay.padding.left;
+    let inset_y = lay.border.top + lay.padding.top;
     for line in layout.lines() {
         for item in line.items() {
             let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
@@ -897,7 +905,7 @@ fn recover_layout_runs(
             // coords (CSS px, scale 1); both px→pt to match the capture.
             let local_x = glyph_run.offset();
             let local_y = glyph_run.baseline();
-            let abs = inline_root.absolute_position(local_x, local_y);
+            let abs = inline_root.absolute_position(local_x + inset_x, local_y + inset_y);
             out.push(RecoveredRun {
                 local: LocalKey::new(
                     CapturingScene::px_pt(local_x as f64),
@@ -911,6 +919,63 @@ fn recover_layout_runs(
     }
 }
 
+/// Grid cell (content points) of the run-match index. Any match lies within
+/// [`RUN_MATCH_TOL_PT`] of its key, so the 3 x 3 cells around a key (at least
+/// one cell = 1 pt in every direction) hold every candidate.
+const RUN_MATCH_CELL_PT: f32 = 1.0;
+
+/// A point's cell in the run-match grid.
+fn run_cell(x: f32, y: f32) -> (i32, i32) {
+    (
+        (x / RUN_MATCH_CELL_PT).floor() as i32,
+        (y / RUN_MATCH_CELL_PT).floor() as i32,
+    )
+}
+
+/// The recovered runs bucketed by grid cell, twice: by LOCAL key (the match
+/// key) and by untransformed ABSOLUTE baseline (where an untransformed run's
+/// capture lands). A lookup reads the 3 x 3 cells around a point, so matching
+/// costs ~one candidate per captured run instead of a scan of every
+/// recovered run (R comparisons per run, R^2 per render, before Wave 2).
+struct RunIndex {
+    by_local: std::collections::HashMap<(i32, i32), Vec<usize>>,
+    by_abs: std::collections::HashMap<(i32, i32), Vec<usize>>,
+}
+
+impl RunIndex {
+    fn new(recovered: &[RecoveredRun]) -> Self {
+        let mut by_local: std::collections::HashMap<(i32, i32), Vec<usize>> =
+            std::collections::HashMap::with_capacity(recovered.len());
+        let mut by_abs: std::collections::HashMap<(i32, i32), Vec<usize>> =
+            std::collections::HashMap::with_capacity(recovered.len());
+        for (i, rec) in recovered.iter().enumerate() {
+            by_local
+                .entry(run_cell(rec.local.x, rec.local.y))
+                .or_default()
+                .push(i);
+            by_abs
+                .entry(run_cell(rec.abs_x, rec.abs_y))
+                .or_default()
+                .push(i);
+        }
+        RunIndex { by_local, by_abs }
+    }
+
+    /// Every indexed run in the 3 x 3 cells around `(x, y)` of `map`.
+    fn around(
+        map: &std::collections::HashMap<(i32, i32), Vec<usize>>,
+        x: f32,
+        y: f32,
+    ) -> impl Iterator<Item = usize> + '_ {
+        let (cx, cy) = run_cell(x, y);
+        (-1..=1)
+            .flat_map(move |dy| (-1..=1).map(move |dx| (cx + dx, cy + dy)))
+            .filter_map(move |cell| map.get(&cell))
+            .flatten()
+            .copied()
+    }
+}
+
 /// Fill each captured `GlyphRun`'s empty `text` (and `family` hint) from
 /// the recovered runs.
 ///
@@ -920,14 +985,19 @@ fn recover_layout_runs(
 /// when a CSS transform (translate/scale/rotate/skew on the inline root)
 /// moved its painted baseline — no transform reconstruction. When several
 /// unused recovered runs share a local key (distinct inline roots that
-/// happen to start at the same local point), the captured run's PAINTED
-/// baseline disambiguates by nearest untransformed absolute baseline — exact
-/// for the untransformed roots (degrading to the prior baseline behaviour),
-/// and the honest remaining slice is several SIMULTANEOUSLY-transformed
-/// inline roots colliding on one local key (rare): the loser stays empty
-/// (the lowering then skips it), never a faked or misattached string. Each
-/// recovered run is consumed at most once.
+/// happen to start at the same local point — every table cell does), the
+/// captured run's PAINTED baseline disambiguates by nearest untransformed
+/// absolute baseline. The honest remaining slice is several
+/// SIMULTANEOUSLY-transformed inline roots colliding on one local key (rare):
+/// the loser stays empty (the lowering then skips it), never a faked or
+/// misattached string. Each recovered run is consumed at most once.
+///
+/// The candidates come from a [`RunIndex`], not a scan: first the runs whose
+/// absolute baseline sits at the captured run's painted baseline (every
+/// untransformed run — one candidate each); only when none matches the local
+/// key (a transformed inline root) the runs sharing its local-key cell.
 fn attach_run_texts(dl: &mut WebDisplayList, recovered: &[RecoveredRun]) {
+    let index = RunIndex::new(recovered);
     let mut used = vec![false; recovered.len()];
     for cmd in &mut dl.commands {
         let WebDrawCmd::GlyphRun(run) = cmd else {
@@ -935,29 +1005,48 @@ fn attach_run_texts(dl: &mut WebDisplayList, recovered: &[RecoveredRun]) {
         };
         // Best candidate: smallest local-key distance; ties (a local-key
         // collision) broken by nearest untransformed absolute baseline.
-        let mut best: Option<(usize, f32, f32)> = None;
-        perf::bump(Counter::RunMatchComparisons, recovered.len() as u64);
-        for (i, rec) in recovered.iter().enumerate() {
-            if used[i] {
-                continue;
-            }
-            let key_d = (rec.local.x - run.local_key.x).hypot(rec.local.y - run.local_key.y);
-            if key_d > RUN_MATCH_TOL_PT {
-                continue;
-            }
-            let abs_d = (rec.abs_x - run.baseline_x).hypot(rec.abs_y - run.baseline_y);
-            let better = match best {
-                None => true,
-                Some((_, bk, ba)) => {
-                    // Prefer a strictly closer local key; on a local-key tie,
-                    // prefer the nearer absolute baseline.
-                    key_d < bk - f32::EPSILON || ((key_d - bk).abs() <= f32::EPSILON && abs_d < ba)
+        let pick = |candidates: &mut dyn Iterator<Item = usize>| {
+            let mut best: Option<(usize, f32, f32)> = None;
+            let mut examined = 0u64;
+            for i in candidates {
+                examined += 1;
+                if used[i] {
+                    continue;
                 }
-            };
-            if better {
-                best = Some((i, key_d, abs_d));
+                let rec = &recovered[i];
+                let key_d = (rec.local.x - run.local_key.x).hypot(rec.local.y - run.local_key.y);
+                if key_d > RUN_MATCH_TOL_PT {
+                    continue;
+                }
+                let abs_d = (rec.abs_x - run.baseline_x).hypot(rec.abs_y - run.baseline_y);
+                let better = match best {
+                    None => true,
+                    Some((_, bk, ba)) => {
+                        // Prefer a strictly closer local key; on a local-key
+                        // tie, prefer the nearer absolute baseline.
+                        key_d < bk - f32::EPSILON
+                            || ((key_d - bk).abs() <= f32::EPSILON && abs_d < ba)
+                    }
+                };
+                if better {
+                    best = Some((i, key_d, abs_d));
+                }
             }
-        }
+            perf::bump(Counter::RunMatchComparisons, examined);
+            best
+        };
+        let best = pick(&mut RunIndex::around(
+            &index.by_abs,
+            run.baseline_x,
+            run.baseline_y,
+        ))
+        .or_else(|| {
+            pick(&mut RunIndex::around(
+                &index.by_local,
+                run.local_key.x,
+                run.local_key.y,
+            ))
+        });
         if let Some((i, _, _)) = best {
             used[i] = true;
             run.text = recovered[i].text.clone();

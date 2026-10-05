@@ -25,10 +25,11 @@
 //! count is the same on every machine; an optimisation lowers the pin in the
 //! commit that earns it, and a pin is never raised.
 //!
-//! The baseline shows the shapes Wave 2 attacks: a flow resolves and paints
-//! once PER FRAME, each paint covering the whole remainder (painted commands
-//! ~ frames x remaining content), and text recovery compares every captured
-//! run against every recovered run (run-match comparisons ~ R^2).
+//! The baseline (2026-10-05) showed the shapes Wave 2 attacks: a flow
+//! resolves and paints once PER FRAME, each paint covering the whole
+//! remainder (painted commands ~ frames x remaining content), and text
+//! recovery compared every captured run against every recovered run
+//! (run-match comparisons ~ R^2 — now ~R through an index).
 //!
 //! Run: `cargo test --features blitz,perf-counters --test perf_budgets`;
 //! `PERF_SHOW=1` (with `-- --nocapture`) prints the measured table.
@@ -201,10 +202,11 @@ fn styled_runs_200_in_one_frame__feat__plugin_web_perf_budgets() {
     check(&c, &STYLED_200);
 }
 
-/// The quadratic shapes, stated as relations between the measured runs so
-/// they read as the defect they are (Wave 2 turns these around).
+/// The work SHAPES, stated as relations between the pinned budgets so they
+/// read as the property they are (baseline 2026-10-05: per-frame flow work,
+/// R^2 run matching, a font context per call; Wave 2 turns them around).
 #[test]
-fn baseline_shapes_are_per_frame_and_quadratic__feat__plugin_web_perf_budgets() {
+fn work_shapes__feat__plugin_web_perf_budgets() {
     // Resolves per flow = frames (a full style + layout pass per frame).
     assert_eq!(ARTICLE_4.resolves, 4);
     assert_eq!(ARTICLE_12.resolves, 12);
@@ -213,10 +215,12 @@ fn baseline_shapes_are_per_frame_and_quadratic__feat__plugin_web_perf_budgets() 
     // Sum over frames of the remainder ~ C x (F + 1) / 2 for C commands.
     const { assert!(ARTICLE_4.painted_commands >= 2 * ARTICLE_1.painted_commands) };
     const { assert!(ARTICLE_12.painted_commands >= 5 * ARTICLE_1.painted_commands) };
-    // Run matching compares every captured run against every recovered run:
-    // the article's 200 line runs cost 200^2 comparisons, not ~200.
-    assert_eq!(ARTICLE_1.run_match_comparisons, 200 * 200);
-    const { assert!(STYLED_200.run_match_comparisons >= (STYLED_RUNS * STYLED_RUNS) as u64) };
+    // Run matching is LINEAR: an index answers each captured run with ~one
+    // candidate (the article's 200 line runs cost 200 comparisons; before
+    // Wave 2 they cost 200^2 = 40 000, the table 815 409).
+    assert_eq!(ARTICLE_1.run_match_comparisons, 200);
+    const { assert!(STYLED_200.run_match_comparisons <= 2 * STYLED_RUNS as u64) };
+    const { assert!(TABLE_300.run_match_comparisons <= 4 * TABLE_ROWS as u64) };
     // The font context is built once per engine, not per render call.
     assert_eq!(ARTICLE_12.font_context_builds, 0);
 }
@@ -339,7 +343,7 @@ const ARTICLE_1: Budget = Budget {
     paint_captures: 1,
     font_context_builds: 0,
     painted_commands: 243,
-    run_match_comparisons: 40000,
+    run_match_comparisons: 200,
     bytes_in: 8894,
     bytes_out: 58784,
 };
@@ -349,7 +353,7 @@ const ARTICLE_4: Budget = Budget {
     paint_captures: 4,
     font_context_builds: 0,
     painted_commands: 514,
-    run_match_comparisons: 60896,
+    run_match_comparisons: 417,
     bytes_in: 9023,
     bytes_out: 64594,
 };
@@ -359,7 +363,7 @@ const ARTICLE_12: Budget = Budget {
     paint_captures: 12,
     font_context_builds: 0,
     painted_commands: 1360,
-    run_match_comparisons: 150365,
+    run_match_comparisons: 1100,
     bytes_in: 9267,
     bytes_out: 78153,
 };
@@ -369,7 +373,7 @@ const TABLE_300: Budget = Budget {
     paint_captures: 1,
     font_context_builds: 0,
     painted_commands: 2121,
-    run_match_comparisons: 815409,
+    run_match_comparisons: 903,
     bytes_in: 15942,
     bytes_out: 814706,
 };
@@ -379,7 +383,7 @@ const STYLED_200: Budget = Budget {
     paint_captures: 1,
     font_context_builds: 0,
     painted_commands: 403,
-    run_match_comparisons: 159201,
+    run_match_comparisons: 399,
     bytes_in: 7722,
     bytes_out: 71303,
 };
