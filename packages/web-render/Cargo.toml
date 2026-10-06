@@ -73,7 +73,7 @@ blitz-traits = { version = "=0.3.0-alpha.4", optional = true }
 kurbo = { version = "0.13", optional = true }
 # Parley layout types (Layout / PositionedLayoutItem) for the DOM run-text
 # recovery walk — pinned to the version blitz-dom 0.3.0-alpha.4 re-exports.
-parley = { version = "0.9", optional = true }
+parley = { version = "0.9", default-features = false, features = ["std"], optional = true }
 peniko = { version = "0.6", optional = true }
 # Reads a shaped run's face family from its `name` table (the version parley
 # 0.9 already builds — no new compile).
