@@ -238,12 +238,6 @@ export function toPagedScript(ops: WireOp[], header: string): string {
           lines.push(set(`\`storyRange:\${${v}}@${el.id.start}..${el.id.end}\``, a.path, a.value));
         } else if (el.id === "$created" && created) {
           lines.push(set(created, a.path, a.value));
-        } else if (typeof el.id === "string" && elementVar.has(el.id) && a.path === "framePath") {
-          // `paged.set` cannot type a path geometry; the wire mutation can.
-          const v = elementVar.get(el.id)!;
-          lines.push(
-            `paged.batch([{ op: "setElementProperty", args: { elementId: { kind: ${lit(el.kind)}, id: ${v}.split(":")[1] }, path: "framePath", value: ${lit(a.value)} } }]);`,
-          );
         } else if (typeof el.id === "string" && elementVar.has(el.id)) {
           lines.push(set(elementVar.get(el.id)!, a.path, a.value));
         } else {
