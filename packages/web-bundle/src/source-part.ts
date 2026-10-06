@@ -47,7 +47,7 @@
 // source. The ones no label and no undo step can reach are dropped on save
 // by parts-gc.ts (ADR 410).
 
-import type { BundleHost, ElementId } from "@paged-media/plugin-api";
+import type { BundleHost, ElementId, PluginMetadataEnvelope } from "@paged-media/plugin-api";
 import {
   isWebFrameEnvelope,
   LABEL_INLINE_MAX_BYTES,
@@ -194,37 +194,94 @@ export async function writeWebSource(
 
 // ------------------------------------------------- document values
 
-/** The document's own value map for templates (`{{doc.<key>}}`) — one JSON
- *  object of strings in a container part. Parts are not undoable; the map is
- *  data the author sets beside the sources, not a source itself. */
+/** The document's own value map for templates (`{{doc.<key>}}`): one object
+ *  of strings in this plugin's DOCUMENT metadata (`document.documentMetadata@1`,
+ *  envelope `{ v: 1, data: { documentValues } }`) — one undoable step per
+ *  write, a document change every reader sees, kept by `.paged` and `.idml`.
+ *  It is the document's Label, not a frame's: frame sources live on the
+ *  frames' own labels under the same key, so the two never meet.
+ *
+ *  Before the door existed the map was a container part (not undoable, no
+ *  change event). That part is read only while the document has no metadata
+ *  for this plugin — a one-time migration: the first write carries its values
+ *  into the metadata, and from then on the part is never read. A host without
+ *  the door keeps using the part. */
 export const DOCUMENT_VALUES_PART = "web/document-values.json";
 
-/** Read the document value map (empty when absent, unreadable or the host
- *  has no container parts). */
-export async function readDocumentValues(host: PersistHost): Promise<Record<string, string>> {
+/** The version of this plugin's document metadata envelope. */
+export const DOCUMENT_METADATA_VERSION = 1;
+
+function hasDocumentMetadata(host: PersistHost): boolean {
+  return host.supports("document.documentMetadata@1");
+}
+
+/** The valid entries of a stored value map (names a template can write,
+ *  string or number values). */
+function valueMap(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (/^[A-Za-z_][A-Za-z0-9_.-]*$/.test(k) && (typeof v === "string" || typeof v === "number")) {
+      out[k] = String(v);
+    }
+  }
+  return out;
+}
+
+/** This plugin's document metadata envelope, or `null` (none yet, an older
+ *  engine, or a read that failed). */
+async function readDocumentEnvelope(host: PersistHost): Promise<PluginMetadataEnvelope | null> {
+  try {
+    return await host.document.getDocumentMetadata();
+  } catch {
+    return null;
+  }
+}
+
+/** The value map the old container part holds (empty when absent or
+ *  unreadable). */
+async function readValuesPart(host: PersistHost): Promise<Record<string, string>> {
   const text = await readPartText(host, DOCUMENT_VALUES_PART).catch(() => null);
   if (!text) return {};
   try {
-    const parsed = JSON.parse(text) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    const out: Record<string, string> = {};
-    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-      if (/^[A-Za-z_][A-Za-z0-9_.-]*$/.test(k) && (typeof v === "string" || typeof v === "number")) {
-        out[k] = String(v);
-      }
-    }
-    return out;
+    return valueMap(JSON.parse(text));
   } catch {
     return {};
   }
 }
 
-/** Write the document value map. Refused (with the reason) on a host
- *  without container parts. */
+/** Read the document value map (empty when absent or unreadable). */
+export async function readDocumentValues(host: PersistHost): Promise<Record<string, string>> {
+  if (hasDocumentMetadata(host)) {
+    const envelope = await readDocumentEnvelope(host);
+    if (envelope) return valueMap(envelope.data?.documentValues);
+  }
+  return readValuesPart(host);
+}
+
+/** Write the document value map: one undoable document-metadata write, or —
+ *  on a host without that door — the container part. Refused (with the
+ *  reason) when neither is available. */
 export async function writeDocumentValues(
   host: PersistHost,
   values: Record<string, string>,
 ): Promise<WriteOutcome> {
+  if (hasDocumentMetadata(host)) {
+    const current = await readDocumentEnvelope(host);
+    const envelope: PluginMetadataEnvelope = {
+      ...current,
+      v: DOCUMENT_METADATA_VERSION,
+      data: { ...current?.data, documentValues: values },
+    };
+    try {
+      const outcome = await host.document.setDocumentMetadata(envelope);
+      return outcome.applied
+        ? { applied: true }
+        : { applied: false, reason: describeRefusal(outcome.error) };
+    } catch (err) {
+      return { applied: false, reason: describeRefusal(err) };
+    }
+  }
   if (!host.supports("storage.parts@1")) {
     return { applied: false, reason: "this host has no container parts to keep document values in" };
   }
@@ -234,6 +291,12 @@ export async function writeDocumentValues(
   } catch (err) {
     return { applied: false, reason: describeRefusal(err) };
   }
+}
+
+/** Whether a document-value write raises a document change by itself (the
+ *  metadata door). A part write does not: the writer then re-renders. */
+export function documentValuesNotify(host: PersistHost): boolean {
+  return hasDocumentMetadata(host);
 }
 
 // ------------------------------------------------------- source resources

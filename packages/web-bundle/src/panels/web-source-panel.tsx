@@ -100,7 +100,13 @@ import {
 import { autoRendererFor } from "../auto-render";
 import { resolveBindings, watchProviders, type Bindings } from "../bindings";
 import { clearOutlineHighlight, highlightOutlineEntry, onCanvasPick } from "../outline-highlight";
-import { loadWebSource, readDocumentValues, writeDocumentValues, writeWebSource } from "../source-part";
+import {
+  documentValuesNotify,
+  loadWebSource,
+  readDocumentValues,
+  writeDocumentValues,
+  writeWebSource,
+} from "../source-part";
 import { createDraftSession, type DraftSession, type DraftStore } from "./draft-store";
 
 import { createDebouncer } from "./debounce";
@@ -699,7 +705,9 @@ function BoundData({
   host: BundleHost;
   names: string[];
   bindings: Bindings;
-  /** A document value was written (parts raise no document change). */
+  /** A document value was written to a host without the document metadata
+   *  door (a part write raises no document change; the metadata write does,
+   *  and that change refreshes the bindings and the canvas by itself). */
   onChanged(): void;
 }): ReactElement | null {
   const [values, setValues] = useState<Record<string, string>>({});
@@ -713,7 +721,7 @@ function BoundData({
     const current = await readDocumentValues(host);
     const out = await writeDocumentValues(host, { ...current, [key]: value });
     setNote(out.applied ? null : `not saved: ${out.reason ?? "refused"}`);
-    if (!out.applied) return;
+    if (!out.applied || documentValuesNotify(host)) return;
     onChanged();
     // The canvas re-renders the frames that name the value.
     void autoRendererFor(host)?.reconcile("change");
