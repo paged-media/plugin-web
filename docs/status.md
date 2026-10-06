@@ -1,7 +1,7 @@
 # Status
 
 What `paged.web` ships and what it does not, read from the code on 2026-10-06
-(`@paged-media/web` 0.1.0-canary.10, not yet published). How the parts fit is in
+(`@paged-media/web` 0.1.0-canary.11, not yet published). How the parts fit is in
 [`architecture.md`](architecture.md); the gaps against Chrome and InDesign, the test baseline
 and the performance reading are in [`design/analysis-2026-10-05.md`](design/analysis-2026-10-05.md).
 
@@ -41,8 +41,10 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
   undo step, kept by `.paged` and `.idml`, and the document change it raises re-renders the
   frames that name it. A document that kept its values in the container part
   `web/document-values.json` is read from there until the first change moves them into the
-  metadata; after that the part is not read. A host without the door keeps the part, which is
-  not undoable.
+  metadata; after that the part is not read, and the first save of a later session that opens
+  the document with its values in the metadata drops it (so an undo of the move in the session
+  that made it still finds the values; [ADR 410](adr/410-unreachable-source-parts-dropped-on-save.md)).
+  A host without the door keeps the part, which is not undoable.
 - **Import.** A `.html` or `.htm` file opens as a new web frame: `<style>` blocks become the
   CSS, the content of `<body>` becomes the HTML, and the sanitiser runs on it.
 - **Render to canvas.** Web frames render through the wasm engine to a scene layer by
@@ -63,7 +65,10 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
   not loaded. The bundled face and the document fonts the engine shapes with are also handed
   to the host's scene-layer face table (`host.assets.registerFont`), which only scene text
   sees — never the document's layout, its Fonts panel or preflight — and given back when the
-  plugin is deactivated. A host that draws scene text in its own face (protocol 68) reports
+  plugin is deactivated. So are the faces a source's own `@font-face` rules load (from a
+  container part or a `data:` URI): under the family the CSS declares and the face's own
+  family (the one a run shaped with it names), in the rule's weight and style, once per face;
+  a face no web frame used at its last render is given back after the next auto-render pass. A host that draws scene text in its own face (protocol 68) reports
   the faces it had to substitute, and every one is reported; on a host without the face door
   the bundled face's substitution is expected and not reported.
 - **Overflow policies.** clip; shrink to fit (laid out in a larger box and scaled into the
@@ -98,9 +103,10 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
 - **Fonts on the canvas.** A host before protocol 68 draws every scene text run in the
   document's default font, whatever face it was shaped in. A host at 68 draws the run in its
   family when the document has registered it or the plugin handed the face over (the bundled
-  Inter and the document fonts the source names, on a host with `assets.registerFont@1`). A
-  `@font-face` face loaded from the container is not handed over and is drawn in the default
-  font, and reported. Faces are registered with the engine once per engine instance; a font
+  Inter, the document fonts the source names and the source's `@font-face` faces, on a host with
+  `assets.registerFont@1`). A `@font-face` face the canvas cannot take is drawn in the default
+  font and reported: one held only as WOFF or WOFF2 (the canvas reads TrueType and OpenType), or
+  one over the per-face asset budget (8 MB). Faces are registered with the engine once per engine instance; a font
   served later under the same family is not picked up until the engine restarts.
 - **Paint that is not carried.** Image and pattern brushes, rotated or sheared images and
   gradient-painted text are dropped and counted, but `render_web_frame` returns only the
@@ -155,9 +161,9 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
   places the caret; on an older host a further click does. The caret and the outline highlight
   each draw on an overlay layer of their own (`overlay.layers@1`); an older host has only the
   shared tool-preview slot, where the two overwrite each other and the active tool's preview.
-- **Bound data** reads one record (the first) of a provider. Document values live in a
-  container part, which undo does not restore, and writing one raises no document change (the
-  panel re-renders the frames itself).
+- **Bound data** reads one record (the first) of a provider. On a host without the document
+  metadata door, document values live in a container part, which undo does not restore, and
+  writing one raises no document change (the panel re-renders the frames itself).
 - **Import** reads the one file. Linked stylesheets, images and fonts are not brought into
   the container, so they are reported as not loaded until they are stored there.
 
