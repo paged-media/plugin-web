@@ -27,6 +27,7 @@ import {
   faceDiagnostics,
   prepareEngineInputs,
   relativePath,
+  releaseSceneFaces,
   resourceDiagnostics,
   resourceUrls,
 } from "../src/engine-inputs";
@@ -45,14 +46,23 @@ function fakeEngine() {
     registerResource: (url, bytes) => void resources.set(url, bytes),
     hasResource: (url) => resources.has(url),
     takeResourceMisses: () => ["missing.png", "https://example.com/a.png"],
+    bundledFont: () => new Uint8Array(7),
   };
   return { engine, fonts, resources };
 }
 
-function fakeHost(parts: Record<string, string> = {}, faces: Record<string, number> = {}) {
+function fakeHost(
+  parts: Record<string, string> = {},
+  faces: Record<string, number> = {},
+  { sceneFaces = true }: { sceneFaces?: boolean } = {},
+) {
   const calls: string[] = [];
+  /** Live scene-layer faces the bundle registered: "family/style:bytes". */
+  const scene: string[] = [];
+  const caps = ["assets.fonts@1", "assets.images@1", "storage.parts@1"];
+  if (sceneFaces) caps.push("assets.registerFont@1");
   const host = {
-    supports: (cap: string) => ["assets.fonts@1", "assets.images@1", "storage.parts@1"].includes(cap),
+    supports: (cap: string) => caps.includes(cap),
     log: { debug() {}, info() {}, warn() {}, error() {} },
     assets: {
       getFontFace: async (family: string, style?: string) => {
@@ -64,6 +74,11 @@ function fakeHost(parts: Record<string, string> = {}, faces: Record<string, numb
         calls.push(`image:${id}`);
         return { bytes: new Uint8Array([9]), uri: "x", width: 1, height: 1 };
       },
+      registerFont: async (bytes: Uint8Array, family: string, style?: string) => {
+        const entry = `${family}/${style ?? ""}:${bytes.byteLength}`;
+        scene.push(entry);
+        return { dispose: () => void scene.splice(scene.indexOf(entry), 1) };
+      },
     },
     parts: {
       read: async (path: string) => {
@@ -72,7 +87,7 @@ function fakeHost(parts: Record<string, string> = {}, faces: Record<string, numb
       },
     },
   };
-  return { host: host as never, calls };
+  return { host: host as never, calls, scene };
 }
 
 describe("resource URLs @feat:plugin-web.resources", () => {
@@ -148,10 +163,43 @@ describe("faces @feat:plugin-web.web-fonts", () => {
     expect(calls).toEqual([]);
   });
 
-  it("font fallbacks from the submit reply become problems — not the bundled face", () => {
-    expect(faceDiagnostics(undefined)).toEqual([]);
-    expect(faceDiagnostics({ fontFallbacks: ["Inter", "Inter Bold", "Lora Italic"] }).map((d) => d.message)).toEqual([
+  it("hands the scene-layer face table the faces the engine shapes with: the bundled face and the document's, once per host", async () => {
+    const { engine } = fakeEngine();
+    const { host, scene } = fakeHost({}, { "Lora/": 100, "Lora/Bold": 120 });
+    const doc = "<style>h1{font-family:Lora, serif}</style><h1>T</h1>";
+    await prepareEngineInputs(host, engine, doc);
+    expect(scene).toEqual(["Inter/:7", "Lora/:100", "Lora/Bold:120"]);
+    // A second engine (a reload) shapes with the same faces; the host
+    // already has them.
+    await prepareEngineInputs(host, fakeEngine().engine, doc);
+    expect(scene).toHaveLength(3);
+    // A source naming no family still draws in the bundled face.
+    const other = fakeHost();
+    await prepareEngineInputs(other.host, fakeEngine().engine, "<p>plain</p>");
+    expect(other.scene).toEqual(["Inter/:7"]);
+    // Deactivation gives every face back.
+    await releaseSceneFaces(host);
+    expect(scene).toEqual([]);
+  });
+
+  it("font fallbacks from the submit reply become problems — the bundled face too, once the host has it", async () => {
+    expect(faceDiagnostics(undefined, {})).toEqual([]);
+    const reply = { fontFallbacks: ["Inter", "Inter Bold", "Lora Italic"] };
+    const { host } = fakeHost();
+    await prepareEngineInputs(host, fakeEngine().engine, "<p>x</p>");
+    expect(faceDiagnostics(reply, host).map((d) => d.message)).toEqual([
+      "font “Inter” is not in the document — the canvas draws it in the default font",
+      "font “Inter Bold” is not in the document — the canvas draws it in the default font",
       "font “Lora Italic” is not in the document — the canvas draws it in the default font",
     ]);
+  });
+
+  it("on a host that cannot take scene faces the bundled face's fallback stays expected", async () => {
+    const { host, scene } = fakeHost({}, {}, { sceneFaces: false });
+    await prepareEngineInputs(host, fakeEngine().engine, "<p>x</p>");
+    expect(scene).toEqual([]);
+    expect(
+      faceDiagnostics({ fontFallbacks: ["Inter", "Inter Bold", "Lora Italic"] }, host).map((d) => d.message),
+    ).toEqual(["font “Lora Italic” is not in the document — the canvas draws it in the default font"]);
   });
 });

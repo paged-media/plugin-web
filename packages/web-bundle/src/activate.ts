@@ -34,6 +34,7 @@ import {
 import manifest from "../manifest.json";
 
 import { startAutoRender } from "./auto-render";
+import { releaseSceneFaces } from "./engine-inputs";
 import { releaseOverlayLayers } from "./overlay-channel";
 import { startPartsCollector } from "./parts-gc";
 import { bakeSelectedWebFrame } from "./bake-to-document";
@@ -179,6 +180,7 @@ export function activate(host: BundleHost): BundleHandle {
       auto.dispose();
       menuSub.dispose();
       releaseOverlayLayers(host);
+      void releaseSceneFaces(host);
     },
   };
 }

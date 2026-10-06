@@ -31,13 +31,24 @@
 //     from the asset store's placed images. `data:` URIs the engine decodes
 //     itself. Each is registered once per engine.
 //
+// The canvas draws the engine's text items itself, resolving each family
+// through the host. So every face the engine shapes with — the bundled face
+// (the engine's fallback for every family nobody registered) and the
+// document faces above — is also handed to the host's scene-layer face table
+// (`host.assets.registerFont`, `assets.registerFont@1`), once per host. Those
+// faces reach scene-layer text only, never the document's layout, its Fonts
+// panel or preflight. They are given back on deactivation
+// (`releaseSceneFaces`).
+//
 // After a render the engine reports what did not load; `resourceDiagnostics`
 // turns that into problems. `faceDiagnostics` turns the host's submit reply
-// (`fontFallbacks`, protocol 68) into problems — except the bundled face,
-// which the plugin has no door to register with the host (it draws in the
-// document default face, which is that same face in a new document).
+// (`fontFallbacks`, protocol 68) into problems. With the bundled face in the
+// host's table every fallback is a real problem; on a host that cannot take
+// scene faces the bundled face's fallback is expected (it draws in the
+// document default face, which is that same face in a new document) and is
+// not reported.
 
-import type { BundleHost } from "@paged-media/plugin-api";
+import type { BundleHost, Disposable, SceneLayerSubmitResult } from "@paged-media/plugin-api";
 import { familiesUsed, type WebDiagnostic } from "../../web-model/src";
 
 import type { WebEngine } from "./engine-loader";
@@ -65,14 +76,98 @@ function stylesUsed(doc: string): (string | undefined)[] {
   return out;
 }
 
-/** Register the document faces the source names with the engine (once per
- *  engine per family and style). Needs `assets.fonts@1` and an engine that
- *  takes faces; otherwise nothing happens. */
+// ------------------------------------------------------ scene-layer faces
+
+/** The faces this bundle handed a host's scene-layer face table, per host:
+ *  `family\0style` → the registration (resolves `null` when refused). */
+const sceneFaces = new WeakMap<object, Map<string, Promise<Disposable | null>>>();
+
+function sceneFaceTable(host: object): Map<string, Promise<Disposable | null>> {
+  let table = sceneFaces.get(host);
+  if (!table) {
+    table = new Map();
+    sceneFaces.set(host, table);
+  }
+  return table;
+}
+
+/** Whether the host takes scene-layer faces (probed once per host). */
+const sceneFaceDoor = new WeakMap<object, boolean>();
+
+function takesSceneFaces(host: InputsHost): boolean {
+  let door = sceneFaceDoor.get(host);
+  if (door === undefined) {
+    door = host.supports("assets.registerFont@1");
+    sceneFaceDoor.set(host, door);
+  }
+  return door;
+}
+
+/** Hand one face to the host's scene-layer face table (once per host per
+ *  family and style). A host without the door, or one that refuses the face,
+ *  leaves scene text in its fallback face. */
+async function shareSceneFace(
+  host: InputsHost,
+  bytes: Uint8Array,
+  family: string,
+  style?: string,
+): Promise<void> {
+  if (!takesSceneFaces(host)) return;
+  const table = sceneFaceTable(host);
+  const key = faceKey(family, style);
+  if (table.has(key)) {
+    await table.get(key);
+    return;
+  }
+  const pending = host.assets.registerFont(bytes, family, style).catch((err: unknown) => {
+    host.log.warn(`web engine: the canvas cannot take the face ${family} ${style ?? ""}: ${String(err)}`);
+    return null;
+  });
+  table.set(key, pending);
+  await pending;
+}
+
+const faceKey = (family: string, style?: string) => `${family.toLowerCase()}\u0000${style ?? ""}`;
+
+/** Whether the host's scene-layer face table holds the bundled face. */
+async function bundledFaceShared(host: object): Promise<boolean> {
+  const pending = sceneFaces.get(host)?.get(faceKey(BUNDLED_FAMILY));
+  return pending !== undefined && (await pending) !== null;
+}
+
+const bundledShared = new WeakMap<object, boolean>();
+
+/** Hand the engine's bundled face to the host (once per host). */
+async function shareBundledFace(host: InputsHost, engine: WebEngine): Promise<void> {
+  if (!engine.bundledFont || !takesSceneFaces(host)) return;
+  if (!sceneFaceTable(host).has(faceKey(BUNDLED_FAMILY))) {
+    const bytes = engine.bundledFont();
+    if (!bytes || bytes.byteLength === 0) return;
+    await shareSceneFace(host, bytes, BUNDLED_FAMILY);
+  }
+  bundledShared.set(host, await bundledFaceShared(host));
+}
+
+/** Give back every face this bundle handed the host (deactivation).
+ *  Resolves once each registration has settled and been disposed. */
+export async function releaseSceneFaces(host: object): Promise<void> {
+  const table = sceneFaces.get(host);
+  if (!table) return;
+  sceneFaces.delete(host);
+  bundledShared.delete(host);
+  await Promise.all([...table.values()].map((pending) => pending.then((d) => d?.dispose())));
+}
+
+/** Register the faces the engine shapes with: the document faces the source
+ *  names (with the engine once per engine, with the host's scene-layer face
+ *  table once per host) and the bundled face (with the host). Needs
+ *  `assets.fonts@1` and an engine that takes faces for the document faces. */
 export async function registerSourceFaces(
   host: InputsHost,
   engine: WebEngine,
   doc: string,
 ): Promise<void> {
+  await shareBundledFace(host, engine);
   if (!engine.registerFont || !host.supports("assets.fonts@1")) return;
   const families = familiesUsed(doc);
   if (families.length === 0) return;
@@ -89,7 +184,10 @@ export async function registerSourceFaces(
       asked.add(key);
       try {
         const face = await host.assets.getFontFace(family, style);
-        if (face && face.bytes.byteLength > 0) engine.registerFont(face.bytes, family);
+        if (face && face.bytes.byteLength > 0) {
+          engine.registerFont(face.bytes, family);
+          await shareSceneFace(host, face.bytes, family, style);
+        }
       } catch (err) {
         host.log.debug(`web engine: no face for ${family} ${style ?? ""}: ${String(err)}`);
       }
@@ -228,19 +326,25 @@ export function resourceDiagnostics(engine: WebEngine): WebDiagnostic[] {
   }));
 }
 
-/** Whether a reported fallback names the bundled face (expected: the plugin
- *  cannot register it with the host, and the default face draws it). */
+/** Whether a reported fallback names the bundled face. */
 function isBundledFace(face: string): boolean {
   return face === BUNDLED_FAMILY || face.startsWith(`${BUNDLED_FAMILY} `);
 }
 
 /** The faces the host drew in its default font (the protocol-68 submit
- *  reply), as problems. Read defensively: an older host answers nothing. */
-export function faceDiagnostics(reply: unknown): WebDiagnostic[] {
-  const raw = (reply as { fontFallbacks?: unknown } | null | undefined)?.fontFallbacks;
+ *  reply), as problems. Read defensively: an older host answers nothing.
+ *  The bundled face's fallback is a problem only once `host` holds it in its
+ *  scene-layer face table (a host without the door draws it in the default
+ *  face, which is the same face in a new document). */
+export function faceDiagnostics(
+  reply: Partial<SceneLayerSubmitResult> | void | null | undefined,
+  host: object,
+): WebDiagnostic[] {
+  const raw: unknown = reply?.fontFallbacks;
   const fallbacks = Array.isArray(raw) ? raw.filter((f): f is string => typeof f === "string") : [];
+  const bundledExpected = bundledShared.get(host) !== true;
   return fallbacks
-    .filter((f) => !isBundledFace(f))
+    .filter((f) => !(bundledExpected && isBundledFace(f)))
     .map((face) => ({
       severity: "warning" as const,
       message: `font “${face}” is not in the document — the canvas draws it in the default font`,
