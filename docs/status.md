@@ -1,7 +1,7 @@
 # Status
 
-What `paged.web` ships and what it does not, read from the code on 2026-10-05
-(`@paged-media/web` 0.1.0-canary.9, not yet published). How the parts fit is in
+What `paged.web` ships and what it does not, read from the code on 2026-10-06
+(`@paged-media/web` 0.1.0-canary.10, not yet published). How the parts fit is in
 [`architecture.md`](architecture.md); the gaps against Chrome and InDesign, the test baseline
 and the performance reading are in [`design/analysis-2026-10-05.md`](design/analysis-2026-10-05.md).
 
@@ -36,7 +36,13 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
   document value map, set in the panel), `{{frame.page}}` and `{{data.<field>}}` /
   `{{data.<provider>.<field>}}` (the first record of a `dataset` data provider, which paged.data
   publishes). The panel lists the bound names a draft uses with their values; every render
-  substitutes them, and the canvas re-renders when a value changes.
+  substitutes them, and the canvas re-renders when a value changes. The document value map is
+  kept in the plugin's document metadata (`document.documentMetadata@1`): each change is one
+  undo step, kept by `.paged` and `.idml`, and the document change it raises re-renders the
+  frames that name it. A document that kept its values in the container part
+  `web/document-values.json` is read from there until the first change moves them into the
+  metadata; after that the part is not read. A host without the door keeps the part, which is
+  not undoable.
 - **Import.** A `.html` or `.htm` file opens as a new web frame: `<style>` blocks become the
   CSS, the content of `<body>` becomes the HTML, and the sanitiser runs on it.
 - **Render to canvas.** Web frames render through the wasm engine to a scene layer by
@@ -54,8 +60,12 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
   Images (`<img>`, CSS backgrounds), linked stylesheets and `@font-face` sources load from
   the container part `resources/<path>`, from `data:` URIs, or (`paged-image:<element id>`)
   from the document's placed images; anything else, network URLs included, is reported as
-  not loaded. A host that draws scene text in its own face (protocol 68) reports the faces
-  it had to substitute, and those are reported too, except the bundled face.
+  not loaded. The bundled face and the document fonts the engine shapes with are also handed
+  to the host's scene-layer face table (`host.assets.registerFont`), which only scene text
+  sees — never the document's layout, its Fonts panel or preflight — and given back when the
+  plugin is deactivated. A host that draws scene text in its own face (protocol 68) reports
+  the faces it had to substitute, and every one is reported; on a host without the face door
+  the bundled face's substitution is expected and not reported.
 - **Overflow policies.** clip; shrink to fit (laid out in a larger box and scaled into the
   frame); grow frame (the frame's height follows the content, one undoable resize, never
   redone after an undo); continue into thread (the flow; on an unthreaded frame it clips and
@@ -87,10 +97,11 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
   export. Flatten ("Bake") lays out at the frame's size and ignores the overflow policy.
 - **Fonts on the canvas.** A host before protocol 68 draws every scene text run in the
   document's default font, whatever face it was shaped in. A host at 68 draws the run in its
-  family when the document has registered it; the plugin has no door to register a face with
-  the host, so the bundled Inter and any `@font-face` face are drawn in the default font
-  there. Faces are registered with the engine once per engine instance; a font served later
-  under the same family is not picked up until the engine restarts.
+  family when the document has registered it or the plugin handed the face over (the bundled
+  Inter and the document fonts the source names, on a host with `assets.registerFont@1`). A
+  `@font-face` face loaded from the container is not handed over and is drawn in the default
+  font, and reported. Faces are registered with the engine once per engine instance; a font
+  served later under the same family is not picked up until the engine restarts.
 - **Paint that is not carried.** Image and pattern brushes, rotated or sheared images and
   gradient-painted text are dropped and counted, but `render_web_frame` returns only the
   layer, so the count does not reach the user. Clip shapes, layer opacity and the spread of
