@@ -38,7 +38,8 @@
   },
   "contributes": {
     "panels": [
-      "media.paged.web.panel.source"
+      "media.paged.web.panel.source",
+      "media.paged.web.panel.properties"
     ],
     "commands": [
       "media.paged.web.command.insertWebFrame",

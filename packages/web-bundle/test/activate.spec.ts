@@ -127,7 +127,7 @@ describe("webBundle.activate", () => {
       storage: mapBacking(),
       shell: { openPanel() {}, closePanel() {}, async pickFile() { return []; } },
     });
-    expect(fake.panels.ids()).toEqual(["media.paged.web.panel.source"]);
+    expect(fake.panels.ids()).toEqual(["media.paged.web.panel.source", "media.paged.web.panel.properties"]);
     // W-01 — the bake-path "Render web frame to canvas" command joins the
     // insert command (the honest not-loaded affordance); ADR-020 rung 2 adds
     // the flow commands (thread a source across frames + render the flow).

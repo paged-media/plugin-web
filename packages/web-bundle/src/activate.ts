@@ -29,6 +29,7 @@ import {
   contributeEditContext,
   contributeObjectType,
   contributePanel,
+  contributeSchemaPanel,
 } from "@paged-media/plugin-sdk";
 
 import manifest from "../manifest.json";
@@ -53,6 +54,11 @@ import { createInFrameEditSession } from "./in-frame-edit";
 import { createDraftSession } from "./panels/draft-store";
 import { makeWebSourcePanel } from "./panels/web-source-panel";
 import { contributeObjectModel } from "./object-model";
+import {
+  PROPERTIES_PANEL_ID,
+  WEB_PROPERTIES_PANEL,
+  publishPropertyLists,
+} from "./panels/properties-panel";
 
 const PANEL_ID = "media.paged.web.panel.source";
 
@@ -167,6 +173,19 @@ export function activate(host: BundleHost): BundleHandle {
   // variables addressable from scripts, the CLI, bindings and schema-driven
   // fields through `host.objects`, plus the seven commands typed. Headless.
   const objectModel = contributeObjectModel(host);
+  // ADR 323 — the object properties as host-rendered PropertyFields (a
+  // schema panel of property rows; needs the object model + bindings).
+  const propertyLists =
+    objectModel && host.supports("contribute.schemaPanel@1")
+      ? (contributeSchemaPanel(host, {
+          id: PROPERTIES_PANEL_ID,
+          title: WEB_PROPERTIES_PANEL.title,
+          icon: WEB_PROPERTIES_PANEL.icon,
+          defaultDock: "right",
+          schema: WEB_PROPERTIES_PANEL,
+        }),
+        publishPropertyLists(host))
+      : null;
   host.log.info(`activated (apiVersion ${manifest.apiVersion})`);
 
   // F1 — the menu bar. Before plugin-api 0.2.33 there was no menu door,
@@ -181,6 +200,7 @@ export function activate(host: BundleHost): BundleHandle {
     dispose() {
       collector.dispose();
       auto.dispose();
+      propertyLists?.dispose();
       objectModel?.dispose();
       menuSub.dispose();
     },

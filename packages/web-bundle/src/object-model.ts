@@ -276,6 +276,11 @@ function webFrameKind(host: BundleHost): ObjectKindContribution {
       const { frames } = await webFrames(host);
       let ids = [...frames.keys()];
       const within = query.within ? parseAddress(query.within) : null;
+      // A page item scope (`<frame> > webFrame`, a panel's selection):
+      // that frame's web frame, if it is one.
+      if (within && (within.kind === "item" || within.kind === "frame")) {
+        return frames.has(within.id) ? [webAddress("webFrame", within.id)] : [];
+      }
       if (within && within.kind !== "doc") {
         const pageId =
           within.kind === "page" ? within.id : within.kind === "pageIndex" ? await resolvePage(host, query.within!) : null;
