@@ -1,7 +1,7 @@
 {
   "id": "media.paged.web",
   "name": "paged.web",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "apiVersion": "^0.2",
   "publisher": "paged.media",
   "capabilities": {
@@ -71,6 +71,496 @@
     ],
     "importers": [
       "media.paged.web.importer.html"
-    ]
+    ],
+    "objectModel": {
+      "kinds": [
+        {
+          "kind": "webFrame",
+          "title": "Web frame",
+          "schema": [
+            {
+              "path": "html",
+              "type": {
+                "kind": "text",
+                "multiline": true
+              },
+              "title": "HTML",
+              "summary": "The frame's HTML lane."
+            },
+            {
+              "path": "css",
+              "type": {
+                "kind": "text",
+                "multiline": true
+              },
+              "title": "CSS",
+              "summary": "The frame's CSS lane."
+            },
+            {
+              "path": "media",
+              "type": {
+                "kind": "enum",
+                "members": [
+                  "print",
+                  "screen"
+                ]
+              },
+              "default": "print",
+              "title": "Media",
+              "summary": "The CSS media the frame renders under."
+            },
+            {
+              "path": "overflow",
+              "type": {
+                "kind": "enum",
+                "members": [
+                  "clip",
+                  "shrink",
+                  "grow",
+                  "thread"
+                ]
+              },
+              "default": "clip",
+              "title": "Overflow",
+              "summary": "What happens to content taller than the frame."
+            },
+            {
+              "path": "viewportWidth",
+              "type": {
+                "kind": "number",
+                "integer": true
+              },
+              "nullable": true,
+              "access": "readOnly",
+              "title": "Viewport width",
+              "summary": "Layout width in CSS px from older documents: kept, no longer laid out at."
+            },
+            {
+              "path": "vars",
+              "type": {
+                "kind": "map",
+                "of": {
+                  "kind": "text"
+                },
+                "keyPattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+              },
+              "nullable": true,
+              "title": "Template variables",
+              "summary": "The source's own {{name}} values; null turns the template pass off."
+            },
+            {
+              "path": "flow",
+              "type": {
+                "kind": "list",
+                "of": {
+                  "kind": "struct",
+                  "fields": {
+                    "frame": {
+                      "kind": "ref",
+                      "to": "frame"
+                    },
+                    "flow": {
+                      "kind": "text"
+                    }
+                  }
+                }
+              },
+              "title": "Flow chain",
+              "summary": "The frames the source threads into, in order; flow \"\" is the primary flow, a name routes to that flow-into."
+            },
+            {
+              "path": "frame",
+              "type": {
+                "kind": "ref",
+                "to": "frame"
+              },
+              "access": "readOnly",
+              "title": "Frame",
+              "summary": "The page item that hosts the web frame."
+            },
+            {
+              "path": "storage",
+              "type": {
+                "kind": "enum",
+                "members": [
+                  "inline",
+                  "part"
+                ]
+              },
+              "access": "derived",
+              "title": "Storage",
+              "summary": "Where the source lives: inline in the frame's label, or in a container part the label points at."
+            },
+            {
+              "path": "boundNames",
+              "type": {
+                "kind": "list",
+                "of": {
+                  "kind": "text"
+                }
+              },
+              "access": "derived",
+              "title": "Bound values",
+              "summary": "The {{doc.*}} / {{frame.*}} / {{data.*}} names the source uses."
+            },
+            {
+              "path": "cssVars",
+              "type": {
+                "kind": "list",
+                "of": {
+                  "kind": "text"
+                }
+              },
+              "access": "derived",
+              "title": "CSS variables",
+              "summary": "The custom properties the css lane declares."
+            }
+          ]
+        },
+        {
+          "kind": "templateVar",
+          "title": "Template value",
+          "schema": [
+            {
+              "path": "name",
+              "type": {
+                "kind": "text"
+              },
+              "access": "readOnly",
+              "title": "Name",
+              "summary": "The placeholder name a source writes inside {{ }}."
+            },
+            {
+              "path": "scope",
+              "type": {
+                "kind": "enum",
+                "members": [
+                  "doc",
+                  "data"
+                ]
+              },
+              "access": "readOnly",
+              "title": "Scope",
+              "summary": "doc: the document (title, pages, its value map); data: a dataset provider's first record."
+            },
+            {
+              "path": "value",
+              "type": {
+                "kind": "text"
+              },
+              "nullable": true,
+              "title": "Value",
+              "summary": "The value templates substitute. Writable for doc.<key> (the document value map; null removes the key); doc.title, doc.pages and data.* are read from the document and the provider."
+            },
+            {
+              "path": "writable",
+              "type": {
+                "kind": "bool"
+              },
+              "access": "derived",
+              "title": "Writable"
+            },
+            {
+              "path": "usedBy",
+              "type": {
+                "kind": "list",
+                "of": {
+                  "kind": "ref",
+                  "to": "plugin:media.paged.web/webFrame"
+                }
+              },
+              "access": "derived",
+              "title": "Used by",
+              "summary": "The web frames whose source names this value."
+            }
+          ]
+        },
+        {
+          "kind": "cssVar",
+          "title": "CSS variable",
+          "schema": [
+            {
+              "path": "name",
+              "type": {
+                "kind": "text"
+              },
+              "access": "readOnly",
+              "title": "Name"
+            },
+            {
+              "path": "value",
+              "type": {
+                "kind": "text"
+              },
+              "title": "Value",
+              "summary": "The value of the first declaration of the property in the css lane; a set splices that one value and leaves the rest of the source as written (a property the source does not declare is added as a :root rule)."
+            },
+            {
+              "path": "declarations",
+              "type": {
+                "kind": "number",
+                "integer": true
+              },
+              "access": "derived",
+              "title": "Declarations",
+              "summary": "How many declarations of the property the css lane holds."
+            },
+            {
+              "path": "context",
+              "type": {
+                "kind": "text"
+              },
+              "access": "derived",
+              "title": "Rule",
+              "summary": "The rule (and at-rules) around the first declaration, e.g. \"@media print > :root\"."
+            },
+            {
+              "path": "important",
+              "type": {
+                "kind": "bool"
+              },
+              "access": "derived",
+              "title": "Important"
+            },
+            {
+              "path": "frame",
+              "type": {
+                "kind": "ref",
+                "to": "plugin:media.paged.web/webFrame"
+              },
+              "access": "readOnly",
+              "title": "Web frame"
+            }
+          ]
+        }
+      ],
+      "commands": [
+        {
+          "id": "media.paged.web.command.insertWebFrame",
+          "title": "Insert web frame",
+          "args": {
+            "kind": "struct",
+            "fields": {
+              "page": {
+                "kind": "ref",
+                "to": "page"
+              },
+              "bounds": {
+                "kind": "bounds"
+              },
+              "html": {
+                "kind": "text",
+                "multiline": true
+              },
+              "css": {
+                "kind": "text",
+                "multiline": true
+              }
+            }
+          },
+          "result": {
+            "kind": "struct",
+            "fields": {
+              "webFrame": {
+                "kind": "ref",
+                "to": "plugin:media.paged.web/webFrame"
+              },
+              "frame": {
+                "kind": "ref",
+                "to": "frame"
+              }
+            }
+          }
+        },
+        {
+          "id": "media.paged.web.command.renderWebFrame",
+          "title": "Render web frame to canvas",
+          "args": {
+            "kind": "struct",
+            "fields": {
+              "frame": {
+                "kind": "ref",
+                "to": "frame"
+              }
+            }
+          },
+          "result": {
+            "kind": "struct",
+            "fields": {
+              "rendered": {
+                "kind": "bool"
+              },
+              "submitted": {
+                "kind": "bool"
+              },
+              "diagnostics": {
+                "kind": "list",
+                "of": {
+                  "kind": "text"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "media.paged.web.command.renderWebFlow",
+          "title": "Render web flow across frames",
+          "args": {
+            "kind": "struct",
+            "fields": {
+              "frame": {
+                "kind": "ref",
+                "to": "frame"
+              }
+            }
+          },
+          "result": {
+            "kind": "struct",
+            "fields": {
+              "rendered": {
+                "kind": "bool"
+              },
+              "submitted": {
+                "kind": "number",
+                "integer": true
+              },
+              "overset": {
+                "kind": "bool"
+              },
+              "diagnostics": {
+                "kind": "list",
+                "of": {
+                  "kind": "text"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "media.paged.web.command.threadWebFlow",
+          "title": "Thread web flow into frames",
+          "args": {
+            "kind": "struct",
+            "fields": {
+              "frame": {
+                "kind": "ref",
+                "to": "frame"
+              },
+              "targets": {
+                "kind": "list",
+                "of": {
+                  "kind": "ref",
+                  "to": "frame"
+                }
+              },
+              "flow": {
+                "kind": "text"
+              }
+            }
+          },
+          "result": {
+            "kind": "struct",
+            "fields": {
+              "added": {
+                "kind": "number",
+                "integer": true
+              }
+            }
+          }
+        },
+        {
+          "id": "media.paged.web.command.unthreadWebFlow",
+          "title": "Unthread web flow from frames",
+          "args": {
+            "kind": "struct",
+            "fields": {
+              "frame": {
+                "kind": "ref",
+                "to": "frame"
+              },
+              "targets": {
+                "kind": "list",
+                "of": {
+                  "kind": "ref",
+                  "to": "frame"
+                }
+              }
+            }
+          },
+          "result": {
+            "kind": "struct",
+            "fields": {
+              "removed": {
+                "kind": "number",
+                "integer": true
+              }
+            }
+          }
+        },
+        {
+          "id": "media.paged.web.command.threadWebFlowNamed",
+          "title": "Thread web flow into the named flow",
+          "args": {
+            "kind": "struct",
+            "fields": {
+              "frame": {
+                "kind": "ref",
+                "to": "frame"
+              },
+              "targets": {
+                "kind": "list",
+                "of": {
+                  "kind": "ref",
+                  "to": "frame"
+                }
+              }
+            }
+          },
+          "result": {
+            "kind": "struct",
+            "fields": {
+              "flow": {
+                "kind": "text"
+              },
+              "added": {
+                "kind": "number",
+                "integer": true
+              }
+            }
+          }
+        },
+        {
+          "id": "media.paged.web.command.bakeWebFrame",
+          "title": "Bake web frame to document",
+          "args": {
+            "kind": "struct",
+            "fields": {
+              "frame": {
+                "kind": "ref",
+                "to": "frame"
+              }
+            }
+          },
+          "result": {
+            "kind": "struct",
+            "fields": {
+              "baked": {
+                "kind": "bool"
+              },
+              "created": {
+                "kind": "number",
+                "integer": true
+              },
+              "diagnostics": {
+                "kind": "list",
+                "of": {
+                  "kind": "text"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
   }
 }

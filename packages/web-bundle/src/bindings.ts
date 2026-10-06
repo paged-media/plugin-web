@@ -61,17 +61,16 @@ function providersOf(host: BundleHost) {
   }
 }
 
-/** Resolve the bound values a source can name, for the frame `id`. Never
- *  throws: a door that is missing or refuses leaves its values out (the
- *  template pass then reports the unknown name). */
-export async function resolveBindings(
+/** The document- and data-scoped bound values (`doc.*`, `data.*`) — every
+ *  value that does not depend on a frame — and the provider revisions they
+ *  were read at. Never throws: a door that is missing or refuses leaves its
+ *  values out. Shared by the render (below) and the object model's
+ *  `templateVar` kind. */
+export async function resolveDocumentVars(
   host: BundleHost,
-  id: ElementId,
-  source: Pick<WebFrameSource, "html" | "css">,
-): Promise<Bindings> {
-  if (!referencesBoundData(source)) return NONE;
+): Promise<{ vars: TemplateVars; revisions: string[] }> {
   const vars: TemplateVars = {};
-  const parts: string[] = [];
+  const revisions: string[] = [];
   try {
     const meta = await host.document.meta();
     vars["doc.title"] = meta.documentName ?? "";
@@ -87,21 +86,10 @@ export async function resolveBindings(
   } catch {
     // no parts
   }
-  try {
-    const [geo] = await host.document.elementGeometry([id]);
-    const pageId = geo?.pageId ?? null;
-    if (pageId) {
-      const pages = await host.document.collection<{ selfId: string; index: number }>("pages");
-      const page = pages.find((p) => p.selfId === pageId);
-      if (page) vars["frame.page"] = String(page.index);
-    }
-  } catch {
-    // no geometry
-  }
   const providers = providersOf(host);
   for (let i = 0; i < providers.length; i += 1) {
     const info = providers[i];
-    parts.push(`${info.id}@${info.revision}`);
+    revisions.push(`${info.id}@${info.revision}`);
     try {
       const snap = await host.dataProviders.get(info.id);
       if (!snap || snap.records.rowCount < 1) continue;
@@ -115,7 +103,31 @@ export async function resolveBindings(
       // the provider went away
     }
   }
-  const key = JSON.stringify([vars, parts]);
+  return { vars, revisions };
+}
+
+/** Resolve the bound values a source can name, for the frame `id`. Never
+ *  throws: a door that is missing or refuses leaves its values out (the
+ *  template pass then reports the unknown name). */
+export async function resolveBindings(
+  host: BundleHost,
+  id: ElementId,
+  source: Pick<WebFrameSource, "html" | "css">,
+): Promise<Bindings> {
+  if (!referencesBoundData(source)) return NONE;
+  const { vars, revisions } = await resolveDocumentVars(host);
+  try {
+    const [geo] = await host.document.elementGeometry([id]);
+    const pageId = geo?.pageId ?? null;
+    if (pageId) {
+      const pages = await host.document.collection<{ selfId: string; index: number }>("pages");
+      const page = pages.find((p) => p.selfId === pageId);
+      if (page) vars["frame.page"] = String(page.index);
+    }
+  } catch {
+    // no geometry
+  }
+  const key = JSON.stringify([vars, revisions]);
   return { vars, key };
 }
 

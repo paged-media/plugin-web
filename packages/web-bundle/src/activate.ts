@@ -16,7 +16,7 @@
  *  @license    AGPL-3.0-only OR Paged Media Enterprise License (PMEL)
  */
 
-// The paged.web bundle entry: the seven commands (insert, render frame,
+// The paged.web bundle entry: the object model (ADR 323), the seven commands (insert, render frame,
 // render flow, thread / unthread / thread-named, bake), the "Web frame"
 // source panel, the webFrame object type + edit context (double-click
 // opens the panel), the .html importer and the menu. Rendering is the
@@ -52,6 +52,7 @@ import { sourceFromHtmlFile } from "../../web-model/src";
 import { createInFrameEditSession } from "./in-frame-edit";
 import { createDraftSession } from "./panels/draft-store";
 import { makeWebSourcePanel } from "./panels/web-source-panel";
+import { contributeObjectModel } from "./object-model";
 
 const PANEL_ID = "media.paged.web.panel.source";
 
@@ -162,6 +163,10 @@ export function activate(host: BundleHost): BundleHandle {
       },
     });
   }
+  // ADR 323 — the object model: web frames, bound template values and CSS
+  // variables addressable from scripts, the CLI, bindings and schema-driven
+  // fields through `host.objects`, plus the seven commands typed. Headless.
+  const objectModel = contributeObjectModel(host);
   host.log.info(`activated (apiVersion ${manifest.apiVersion})`);
 
   // F1 — the menu bar. Before plugin-api 0.2.33 there was no menu door,
@@ -176,6 +181,7 @@ export function activate(host: BundleHost): BundleHandle {
     dispose() {
       collector.dispose();
       auto.dispose();
+      objectModel?.dispose();
       menuSub.dispose();
     },
   };

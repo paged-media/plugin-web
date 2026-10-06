@@ -15,6 +15,16 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
   On save, container parts that no label names and that no undo step of the session can
   reach are dropped ([ADR 410](adr/410-unreachable-source-parts-dropped-on-save.md); needs the
   engine's delete door, protocol 66).
+- **Object model** ([ADR 413](adr/413-object-model-and-document-values-in-the-document-label.md),
+  on the `om/object-model` branch, needs plugin-api 0.2.42). Web frames
+  (`webFrame`: html, css, media, overflow, vars, flow), bound template values
+  (`templateVar`: `doc.<key>` writable, `doc.title`/`doc.pages`/`data.*` read-only) and CSS
+  custom properties (`cssVar`, a splice over the css lane) are addressable through
+  `host.objects`; every write is one undo step. The seven commands are also typed (address
+  arguments, typed results, headless). Document values now live in the document label (the
+  old container part is still read). Not yet: the panel's own fields are listed for the
+  shared `PropertyField` (`PANEL_FIELDS`) but the panel still renders its own controls;
+  `{{frame.page}}` is not an object.
 - **Source panel.** HTML and CSS editors, a sandboxed browser preview at the frame's content
   size (following resizes and undo) refreshed 300 ms after typing stops, an HTML linter, font diagnostics, template variables (`{{name}}` plus four
   filters), a tag outline, sanitised clipboard paste, an explicit "Save to document", and a

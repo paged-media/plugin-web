@@ -47,7 +47,7 @@
 // source. The ones no label and no undo step can reach are dropped on save
 // by parts-gc.ts (ADR 410).
 
-import type { BundleHost, ElementId } from "@paged-media/plugin-api";
+import type { BundleHost, ElementId, MutationInput, PartChange } from "@paged-media/plugin-api";
 import {
   isWebFrameEnvelope,
   LABEL_INLINE_MAX_BYTES,
@@ -192,39 +192,128 @@ export async function writeWebSource(
     : { applied: false, reason: describeRefusal(outcome.error) };
 }
 
+/** A source write PLANNED, not applied — what the object model (ADR 323)
+ *  hands the object registry, which commits the label inside ONE engine
+ *  batch with everything else the batch carries. `parts` are the
+ *  content-addressed parts the label points at (empty for an inline
+ *  source); the registry writes them first, and they are recorded as
+ *  written this session so the collector keeps every state an undo can
+ *  return to. */
+export interface PlannedSourceWrite {
+  /** The label value (`JSON.stringify` of the envelope). */
+  labelValue: string;
+  parts: PartChange[];
+}
+
+export function planSourceWrite(
+  host: PersistHost,
+  source: WebFrameSource,
+): PlannedSourceWrite | { refused: string } {
+  const stored = storeSource(source);
+  if (stored.kind === "inline") return { labelValue: JSON.stringify(stored.label), parts: [] };
+  if (!host.supports("storage.parts@1")) {
+    const kib = Math.ceil(stored.ref.bytes / 1024);
+    return {
+      refused:
+        `the web source is ${kib} KiB; a document label holds at most 64 KiB ` +
+        "and this host has no container parts to store it in",
+    };
+  }
+  const path = sourcePartPath(stored.ref);
+  partsWrittenThisSession(host).add(path);
+  return {
+    labelValue: JSON.stringify(stored.label),
+    parts: [{ path, bytes: new TextEncoder().encode(stored.partText) }],
+  };
+}
+
 // ------------------------------------------------- document values
 
-/** The document's own value map for templates (`{{doc.<key>}}`) — one JSON
- *  object of strings in a container part. Parts are not undoable; the map is
- *  data the author sets beside the sources, not a source itself. */
+/** The document's own value map for templates (`{{doc.<key>}}`). It lives
+ *  in the DOCUMENT label (`x-paged:media.paged.web` on the designmap,
+ *  protocol 69): undoable, written in one batch with anything else, and kept
+ *  by InDesign (ADR 559 — document-scope state goes in the designmap label).
+ *  Documents written before that kept it in this container part, which is
+ *  still READ when the document carries no label map. */
 export const DOCUMENT_VALUES_PART = "web/document-values.json";
 
-/** Read the document value map (empty when absent, unreadable or the host
- *  has no container parts). */
+/** The document label's envelope version. */
+export const DOCUMENT_LABEL_VERSION = 1;
+
+/** This plugin's metadata key — the host derives the same (`x-paged:<id>`). */
+const LABEL_KEY = "x-paged:media.paged.web";
+const PLUGIN_ID = "media.paged.web";
+
+/** A valid document-value key (`{{doc.<key>}}`). */
+export const DOCUMENT_VALUE_KEY = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
+
+function sanitizeValues(parsed: unknown): Record<string, string> | null {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+    if (DOCUMENT_VALUE_KEY.test(k) && (typeof v === "string" || typeof v === "number")) {
+      out[k] = String(v);
+    }
+  }
+  return out;
+}
+
+/** The value map the document LABEL carries, or `null` when it carries none
+ *  (no label, an older engine, or a label without a map). */
+async function readLabelValues(host: PersistHost): Promise<Record<string, string> | null> {
+  if (!host.supports("document.documentMetadata@1")) return null;
+  try {
+    const env = await host.document.getDocumentMetadata();
+    const values = (env?.data as { values?: unknown } | undefined)?.values;
+    return values === undefined ? null : sanitizeValues(values);
+  } catch {
+    return null;
+  }
+}
+
+/** Read the document value map (empty when absent or unreadable): the
+ *  document label's map, else the legacy container part's. */
 export async function readDocumentValues(host: PersistHost): Promise<Record<string, string>> {
+  const fromLabel = await readLabelValues(host);
+  if (fromLabel) return fromLabel;
   const text = await readPartText(host, DOCUMENT_VALUES_PART).catch(() => null);
   if (!text) return {};
   try {
-    const parsed = JSON.parse(text) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    const out: Record<string, string> = {};
-    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-      if (/^[A-Za-z_][A-Za-z0-9_.-]*$/.test(k) && (typeof v === "string" || typeof v === "number")) {
-        out[k] = String(v);
-      }
-    }
-    return out;
+    return sanitizeValues(JSON.parse(text) as unknown) ?? {};
   } catch {
     return {};
   }
 }
 
-/** Write the document value map. Refused (with the reason) on a host
- *  without container parts. */
+/** The document-label write that stores `values` — one mutation, for the
+ *  object model to commit inside its batch. */
+export function documentValuesMutation(values: Record<string, string>): MutationInput {
+  return {
+    op: "setDocumentMetadata",
+    args: {
+      key: LABEL_KEY,
+      value: JSON.stringify({ v: DOCUMENT_LABEL_VERSION, data: { values } }),
+      caller: PLUGIN_ID,
+    },
+  } as MutationInput;
+}
+
+/** Write the document value map: the document label (one undo step) where
+ *  the engine has one, else the legacy container part (not undoable).
+ *  Refused (with the reason) on a host with neither. */
 export async function writeDocumentValues(
   host: PersistHost,
   values: Record<string, string>,
 ): Promise<WriteOutcome> {
+  if (host.supports("document.documentMetadata@1")) {
+    const outcome = await host.document.setDocumentMetadata({
+      v: DOCUMENT_LABEL_VERSION,
+      data: { values },
+    });
+    return outcome.applied
+      ? { applied: true }
+      : { applied: false, reason: describeRefusal(outcome.error) };
+  }
   if (!host.supports("storage.parts@1")) {
     return { applied: false, reason: "this host has no container parts to keep document values in" };
   }
