@@ -277,6 +277,56 @@ describe.skipIf(!artifactPresent)(
       expect(outcome.deferred).toEqual({});
     });
 
+    it("a shapes-only bake gets every path's handle back from the batch @feat:plugin-web.bake-to-native", async () => {
+      const insert = h.contributions.find(
+        (x) => x.kind === "command" && x.id === "media.paged.web.command.insertWebFrame",
+      )!.value as { handler: (a: unknown) => unknown };
+      await insert.handler(undefined);
+      const shapes = h.host.selection.get()[0];
+      // Two native paths and no text: a ring (two subpaths) and a box with
+      // unequal corners (one subpath with curves).
+      await writeWebSource(h.host, shapes, {
+        ...SOURCE,
+        html: '<div class="ring"></div><div class="leaf"></div>',
+        css:
+          "body{margin:0}.ring{width:100px;height:60px;border:3px solid #333333;border-radius:14px}" +
+          ".leaf{width:80px;height:40px;margin-top:6px;background:#2a9d8f;border-radius:4px 20px}",
+      });
+      const sent: { ops: { op: string; args: { handle?: string } }[] }[] = [];
+      const replies: { applied: boolean; minted?: { handle: string | null }[] }[] = [];
+      const doc = h.host.document;
+      const spied = new Proxy(h.host, {
+        get(t, k) {
+          if (k !== "document") return Reflect.get(t, k);
+          return new Proxy(doc, {
+            get(d, kk) {
+              const v = Reflect.get(d, kk) as unknown;
+              if (kk === "mutate") {
+                return async (m: { args: { ops: never } }) => {
+                  sent.push(m.args);
+                  const r = await doc.mutate(m as never);
+                  replies.push(r as never);
+                  return r;
+                };
+              }
+              return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(d) : v;
+            },
+          });
+        },
+      });
+      const outcome = await bakeWebFrameToDocument(spied, shapes, engine);
+      await settle();
+      expect(outcome.baked).toBe(true);
+      const bound = sent[0].ops.filter((o) => o.op === "bindCreated").map((o) => o.args.handle);
+      expect(bound.filter((x) => x?.startsWith("p")).length).toBeGreaterThanOrEqual(2);
+      expect(bound.some((x) => x?.startsWith("t"))).toBe(false);
+      // Every mint is named: the engine fills the handle of each bindCreated
+      // in a batch with no text in it too.
+      const minted = replies[0].minted ?? [];
+      expect(minted.map((m) => m.handle)).toEqual(bound);
+      expect(outcome.createdCount).toBe(bound.length);
+    });
+
     it("a non-web-frame selection bakes nothing (honest, no crash)", async () => {
       // Baking an id that carries no web source returns the honest not-a-web-
       // frame outcome — never throws, never invents content. (Uses a bogus
