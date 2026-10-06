@@ -204,8 +204,10 @@ export async function writeWebSource(
  *  Before the door existed the map was a container part (not undoable, no
  *  change event). That part is read only while the document has no metadata
  *  for this plugin — a one-time migration: the first write carries its values
- *  into the metadata, and from then on the part is never read. A host without
- *  the door keeps using the part. */
+ *  into the metadata, and from then on the part is never read. The part
+ *  itself is dropped by the collector (parts-gc.ts) on the save of a later
+ *  session — one that opened the document already migrated, so no undo can
+ *  return to the part. A host without the door keeps using the part. */
 export const DOCUMENT_VALUES_PART = "web/document-values.json";
 
 /** The version of this plugin's document metadata envelope. */
@@ -257,6 +259,18 @@ export async function readDocumentValues(host: PersistHost): Promise<Record<stri
     if (envelope) return valueMap(envelope.data?.documentValues);
   }
   return readValuesPart(host);
+}
+
+/** Whether the document has moved its values out of the old part: the
+ *  host has the metadata door and this plugin's document metadata carries a
+ *  value map, so {@link readDocumentValues} never reads the part. Only an
+ *  undo of the write that created the metadata could make the part read
+ *  again — so the collector (parts-gc.ts) drops the part only when this
+ *  held when the document was opened and still holds at the save. */
+export async function documentValuesMigrated(host: PersistHost): Promise<boolean> {
+  if (!hasDocumentMetadata(host)) return false;
+  const values = (await readDocumentEnvelope(host))?.data?.documentValues;
+  return !!values && typeof values === "object" && !Array.isArray(values);
 }
 
 /** Write the document value map: one undoable document-metadata write, or —

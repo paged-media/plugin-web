@@ -33,13 +33,19 @@
 //     records every write).
 // Parts written this session are never dropped; the next open collects
 // them. Deleting needs `storage.parts@2`; without it nothing is removed.
+//
+// The old document-values part (`web/document-values.json`) follows the
+// same two moments: it is garbage once the document metadata carries the
+// value map (source-part.ts `documentValuesMigrated`) both when the document
+// opened and at the save. The session that migrates it keeps it, so an undo
+// of the migration still finds the values; the next session drops it.
 
 import type { BundleHost, Disposable } from "@paged-media/plugin-api";
 import { sourceRefOf, type WebSourceEnvelope } from "../../web-model/src";
 
 import { discoverWebFrames } from "./auto-render";
 import { onDocumentOpened } from "./document-opened";
-import { partsWrittenThisSession } from "./source-part";
+import { DOCUMENT_VALUES_PART, documentValuesMigrated, partsWrittenThisSession } from "./source-part";
 
 const SOURCE_PART = /^sources\/([0-9a-f]{16})\.json$/;
 const LEGACY_PART = /^([^/]+)\/source\.json$/;
@@ -47,6 +53,8 @@ const LEGACY_PART = /^([^/]+)\/source\.json$/;
 interface Reach {
   hashes: Set<string>;
   items: Set<string>;
+  /** The document metadata carries the value map: the old part is unread. */
+  valuesMigrated: boolean;
 }
 
 async function reachable(host: BundleHost): Promise<Reach> {
@@ -60,15 +68,17 @@ async function reachable(host: BundleHost): Promise<Reach> {
       // an unreadable label names nothing
     }
   }
-  return { hashes, items: new Set(items.map((i) => (i as { id: string }).id)) };
+  const valuesMigrated = await documentValuesMigrated(host).catch(() => false);
+  return { hashes, items: new Set(items.map((i) => (i as { id: string }).id)), valuesMigrated };
 }
 
 function unreachable(path: string, reach: Reach): boolean {
+  if (path === DOCUMENT_VALUES_PART) return reach.valuesMigrated;
   const content = SOURCE_PART.exec(path);
   if (content) return !reach.hashes.has(content[1]);
   const legacy = LEGACY_PART.exec(path);
   if (legacy) return !reach.items.has(legacy[1]);
-  return false; // not a source part: never ours to judge
+  return false; // not a source or values part: never ours to judge
 }
 
 export function startPartsCollector(host: BundleHost): Disposable {
@@ -105,7 +115,7 @@ export function startPartsCollector(host: BundleHost): Disposable {
     }
     garbage = Promise.resolve(marked.filter((p) => !dropped.includes(p)));
     if (dropped.length > 0) {
-      host.log.info(`dropped ${dropped.length} unreachable source part(s) on save`);
+      host.log.info(`dropped ${dropped.length} unreachable part(s) on save`);
     }
   });
 

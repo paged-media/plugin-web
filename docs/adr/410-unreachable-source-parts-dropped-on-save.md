@@ -60,3 +60,15 @@ is deleted and the save proceeds.
 
 - [ADR 409](409-label-is-the-truth-large-sources-by-pointer.md) — content-addressed source parts behind a label pointer
 - [ADR 406](406-web-frame-and-source-storage.md) — the earlier storage decision
+
+## Amendment 2026-10-06
+
+The same two moments now judge the old document-values part `web/document-values.json`. Once
+the plugin's document metadata carries the value map, the part is never read
+(`source-part.ts` `documentValuesMigrated`); only an undo of the write that created the
+metadata could make it read again, and that undo exists only in the session that made the
+write. So the part is marked at open when the metadata already carries the values and deleted
+on save when it still does: the migrating session keeps it, the next session drops it.
+Evidence: `packages/web-bundle/test/parts-gc.spec.ts` ("the migrated document-values part") and
+`test/conformance/parts-gc.spec.ts` (kept through the migrating session and its undo, dropped
+when a migrated file is opened).

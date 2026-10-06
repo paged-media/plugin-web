@@ -30,7 +30,13 @@ import { DEFAULT_SOURCE, type WebFrameSource } from "@paged-media/web-model";
 
 import { webBundle } from "../../src";
 import { autoRendererFor } from "../../src/auto-render";
-import { loadWebSource, writeWebSource } from "../../src/source-part";
+import {
+  DOCUMENT_VALUES_PART,
+  loadWebSource,
+  readDocumentValues,
+  writeDocumentValues,
+  writeWebSource,
+} from "../../src/source-part";
 import { W1_EMPTY_PAGE } from "../fixtures/corpus";
 import { openHost } from "./host";
 
@@ -139,4 +145,29 @@ describe("web conformance — unreachable source parts are dropped on save", () 
     if (engineDeletes) expect(after).not.toContain("sources/00000000deadbeef.json");
     else expect(after).toContain("sources/00000000deadbeef.json");
   });
+
+  it.skipIf(!engineDeletes)(
+    "the old document-values part stays through the migrating session and goes when a migrated file is opened",
+    async () => {
+      expect(host.supports("document.documentMetadata@1")).toBe(true);
+      await host.parts.write(DOCUMENT_VALUES_PART, enc(JSON.stringify({ edition: "Legacy" })));
+      await openedWith([]);
+      // The first change migrates the values into the document metadata.
+      const values = await readDocumentValues(host);
+      expect((await writeDocumentValues(host, { ...values, year: "2026" })).applied).toBe(true);
+      await h.willSave.fire();
+      expect(await host.parts.list("")).toContain(DOCUMENT_VALUES_PART);
+      // Undo of the migration still finds the values.
+      await host.document.undo();
+      expect(await readDocumentValues(host)).toEqual({ edition: "Legacy" });
+      await host.document.redo();
+      expect(await readDocumentValues(host)).toEqual({ edition: "Legacy", year: "2026" });
+      // A file opened already migrated: its save drops the part.
+      announceLoaded();
+      await autoRendererFor(host)!.idle();
+      await h.willSave.fire();
+      expect(await host.parts.list("")).not.toContain(DOCUMENT_VALUES_PART);
+      expect(await readDocumentValues(host)).toEqual({ edition: "Legacy", year: "2026" });
+    },
+  );
 });
