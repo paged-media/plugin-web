@@ -80,3 +80,18 @@ a year; a URL that answers today is not a resource of the document.
 - [ADR 403](403-json-wasm-boundary.md) — the boundary gains byte-taking exports.
 - [ADR 407](407-baking-flattens-to-native-items.md) — the bake this widens.
 - [ADR 408](408-no-page-javascript.md) — nothing in a source executes; nothing in it fetches.
+
+## Amendment 2026-10-06
+
+The faces a source's own `@font-face` rules load (a container part `resources/<path>` or a
+`data:` URI) now reach the canvas as well. The engine names a run shaped with such a face by
+the face's own `name` table family, not the family the CSS declares, so the host side
+(`packages/web-bundle/src/engine-inputs.ts`, rule scanner in `css-faces.ts`) hands the bytes to
+the scene-layer face table under both names, in the rule's weight and style, once per host,
+family, style and bytes. Each render records which frame used which face; after each
+auto-render pass the faces no live web frame used are given back. A face held only as WOFF or
+WOFF2 (the canvas reads TrueType and OpenType) or over the per-face asset budget is reported
+as a problem instead. Evidence: `packages/web-bundle/test/engine-inputs.spec.ts` ("@font-face
+faces reach the canvas") and `test/conformance/scene-faces.spec.ts` (real host and engine: no
+fallback for the family, the document's Fonts collection unchanged, fallback again once given
+back).

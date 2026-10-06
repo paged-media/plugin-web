@@ -40,6 +40,16 @@
 // panel or preflight. They are given back on deactivation
 // (`releaseSceneFaces`).
 //
+// A source's own `@font-face` rules load their faces through the resource
+// provider (container parts, `data:` URLs), so the engine lays text out in
+// them; the same bytes go to the scene-layer face table under the family the
+// CSS declares (and the face's own family, which is what the engine names on
+// a run shaped with it), in the rule's weight and style — once per host,
+// family, style and bytes. Each render records which frame used which face;
+// a face no frame uses any more is given back (`retainSceneFaces`, after
+// each auto-render pass). A face over the asset budget, or one only in a
+// format the canvas cannot take (WOFF, WOFF2), is said as a problem.
+//
 // After a render the engine reports what did not load; `resourceDiagnostics`
 // turns that into problems. `faceDiagnostics` turns the host's submit reply
 // (`fontFallbacks`, protocol 68) into problems. With the bundled face in the
@@ -49,8 +59,10 @@
 // not reported.
 
 import type { BundleHost, Disposable, SceneLayerSubmitResult } from "@paged-media/plugin-api";
+import { ASSET_BUDGETS } from "@paged-media/plugin-sdk";
 import { familiesUsed, type WebDiagnostic } from "../../web-model/src";
 
+import { bytesHash, dataUrlBytes, fontFaceRules, fontFormat, sfntFamily, type CssFace } from "./css-faces";
 import type { WebEngine } from "./engine-loader";
 import { readResourcePart } from "./source-part";
 
@@ -152,10 +164,156 @@ async function shareBundledFace(host: InputsHost, engine: WebEngine): Promise<vo
  *  Resolves once each registration has settled and been disposed. */
 export async function releaseSceneFaces(host: object): Promise<void> {
   const table = sceneFaces.get(host);
-  if (!table) return;
+  const css = cssFaces.get(host);
   sceneFaces.delete(host);
+  cssFaces.delete(host);
   bundledShared.delete(host);
-  await Promise.all([...table.values()].map((pending) => pending.then((d) => d?.dispose())));
+  const pending = [...(table?.values() ?? []), ...(css?.shared.values() ?? [])];
+  await Promise.all(pending.map((p) => p.then((d) => d?.dispose())));
+}
+
+// ------------------------------------------------- @font-face scene faces
+
+/** A rule's face as read from the document: its bytes, or why the canvas
+ *  cannot take it. */
+interface ResolvedFace {
+  bytes: Uint8Array | null;
+  diagnostic: WebDiagnostic | null;
+}
+
+/** Per host: the faces `@font-face` rules handed over (`family\0style\0hash`
+ *  → registration), what each rule resolved to, and which faces each
+ *  rendering frame used. */
+interface CssFaceState {
+  shared: Map<string, Promise<Disposable | null>>;
+  resolved: Map<string, ResolvedFace>;
+  users: Map<string, Set<string>>;
+}
+
+const cssFaces = new WeakMap<object, CssFaceState>();
+
+function cssFaceState(host: object): CssFaceState {
+  let state = cssFaces.get(host);
+  if (!state) {
+    state = { shared: new Map(), resolved: new Map(), users: new Map() };
+    cssFaces.set(host, state);
+  }
+  return state;
+}
+
+const MB = 1024 * 1024;
+
+const faceProblem = (message: string): WebDiagnostic => ({ severity: "warning", message, source: "render" });
+
+/** The bytes of a rule's face: its first TrueType/OpenType source the
+ *  document holds (a container part or a `data:` URL). `null` bytes with a
+ *  diagnostic when the face cannot reach the canvas; `null` when nothing
+ *  is held yet (not remembered, so a part stored later is read). */
+async function resolveFace(host: InputsHost, rule: CssFace): Promise<ResolvedFace | null> {
+  let other: string | null = null;
+  for (const src of rule.srcs) {
+    let bytes: Uint8Array | null = null;
+    if (/^data:/i.test(src)) bytes = dataUrlBytes(src);
+    else {
+      const path = relativePath(src, rule.base);
+      if (path !== null) bytes = await readResourcePart(host, path);
+    }
+    if (!bytes || bytes.byteLength === 0) continue;
+    const format = fontFormat(bytes);
+    if (format === "sfnt") {
+      if (bytes.byteLength > ASSET_BUDGETS.maxFontFaceBytes) {
+        return {
+          bytes: null,
+          diagnostic: faceProblem(
+            `font face “${rule.family}” (${(bytes.byteLength / MB).toFixed(1)} MB) is over the canvas's ` +
+              `${(ASSET_BUDGETS.maxFontFaceBytes / MB).toFixed(0)} MB limit for one face — ` +
+              "the canvas draws its text in the default font",
+          ),
+        };
+      }
+      return { bytes, diagnostic: null };
+    }
+    other ??= format;
+  }
+  if (other === "woff" || other === "woff2") {
+    return {
+      bytes: null,
+      diagnostic: faceProblem(
+        `font face “${rule.family}” is a ${other.toUpperCase()} file — the canvas takes TrueType or ` +
+          "OpenType faces only; store a .ttf or .otf source beside it",
+      ),
+    };
+  }
+  return null;
+}
+
+/** Hand the faces of `rules` to the host's scene-layer face table (once per
+ *  host, family, style and bytes), recording them as used by `user` (a
+ *  rendering frame). Answers the problems: faces that cannot reach the
+ *  canvas. */
+async function shareCssFaces(host: InputsHost, rules: CssFace[], user: string | undefined): Promise<WebDiagnostic[]> {
+  if (rules.length === 0) {
+    // Nothing to hand over: the frame now uses no face (no door is asked).
+    if (user !== undefined) cssFaces.get(host)?.users.set(user, new Set());
+    return [];
+  }
+  if (!takesSceneFaces(host)) return [];
+  const state = cssFaceState(host);
+  const diagnostics: WebDiagnostic[] = [];
+  const faces: { key: string; family: string; style?: string; bytes: Uint8Array }[] = [];
+  for (const rule of rules) {
+    const ruleKey = [rule.family, rule.style ?? "", rule.base, ...rule.srcs].join("\u0000");
+    let resolved = state.resolved.get(ruleKey) ?? null;
+    if (!resolved) {
+      resolved = await resolveFace(host, rule);
+      if (resolved) state.resolved.set(ruleKey, resolved);
+    }
+    if (!resolved) continue;
+    if (resolved.diagnostic) diagnostics.push(resolved.diagnostic);
+    const bytes = resolved.bytes;
+    if (!bytes) continue;
+    const hash = bytesHash(bytes);
+    // The family the CSS declares, and the face's own family — the engine
+    // names a run shaped with an `@font-face` face by the face's own name.
+    const own = sfntFamily(bytes);
+    const families = [rule.family];
+    if (own && own.toLowerCase() !== rule.family.toLowerCase()) families.push(own);
+    for (const family of families) {
+      faces.push({ key: `${faceKey(family, rule.style)}\u0000${hash}`, family, style: rule.style, bytes });
+    }
+  }
+  if (user !== undefined) state.users.set(user, new Set(faces.map((f) => f.key)));
+  for (const face of faces) {
+    let pending = state.shared.get(face.key);
+    if (!pending) {
+      pending = host.assets.registerFont(face.bytes, face.family, face.style).catch((err: unknown) => {
+        host.log.warn(`web engine: the canvas cannot take the face ${face.family} ${face.style ?? ""}: ${String(err)}`);
+        return null;
+      });
+      state.shared.set(face.key, pending);
+    }
+    await pending;
+  }
+  return diagnostics;
+}
+
+/** Keep the `@font-face` faces the frames in `live` used at their last
+ *  render and give back every other one (the auto renderer calls this after
+ *  each pass with the web frames it found). */
+export async function retainSceneFaces(host: object, live: Iterable<string>): Promise<void> {
+  const state = cssFaces.get(host);
+  if (!state) return;
+  const keep = new Set(live);
+  for (const user of [...state.users.keys()]) if (!keep.has(user)) state.users.delete(user);
+  const used = new Set<string>();
+  for (const keys of state.users.values()) for (const k of keys) used.add(k);
+  const gone: Promise<Disposable | null>[] = [];
+  for (const [key, pending] of [...state.shared]) {
+    if (used.has(key)) continue;
+    state.shared.delete(key);
+    gone.push(pending);
+  }
+  await Promise.all(gone.map((p) => p.then((d) => d?.dispose())));
 }
 
 /** Register the faces the engine shapes with: the document faces the source
@@ -248,13 +406,15 @@ const ASSET_IMAGE = /^paged-image:(.+)$/;
 
 /** Hand the engine the bytes of every resource the document points at that
  *  the document holds (container parts, asset-store images), once per
- *  engine. Stylesheets loaded this way are scanned for their own URLs. */
+ *  engine. Stylesheets loaded this way are scanned for their own URLs.
+ *  Answers the `@font-face` rules those stylesheets declare. */
 export async function registerSourceResources(
   host: InputsHost,
   engine: WebEngine,
   doc: string,
-): Promise<void> {
-  if (!engine.registerResource) return;
+): Promise<CssFace[]> {
+  const faces: CssFace[] = [];
+  if (!engine.registerResource) return faces;
   const queue: { url: string; base: string }[] = resourceUrls(doc).map((url) => ({ url, base: "" }));
   const seen = new Set<string>();
   while (queue.length > 0 && seen.size < MAX_RESOURCES) {
@@ -289,8 +449,26 @@ export async function registerSourceResources(
       }
       const dir = key.includes("/") ? key.slice(0, key.lastIndexOf("/") + 1) : "";
       for (const u of nested ?? []) queue.push({ url: u, base: dir });
+      let rules = sheetFaces(engine).get(key);
+      if (!rules && bytes) {
+        rules = fontFaceRules(new TextDecoder().decode(bytes), dir);
+        sheetFaces(engine).set(key, rules);
+      }
+      faces.push(...(rules ?? []));
     }
   }
+  return faces;
+}
+
+const sheetFaceCache = new WeakMap<WebEngine, Map<string, CssFace[]>>();
+
+function sheetFaces(engine: WebEngine): Map<string, CssFace[]> {
+  let m = sheetFaceCache.get(engine);
+  if (!m) {
+    m = new Map();
+    sheetFaceCache.set(engine, m);
+  }
+  return m;
 }
 
 const sheetUrlCache = new WeakMap<WebEngine, Map<string, string[]>>();
@@ -304,14 +482,19 @@ function sheetUrls(engine: WebEngine): Map<string, string[]> {
   return m;
 }
 
-/** Faces and resources for one render of `doc` (the composed document). */
+/** Faces and resources for one render of `doc` (the composed document) by
+ *  `user` (the frame id whose source renders; it keeps the source's
+ *  `@font-face` faces on the canvas until `retainSceneFaces` no longer
+ *  names it). Answers the problems of faces that cannot reach the canvas. */
 export async function prepareEngineInputs(
   host: InputsHost,
   engine: WebEngine,
   doc: string,
-): Promise<void> {
+  user?: string,
+): Promise<WebDiagnostic[]> {
   await registerSourceFaces(host, engine, doc);
-  await registerSourceResources(host, engine, doc);
+  const sheetRules = await registerSourceResources(host, engine, doc);
+  return shareCssFaces(host, [...fontFaceRules(doc), ...sheetRules], user);
 }
 
 /** The engine's report of what the last render could not load, as problems. */

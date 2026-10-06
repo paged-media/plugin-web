@@ -20,7 +20,8 @@
 // (the published canvas-wasm, its scene-layer face table) and the real Blitz
 // engine, a web frame's text names the bundled face, the canvas draws it in
 // the default font until the bundle hands the face over, and then in that
-// face — without the document's own fonts seeing it.
+// face — without the document's own fonts seeing it. The same holds for a
+// face a source's `@font-face` rule loads from the container.
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -29,9 +30,16 @@ import { createHeadlessHost, type HeadlessHost } from "@paged-media/plugin-sdk";
 
 import { webBundle } from "../../src";
 import { persistentSceneSurface } from "../../src/bake";
-import { BUNDLED_FAMILY, faceDiagnostics, prepareEngineInputs, releaseSceneFaces } from "../../src/engine-inputs";
+import {
+  BUNDLED_FAMILY,
+  faceDiagnostics,
+  prepareEngineInputs,
+  releaseSceneFaces,
+  retainSceneFaces,
+} from "../../src/engine-inputs";
 import type { WebEngine } from "../../src/engine-loader";
 import { W1_EMPTY_PAGE } from "../fixtures/corpus";
+import { renamedFace } from "../fixtures/fonts";
 import { blitzPresent, primeBlitz, requireBlitz } from "./blitz";
 import { mapBacking, silent } from "./host";
 
@@ -108,5 +116,49 @@ describe.skipIf(!blitzPresent)("web conformance — scene-layer faces (real host
     await releaseSceneFaces(host);
     const released = await surface.submit(id, layer as never);
     expect(released?.fontFallbacks?.some((f) => f.startsWith(BUNDLED_FAMILY))).toBe(true);
+  });
+
+  const families = (layer: { items: unknown[] } | null) =>
+    (layer?.items ?? [])
+      .filter((i) => (i as { kind: string }).kind === "text")
+      .map((i) => (i as { family?: string }).family);
+
+  it("a face an @font-face rule loads from the container draws in that face, under the family the CSS declares", async () => {
+    // A face whose own name is "Brand", stored with the document.
+    await host.parts.write("resources/fonts/brand.ttf", renamedFace("Brand"));
+    const fontsBefore = (await host.document.collection<{ family: string }>("fonts")).map((f) => f.family);
+    const doc =
+      "<html><head><style>@font-face{font-family:'Brand';src:url(fonts/brand.ttf) format('truetype')}" +
+      "p{font-family:'Brand'}</style></head><body style='margin:0'><p>Branded</p></body></html>";
+    const diagnostics = await prepareEngineInputs(host, engine, doc, id);
+    expect(diagnostics).toEqual([]);
+    const layer = engine.render(doc, 300, 100);
+    expect(families(layer)).toContain("Brand");
+    const surface = persistentSceneSurface(host)!;
+    const reply = await surface.submit(id, layer as never);
+    expect(reply?.fontFallbacks ?? []).toEqual([]);
+    expect(faceDiagnostics(reply, host)).toEqual([]);
+    // The document's Fonts collection never sees the face.
+    const fontsAfter = (await host.document.collection<{ family: string }>("fonts")).map((f) => f.family);
+    expect(fontsAfter).toEqual(fontsBefore);
+    // Once no source uses it, the face is given back: the canvas falls back.
+    await retainSceneFaces(host, []);
+    const released = await surface.submit(id, layer as never);
+    expect(released?.fontFallbacks ?? []).toContain("Brand");
+  });
+
+  it("a CSS family that differs from the face's own name reaches the canvas too", async () => {
+    await host.parts.write("resources/fonts/plate.ttf", renamedFace("Plate"));
+    const doc =
+      "<html><head><style>@font-face{font-family:Display;src:url(fonts/plate.ttf);font-weight:700}" +
+      "p{font-family:Display;font-weight:700}</style></head><body style='margin:0'><p>Display</p></body></html>";
+    await prepareEngineInputs(host, engine, doc, id);
+    const layer = engine.render(doc, 300, 100);
+    const reply = await persistentSceneSurface(host)!.submit(id, layer as never);
+    expect(reply?.fontFallbacks ?? []).toEqual([]);
+    // Deactivation gives it back like every other face.
+    await releaseSceneFaces(host);
+    const released = await persistentSceneSurface(host)!.submit(id, layer as never);
+    expect((released?.fontFallbacks ?? []).length).toBeGreaterThan(0);
   });
 });

@@ -296,14 +296,18 @@ async function renderWithEngine(
   const policy = source.options.overflow;
   // The faces the source names and the resources it points at, from the
   // document (never the network).
-  await prepareEngineInputs(host, engine, html);
+  const faceProblems = await prepareEngineInputs(host, engine, html, asFrameTarget(id)?.id);
   // A threaded source's policy is its flow (render-flow-command.ts); a
   // single-frame render of it shows its own frame, clipped.
   const fit = renderWithPolicy(engine, html, widthPx, heightPx, policy);
   // The engine loaded but the render threw — honest not-loaded result (no
   // fake layer). The loader already logged the wasm error.
   if (fit === null) return notLoaded;
-  const diagnostics: WebDiagnostic[] = [...rendered.diagnostics, ...resourceDiagnostics(engine)];
+  const diagnostics: WebDiagnostic[] = [
+    ...rendered.diagnostics,
+    ...resourceDiagnostics(engine),
+    ...faceProblems,
+  ];
 
   if (policy === "grow" && fit.contentHeightPx !== null && bounds) {
     const contentPt = fit.contentHeightPx / PX_PER_PT;
@@ -458,9 +462,9 @@ export async function bakeWebFlow(
   // subtree flows across the chain (Stylo ignores the property, so the plugin
   // parses it). Absent → the whole body flows.
   const flowRoot = flowRootSelector(rendered.css);
-  await prepareEngineInputs(host, engine, html);
+  const faceProblems = await prepareEngineInputs(host, engine, html, asFrameTarget(sourceId)?.id);
   const flow = engine.renderFlow(html, framesPx, flowRoot);
-  const missing = resourceDiagnostics(engine);
+  const missing = [...resourceDiagnostics(engine), ...faceProblems];
   if (flow === null) {
     // The engine loaded but the flow render threw — honest not-loaded.
     return {
@@ -582,7 +586,7 @@ export async function bakeWebFlows(
   const faces: WebDiagnostic[] = [];
   let submittedCount = 0;
   let anyOverset = false;
-  await prepareEngineInputs(host, engine, doc.html);
+  diagnostics.push(...(await prepareEngineInputs(host, engine, doc.html, sourceTarget.id)));
 
   // Every group's frame geometry in ONE read (was one read per group).
   const allFrames = groups.flatMap((g) => g.frames as unknown as ElementId[]);

@@ -28,7 +28,8 @@
 // size (core applies the frame transform to the layer), so it renders
 // nothing. Then every frame that holds a layer from this bundle but should
 // not — it left a flow, was deleted, or held an ad-hoc flow render — is
-// cleared.
+// cleared, and the `@font-face` faces no remaining source uses are given
+// back to the host (engine-inputs.ts).
 //
 // When it runs:
 //   · on activation, and when another document opens
@@ -56,6 +57,7 @@ import {
 import { bakeWebFlows, bakeWebFrame, framesWithLayers, persistentSceneSurface } from "./bake";
 import { resolveBindings, watchProviders } from "./bindings";
 import { onDocumentOpened } from "./document-opened";
+import { retainSceneFaces } from "./engine-inputs";
 import { loadWebEngine, type WebEngine } from "./engine-loader";
 import { loadWebSource, readWebLabel } from "./source-part";
 
@@ -251,6 +253,8 @@ export function startAutoRender(host: BundleHost, opts: AutoRenderOptions = {}):
       for (const id of [...framesWithLayers(host)]) {
         if (!keep.has(id)) await surface.clear(id);
       }
+      // `@font-face` faces no live source used at its last render go back.
+      await retainSceneFaces(host, live);
     }
     if (sources.size > 256) sources = new Map();
     providers.refresh();
