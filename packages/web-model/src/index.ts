@@ -65,6 +65,17 @@ export {
 
 export { diagnoseHtml, type WebDiagnostic } from "./diagnose";
 
+// CSS custom properties as a view over the css lane (the object model's
+// `cssVar` kind): a scanner + a one-declaration splice.
+export {
+  cssVarNames,
+  cssVarValueProblem,
+  isCssVarName,
+  scanCssVars,
+  setCssVar,
+  type CssVarDeclaration,
+} from "./css-vars";
+
 // The PASTE-INGEST enforcement twin of the linter — strips executable
 // surface (<script>, on*= handlers, javascript: URLs) from HTML brought
 // in from outside the editor (§6.1: page JavaScript never executes, so
