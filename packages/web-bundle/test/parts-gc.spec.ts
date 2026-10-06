@@ -34,7 +34,11 @@ const big = (tag: string): WebFrameSource => ({
   html: `<p>${tag}</p>` + "<p>lorem ipsum dolor</p>".repeat(5000),
 });
 
-function modelHost(opts: { canDelete?: boolean } = {}) {
+function modelHost(opts: { canDelete?: boolean; didOpen?: boolean } = {}) {
+  // A host with `document.onDidOpen` (the default) announces an opened
+  // document there; an older one only on the raw client broadcast.
+  const didOpen = opts.didOpen !== false;
+  const opened: (() => void)[] = [];
   const parts = new Map<string, Uint8Array>();
   const labels = new Map<string, unknown>();
   const items = new Set<string>(["uA", "uB"]);
@@ -42,7 +46,9 @@ function modelHost(opts: { canDelete?: boolean } = {}) {
   const loaded: ((m: { kind: string }) => void)[] = [];
   const host = {
     supports: (f: string) =>
-      f === "storage.parts@1" || (f === "storage.parts@2" && opts.canDelete !== false),
+      f === "storage.parts@1" ||
+      (f === "storage.parts@2" && opts.canDelete !== false) ||
+      (f === "document.onDidOpen@1" && didOpen),
     document: {
       tree: async () =>
         [...items].map((id) => ({ id: { kind: "rectangle", id }, kind: "Rectangle", label: id, children: [] })),
@@ -55,6 +61,14 @@ function modelHost(opts: { canDelete?: boolean } = {}) {
         willSave = l;
         return { dispose() {} };
       },
+      ...(didOpen
+        ? {
+            onDidOpen: (l: () => void) => {
+              opened.push(l);
+              return { dispose: () => void opened.splice(opened.indexOf(l), 1) };
+            },
+          }
+        : {}),
     },
     parts: {
       read: async (p: string) => parts.get(p) ?? null,
@@ -71,10 +85,12 @@ function modelHost(opts: { canDelete?: boolean } = {}) {
     labels,
     items,
     open: async () => {
-      loaded.forEach((l) => l({ kind: "documentLoaded" }));
+      if (didOpen) opened.forEach((l) => l());
+      else loaded.forEach((l) => l({ kind: "documentLoaded" }));
       await new Promise((r) => setTimeout(r, 0));
     },
     save: () => willSave!(),
+    rawSubscribers: () => loaded.length,
   };
 }
 
@@ -132,4 +148,17 @@ describe("source-part collector (modelled host)", () => {
     await m.save();
     expect(m.parts.has("sources/00000000deadbeef.json")).toBe(true);
   });
+  for (const didOpen of [true, false]) {
+    it(`a file opened after activation is collected (${didOpen ? "document.onDidOpen" : "raw client broadcast"})`, async () => {
+      const m = modelHost({ didOpen });
+      startPartsCollector(m.host);
+      // The opened file brings an orphan the activation mark never saw.
+      m.parts.set("sources/00000000deadbeef.json", enc("{}"));
+      await m.open();
+      await m.save();
+      expect(m.parts.has("sources/00000000deadbeef.json")).toBe(false);
+      // The door replaces the raw subscription; it is the fallback only.
+      expect(m.rawSubscribers()).toBe(didOpen ? 0 : 1);
+    });
+  }
 });

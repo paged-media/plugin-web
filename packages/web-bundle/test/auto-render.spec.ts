@@ -34,14 +34,19 @@ import type { WebEngine } from "../src/engine-loader";
 const KEY = "x-paged:media.paged.web";
 const label = (html: string) => JSON.stringify(envelopeFor({ ...DEFAULT_SOURCE, html }));
 
-function modelHost(rows: { id: string; label?: string }[]) {
+function modelHost(rows: { id: string; label?: string }[], opts: { didOpen?: boolean } = {}) {
+  // A host with `document.onDidOpen` (the default) announces an opened
+  // document there; an older one only on the raw client broadcast.
+  const didOpen = opts.didOpen !== false;
+  const opened: (() => void)[] = [];
+  const raw: ((m: { kind: string }) => void)[] = [];
   const calls: Record<string, number> = {};
   const count = (k: string) => (calls[k] = (calls[k] ?? 0) + 1);
   const submits: string[] = [];
   const clears: string[] = [];
   const labels = new Map(rows.filter((r) => r.label).map((r) => [r.id, r.label!]));
   const host = {
-    supports: (f: string) => f === "rendering.sceneLayer@1",
+    supports: (f: string) => f === "rendering.sceneLayer@1" || (f === "document.onDidOpen@1" && didOpen),
     contribute: {
       sceneLayer: () => ({
         submit: async (id: string) => void submits.push(id),
@@ -78,12 +83,24 @@ function modelHost(rows: { id: string; label?: string }[]) {
       },
       mutate: async () => ({ applied: true }),
       onDidChange: () => ({ dispose() {} }),
+      ...(didOpen
+        ? {
+            onDidOpen: (l: () => void) => {
+              opened.push(l);
+              return { dispose: () => void opened.splice(opened.indexOf(l), 1) };
+            },
+          }
+        : {}),
     },
     parts: { read: async () => null },
-    editor: { client: { subscribe: () => () => {} } },
+    editor: { client: { subscribe: (l: (m: { kind: string }) => void) => (raw.push(l), () => void raw.splice(raw.indexOf(l), 1)) } },
     log: { debug() {}, info() {}, warn() {}, error() {} },
   } as unknown as BundleHost;
-  return { host, calls, submits, clears, labels };
+  const open = () => {
+    if (didOpen) opened.forEach((l) => l());
+    else raw.forEach((l) => l({ kind: "documentLoaded" }));
+  };
+  return { host, calls, submits, clears, labels, open, rawSubscribers: () => raw.length };
 }
 
 const engine: WebEngine = {
@@ -150,4 +167,20 @@ describe("auto render — discovery and bounds", () => {
     expect(m.calls.getMetadata).toBe(4); // a, b (discovery) + a (source) + a (render)
     auto.dispose();
   });
+  for (const didOpen of [true, false]) {
+    it(`an opened document is rendered afresh (${didOpen ? "document.onDidOpen" : "raw client broadcast"})`, async () => {
+      const m = modelHost([{ id: "a", label: label("<p>A</p>") }], { didOpen });
+      const auto = startAutoRender(m.host, { engine: async () => engine, debounceMs: 1 });
+      await auto.idle();
+      expect(m.submits).toEqual(["a"]);
+      // The same frame id in the newly opened document is a new frame: the
+      // bookkeeping of the old one must not skip its render.
+      m.open();
+      await auto.idle();
+      expect(m.submits).toEqual(["a", "a"]);
+      expect(m.rawSubscribers()).toBe(didOpen ? 0 : 1);
+      auto.dispose();
+      expect(m.rawSubscribers()).toBe(0);
+    });
+  }
 });

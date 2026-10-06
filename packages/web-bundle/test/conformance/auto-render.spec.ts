@@ -48,28 +48,12 @@ describe.skipIf(!blitzPresent)("web conformance — auto render (real host + rea
   let h: HeadlessHost;
   let host: BundleHost;
   let rec: SceneRecord;
-  let docListeners: ((msg: { kind: string }) => void)[];
   let bundle: { dispose(): void };
 
   async function boot(): Promise<void> {
     h = await openHost();
     await h.load(W1_EMPTY_PAGE.bytes());
     rec = recordScene(h);
-    // Capture the raw client's subscribers so a spec can announce a newly
-    // loaded document the way the editor does.
-    docListeners = [];
-    const client = h.host.editor.client as unknown as {
-      subscribe: (l: (m: { kind: string }) => void) => () => void;
-    };
-    const subscribe = client.subscribe.bind(client);
-    client.subscribe = (l) => {
-      docListeners.push(l);
-      const off = subscribe(l);
-      return () => {
-        docListeners = docListeners.filter((x) => x !== l);
-        off();
-      };
-    };
     await primeBlitz(h.host as unknown as BundleHost);
     bundle = h.loadBundle(webBundle);
     host = h.host as unknown as BundleHost;
@@ -153,11 +137,18 @@ describe.skipIf(!blitzPresent)("web conformance — auto render (real host + rea
   });
 
   it("opening another document renders its web frames", async () => {
-    const id = await webFrame("<p>In doc one</p>");
-    // A new document in the same session: the editor announces it.
-    rec.layers.clear();
-    for (const l of [...docListeners]) l({ kind: "documentLoaded" });
+    // The host reports opens through document.onDidOpen, which the bundle
+    // follows (test/auto-render.spec.ts covers the raw-broadcast fallback).
+    expect(host.supports("document.onDidOpen@1")).toBe(true);
+    await webFrame("<p>In doc one</p>");
+    // A new document in the same session, opened for real.
+    await h.load(W1_EMPTY_PAGE.bytes());
     await idle();
+    expect(autoRendererFor(host)!.labels().size).toBe(0);
+    rec.layers.clear();
+    // The same frame again: what was rendered in the old document must not
+    // count as rendered in this one.
+    const id = await webFrame("<p>In doc one</p>");
     expect(layerText(rec.layers.get(idOf(id)))).toContain("In doc one");
   });
 

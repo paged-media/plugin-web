@@ -57,8 +57,11 @@ describe("web conformance — unreachable source parts are dropped on save", () 
 
   beforeEach(async () => {
     h = await openHost();
-    await h.load(W1_EMPTY_PAGE.bytes());
+    // Keep the editor's own "document loaded" broadcast, so a spec can play
+    // a file being opened over the document it built (the harness cannot
+    // save one to reopen). The bundle hears it through document.onDidOpen.
     const listeners: ((m: { kind: string }) => void)[] = [];
+    let loaded: { kind: string } | null = null;
     const client = h.host.editor.client as unknown as {
       subscribe: (l: (m: { kind: string }) => void) => () => void;
     };
@@ -67,7 +70,12 @@ describe("web conformance — unreachable source parts are dropped on save", () 
       listeners.push(l);
       return subscribe(l);
     };
-    announceLoaded = () => listeners.forEach((l) => l({ kind: "documentLoaded" }));
+    client.subscribe((m) => {
+      if (m.kind === "documentLoaded") loaded = m;
+    });
+    announceLoaded = () => listeners.forEach((l) => l(loaded!));
+    await h.load(W1_EMPTY_PAGE.bytes());
+    expect(loaded).not.toBeNull();
     h.loadBundle(webBundle);
     host = h.host as unknown as BundleHost;
     await autoRendererFor(host)!.idle();
@@ -92,6 +100,7 @@ describe("web conformance — unreachable source parts are dropped on save", () 
   }
 
   it.skipIf(!engineDeletes)("drops the file's orphan parts and keeps the one a label names", async () => {
+    expect(host.supports("document.onDidOpen@1")).toBe(true);
     const live = await frame();
     expect((await writeWebSource(host, live, big("live"))).applied).toBe(true);
     await openedWith(["sources/00000000deadbeef.json", "uGONE/source.json"]);

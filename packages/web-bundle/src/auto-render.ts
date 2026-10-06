@@ -31,9 +31,9 @@
 // cleared.
 //
 // When it runs:
-//   · on activation, and when the editor announces a newly loaded document
-//     (`documentLoaded` on the raw client — the plugin contract has no
-//     document-opened event; sheets reads the same message);
+//   · on activation, and when another document opens
+//     (`document.onDidOpen`; the editor's raw `documentLoaded` broadcast on
+//     an older host — document-opened.ts);
 //   · after document changes (`document.onDidChange`), debounced, so a
 //     save, an undo/redo of one, a resize, a thread/unthread or a delete
 //     shows on the canvas.
@@ -55,6 +55,7 @@ import {
 
 import { bakeWebFlows, bakeWebFrame, framesWithLayers, persistentSceneSurface } from "./bake";
 import { resolveBindings, watchProviders } from "./bindings";
+import { onDocumentOpened } from "./document-opened";
 import { loadWebEngine, type WebEngine } from "./engine-loader";
 import { loadWebSource, readWebLabel } from "./source-part";
 
@@ -289,22 +290,16 @@ export function startAutoRender(host: BundleHost, opts: AutoRenderOptions = {}):
     schedule(e.kind === "mutationApplied" ? "change" : "undo");
   });
 
-  // A newly loaded document: its layers start empty and its sources are new.
-  let offLoaded: (() => void) | null = null;
-  try {
-    offLoaded = host.editor.client.subscribe((msg) => {
-      if (msg.kind !== "documentLoaded") return;
-      renderedKey = new Map();
-      layerFrames = new Map();
-      grewFor = new Map();
-      lastLabels = new Map();
-      sources = new Map();
-      framesWithLayers(host).clear();
-      schedule("open", 0);
-    });
-  } catch {
-    // No raw client on this host: activation's pass is the only open pass.
-  }
+  // A newly opened document: its layers start empty and its sources are new.
+  const offLoaded = onDocumentOpened(host, () => {
+    renderedKey = new Map();
+    layerFrames = new Map();
+    grewFor = new Map();
+    lastLabels = new Map();
+    sources = new Map();
+    framesWithLayers(host).clear();
+    schedule("open", 0);
+  });
 
   schedule("open", 0);
 
@@ -329,7 +324,7 @@ export function startAutoRender(host: BundleHost, opts: AutoRenderOptions = {}):
       if (timer) clearTimeout(timer);
       docSub.dispose();
       providers.dispose();
-      offLoaded?.();
+      offLoaded();
       renderers.delete(host);
     },
   };

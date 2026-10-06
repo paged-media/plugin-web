@@ -31,7 +31,7 @@ import { DEFAULT_SOURCE, type WebFrameSource } from "@paged-media/web-model";
 import { webBundle } from "../../src";
 import { autoRendererFor } from "../../src/auto-render";
 import { inFrameSessionFor } from "../../src/in-frame-edit";
-import { highlightOutlineEntry, onCanvasPick } from "../../src/outline-highlight";
+import { clearOutlineHighlight, highlightOutlineEntry, onCanvasPick } from "../../src/outline-highlight";
 import { loadWebSource, writeWebSource } from "../../src/source-part";
 import { W1_EMPTY_PAGE } from "../fixtures/corpus";
 import { blitzPresent, layerText, primeBlitz, recordScene, requireBlitz, type SceneRecord } from "./blitz";
@@ -67,7 +67,7 @@ describe.skipIf(!blitzPresent)("web conformance — in-frame edit (real host + r
   });
   afterEach(() => h?.dispose());
 
-  async function enter(html: string, extra: Partial<WebFrameSource> = {}): Promise<ElementId> {
+  async function webFrame(html: string, extra: Partial<WebFrameSource> = {}): Promise<ElementId> {
     const out = await host.document.mutate({
       op: "insertFrame",
       args: { pageId: W1_EMPTY_PAGE.pageId, bounds: [60, 60, 180, 300] },
@@ -76,9 +76,15 @@ describe.skipIf(!blitzPresent)("web conformance — in-frame edit (real host + r
     const id = out.createdId as ElementId;
     expect((await writeWebSource(host, id, src(html, extra))).applied).toBe(true);
     await autoRendererFor(host)!.idle();
+    return id;
+  }
+  async function enter(html: string, extra: Partial<WebFrameSource> = {}): Promise<ElementId> {
+    const id = await webFrame(html, extra);
     ctx.onEnter?.({ type: "webFrame", id });
     return id;
   }
+  /** The live overlay layer of this bundle named `name` (W-20). */
+  const layer = (name: string) => h.overlayLayers().find((l) => l.key === `media.paged.web/${name}`);
   const session = () => inFrameSessionFor(host)!;
   async function click(x: number, y: number) {
     ctx.onContentPointerDown?.({ contentPoint: [x, y], elementId: "", modifiers: { shift: false, alt: false, cmd: false, ctrl: false }, button: 0 });
@@ -94,8 +100,8 @@ describe.skipIf(!blitzPresent)("web conformance — in-frame edit (real host + r
     await click(1, 8);
     expect(ctx.isDirty?.()).toBe(true);
     expect(session().state()).toMatchObject({ node: 0, caret: 0, text: "Hello world" });
-    const overlay = h.lastToolPreviews();
-    expect(overlay && overlay.length).toBe(1); // the caret
+    expect(layer("caret")?.shapes).toHaveLength(1); // the caret, on its own layer
+    expect(h.lastToolPreviews()).toBeNull(); // the tool-preview slot stays the tool's
     type("Big ");
     await session().idle();
     expect(layerText(rec.layers.get(idOf(id)))).toContain("Big");
@@ -167,7 +173,7 @@ describe.skipIf(!blitzPresent)("web conformance — in-frame edit (real host + r
     const source = (await loadWebSource(host, id))!;
     // Outline: p(0) div(1) p(2). The second <p> sits one 20 px line down.
     expect(await highlightOutlineEntry(host, id, source, 2)).toBe(1);
-    const shapes = h.lastToolPreviews() as unknown as { points: [number, number][]; close?: boolean }[];
+    const shapes = layer("outline")?.shapes as unknown as { points: [number, number][]; close?: boolean }[];
     expect(shapes).toHaveLength(1);
     const ys = shapes[0].points.map((p) => p[1]);
     // The frame's top is at 60 pt; the box spans 15–30 pt in the frame.
@@ -179,5 +185,45 @@ describe.skipIf(!blitzPresent)("web conformance — in-frame edit (real host + r
     await click(1, 20);
     off();
     expect(picks).toEqual([2]);
+  });
+  it("entering with a point places the caret in the same gesture", async () => {
+    expect(host.supports("editContext.enterPoint@1")).toBe(true);
+    const id = await webFrame("<p>Hello world</p>");
+    // The shell's double-click: one entry carrying where the press landed.
+    expect(h.enterEditContext({ type: "webFrame", id, contentPoint: [1, 8] })).toBe(true);
+    for (let i = 0; i < 50 && !session().isEditing(); i += 1) await new Promise((r) => setTimeout(r, 10));
+    expect(session().state()).toMatchObject({ node: 0, caret: 0, text: "Hello world" });
+    expect(layer("caret")?.shapes).toHaveLength(1);
+  });
+
+  it("entering without a point opens no edit; the next click does", async () => {
+    const id = await webFrame("<p>Hello world</p>");
+    h.enterEditContext({ type: "webFrame", id });
+    await new Promise((r) => setTimeout(r, 30));
+    await session().idle();
+    expect(session().isEditing()).toBe(false);
+    await click(1, 8);
+    expect(session().state()).toMatchObject({ node: 0, caret: 0 });
+  });
+
+  it("the caret and the outline highlight each clear only themselves @feat:plugin-web.outline-canvas", async () => {
+    const id = await enter("<p>One</p><div><p>Two</p></div>");
+    const source = (await loadWebSource(host, id))!;
+    expect(await highlightOutlineEntry(host, id, source, 2)).toBe(1);
+    await click(1, 8);
+    expect(layer("caret")?.shapes).toHaveLength(1);
+    expect(layer("outline")?.shapes).toHaveLength(1);
+    // Esc drops the caret; the outline stays.
+    ctx.onContentKey?.(key("Escape"));
+    for (let i = 0; i < 50 && session().isEditing(); i += 1) await new Promise((r) => setTimeout(r, 10));
+    expect(layer("caret")?.shapes).toEqual([]);
+    expect(layer("outline")?.shapes).toHaveLength(1);
+    // Clearing the outline leaves a caret alone.
+    await click(1, 8);
+    clearOutlineHighlight(host);
+    expect(layer("outline")?.shapes).toEqual([]);
+    expect(layer("caret")?.shapes).toHaveLength(1);
+    // The layers stack outline below caret, and leave with the bundle.
+    expect(h.overlayLayers().map((l) => l.key)).toEqual(["media.paged.web/outline", "media.paged.web/caret"]);
   });
 });

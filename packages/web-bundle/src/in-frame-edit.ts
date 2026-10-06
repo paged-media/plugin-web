@@ -64,6 +64,7 @@ import { engineDocument } from "./engine-document";
 import { loadWebEngine, type WebEngine } from "./engine-loader";
 import type { DraftSession } from "./panels/draft-store";
 import { contentToPage, reportCanvasPick } from "./outline-highlight";
+import { overlayChannel } from "./overlay-channel";
 import { loadWebSource, writeWebSource } from "./source-part";
 
 /** CSS px per point (the frame size the engine lays out at). */
@@ -163,13 +164,9 @@ export function createInFrameEditSession(
     );
   };
 
-  const overlay = (shapes: Parameters<BundleHost["overlay"]["setToolPreviews"]>[0]) => {
-    try {
-      host.overlay.setToolPreviews(shapes);
-    } catch {
-      // no overlay channel granted: the edit works without a drawn caret
-    }
-  };
+  // The caret's own overlay channel: without an overlay grant the edit
+  // works without a drawn caret.
+  const overlay = overlayChannel(host, "caret");
 
   const drawCaret = () => {
     if (!frame || !edit || !frame.geometry?.pageId) {

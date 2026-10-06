@@ -34,6 +34,7 @@ import {
 import manifest from "../manifest.json";
 
 import { startAutoRender } from "./auto-render";
+import { releaseOverlayLayers } from "./overlay-channel";
 import { startPartsCollector } from "./parts-gc";
 import { bakeSelectedWebFrame } from "./bake-to-document";
 import { insertWebFrame } from "./insert";
@@ -177,6 +178,7 @@ export function activate(host: BundleHost): BundleHandle {
       collector.dispose();
       auto.dispose();
       menuSub.dispose();
+      releaseOverlayLayers(host);
     },
   };
 }

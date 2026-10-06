@@ -115,6 +115,12 @@ export function makeWebFrameEditContext(
         onEnter: (ctx) => {
           undoHooks.onEnter?.(ctx);
           inFrame.enter(ctx.id);
+          // A pointer entry (a double-click on the frame) carries where the
+          // press landed, in content coordinates (`editContext.enterPoint@1`):
+          // the same gesture places the caret. A host that sends no point
+          // leaves it to the next click inside the context.
+          const at = ctx.contentPoint;
+          if (at) void inFrame.pointerDown(at[0], at[1]);
         },
         onExit: (ctx) => {
           undoHooks.onExit?.(ctx);

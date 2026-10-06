@@ -1,7 +1,7 @@
 {
   "name": "@paged-media/web",
   "private": false,
-  "version": "0.1.0-canary.9",
+  "version": "0.1.0-canary.10",
   "license": "AGPL-3.0-only OR LicenseRef-PMEL",
   "type": "module",
   "main": "./src/index.ts",
@@ -23,8 +23,8 @@
   },
   "devDependencies": {
     "@paged-media/canvas-wasm": "0.67.0",
-    "@paged-media/plugin-api": "0.2.39-canary.0",
-    "@paged-media/plugin-sdk": "0.2.39-canary.0",
+    "@paged-media/plugin-api": "0.2.41-canary.0",
+    "@paged-media/plugin-sdk": "0.2.41-canary.0",
     "@paged-media/web-model": "workspace:*",
     "@types/node": "20.19.39",
     "@types/react": "^18.3.31",

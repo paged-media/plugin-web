@@ -23,7 +23,8 @@
 // needed by an undo step of this session. The undo history starts empty
 // when a document opens, though, so what was unreachable THEN can only be
 // reached again by a write of this session. The collector therefore
-//   · at open (activation, or the editor's `documentLoaded`), lists the
+//   · at open (activation, or another document opening —
+//     document-opened.ts), lists the
 //     parts and marks as garbage those no label names: a content-addressed
 //     `sources/<hash>.json` whose hash no web label points to, and a legacy
 //     `<frame>/source.json` whose frame the document does not have;
@@ -37,6 +38,7 @@ import type { BundleHost, Disposable } from "@paged-media/plugin-api";
 import { sourceRefOf, type WebSourceEnvelope } from "../../web-model/src";
 
 import { discoverWebFrames } from "./auto-render";
+import { onDocumentOpened } from "./document-opened";
 import { partsWrittenThisSession } from "./source-part";
 
 const SOURCE_PART = /^sources\/([0-9a-f]{16})\.json$/;
@@ -107,20 +109,13 @@ export function startPartsCollector(host: BundleHost): Disposable {
     }
   });
 
-  let offLoaded: (() => void) | null = null;
-  try {
-    offLoaded = host.editor.client.subscribe((msg) => {
-      if (msg.kind === "documentLoaded") markAtOpen();
-    });
-  } catch {
-    // No raw client: activation's mark is the only one.
-  }
+  const offLoaded = onDocumentOpened(host, markAtOpen);
   markAtOpen();
 
   return {
     dispose() {
       willSave.dispose();
-      offLoaded?.();
+      offLoaded();
     },
   };
 }
