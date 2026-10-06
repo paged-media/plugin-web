@@ -1,7 +1,7 @@
 # ADR 413 — Web frames, bound values and CSS variables are objects; document values live in the document label
 
 - **Status:** Accepted 2026-10-06 (on the `om/object-model` branch, with the SDK contract
-  0.2.42). Implements ADR 323 (the plugin object-model contract) for paged.web.
+  0.2.43). Implements ADR 323 (the plugin object-model contract) for paged.web.
 - **Scope:** `packages/web-bundle/src/object-model.ts`, `source-part.ts` (planned writes,
   document values), `bindings.ts` (`resolveDocumentVars`), `manifest.json`
   (`contributes.objectModel`), `packages/web-model/src/css-vars.ts`
@@ -52,6 +52,6 @@ in undo and which InDesign drops.
   to one `host.objects.batch`; the private first-record read of a provider in `bindings.ts`
   then becomes a binding the data plugin applies, and `data.*` stays a read-only view of
   what the provider holds.
-- Within one batch, a frame written through two kinds (`webFrame.css` and a `cssVar` of the
-  same frame) is planned twice from the same state and the later plan wins. Bindings and
-  panel fields write one kind per frame and are exact.
+- Writes are planned by one plugin-level planner (the contribution's `batch`), so a batch
+  that writes a frame through two kinds (`webFrame.css` and a `cssVar` of the same frame)
+  composes both from one state.

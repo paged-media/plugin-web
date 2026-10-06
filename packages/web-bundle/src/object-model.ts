@@ -39,10 +39,9 @@
 // live in the document label (designmap) — one more mutation in the same
 // batch.
 //
-// Known limit: within ONE batch, a web frame written through two kinds
-// (`webFrame.css` and a `cssVar` of the same frame) is planned twice from
-// the same state and the later plan wins. Batches that stay within one kind
-// per frame (every binding apply, every panel field) are exact.
+// Writes are planned by ONE plugin-level planner (`planWebOps`), so a batch
+// that writes a frame through two kinds (`webFrame.css` and a `cssVar` of
+// the same frame) composes both from one state.
 
 import type {
   Address,
@@ -325,45 +324,6 @@ function webFrameKind(host: BundleHost): ObjectKindContribution {
           return refuse("unknownPath", `webFrame has no path "${path}"`);
       }
     },
-    async batch(ops: readonly ObjectOp[]) {
-      try {
-        const { frames, items } = await webFrames(host);
-        const planned = new Map<string, WebFrameSource>();
-        const extra: MutationInput[] = [];
-        for (const op of ops) {
-          if (op.op === "create") {
-            extra.push(...(await planCreate(host, op.within, op.props ?? {})));
-            continue;
-          }
-          if (op.op === "delete") {
-            const id = idOf(op.address, "webFrame");
-            const e = id ? frames.get(id) : undefined;
-            if (!e) throw new Rejected(`${op.address}: no such web frame`);
-            extra.push({ op: "deleteFrame", args: { frameId: (e as { id: string }).id } } as MutationInput);
-            continue;
-          }
-          if (op.op !== "set") throw new Rejected(`webFrame does not take ${op.op}`);
-          const id = idOf(op.address, "webFrame");
-          const e = id ? frames.get(id) : undefined;
-          if (!id || !e) throw new Rejected(`${op.address}: no such web frame`);
-          const current = planned.get(id) ?? (await loadWebSource(host, e));
-          if (!current) throw new Rejected(`${op.address}: the frame's source part is missing`);
-          planned.set(id, applyFramePath(current, op.path, op.value, { kind: e.kind, id }, items));
-        }
-        const labels: Array<{ id: ElementId; labelValue: string }> = [];
-        const parts: PartChange[] = [];
-        for (const [id, source] of planned) {
-          const plan = planSourceWrite(host, source);
-          if ("refused" in plan) throw new Rejected(plan.refused);
-          labels.push({ id: frames.get(id)!, labelValue: plan.labelValue });
-          parts.push(...plan.parts);
-        }
-        return writeOf(labels, parts, extra);
-      } catch (err) {
-        if (err instanceof Rejected) return { kind: "rejected", reason: err.message };
-        throw err;
-      }
-    },
   };
 }
 
@@ -457,40 +417,19 @@ function templateVarKind(host: BundleHost): ObjectKindContribution {
           return refuse("unknownPath", `templateVar has no path "${path}"`);
       }
     },
-    async batch(ops) {
-      let values: Record<string, string> | null = null;
-      for (const op of ops) {
-        if (op.op !== "set") return { kind: "rejected", reason: `templateVar does not take ${op.op}` };
-        const name = idOf(op.address, "templateVar");
-        if (!name || !TEMPLATE_VAR.test(name)) return { kind: "rejected", reason: `${op.address} is not a template value` };
-        if (op.path !== "value") return { kind: "rejected", reason: `templateVar.${op.path} is not writable` };
-        if (name.startsWith("data.")) {
-          return { kind: "rejected", reason: `${name} comes from a dataset provider's first record; set it at the source` };
-        }
-        if (DERIVED_DOC.has(name)) return { kind: "rejected", reason: `${name} is read from the document` };
-        const key = name.slice(4);
-        if (!DOCUMENT_VALUE_KEY.test(key)) return { kind: "rejected", reason: `"${key}" is not a document value key` };
-        if (!host.supports("document.documentMetadata@1")) {
-          return { kind: "rejected", reason: "this engine has no document label to keep document values in (protocol 69)" };
-        }
-        values ??= { ...(await readDocumentValues(host)) };
-        if (op.value === null) delete values[key];
-        else values[key] = op.value as string;
-      }
-      return { kind: "mutations", mutations: values ? [documentValuesMutation(values)] : [] };
-    },
   };
 }
 
+/** A cssVar address (`<frame id>/--name`) → its parts, or null. */
+function split(address: Address): { frame: string; name: string } | null {
+  const id = idOf(address, "cssVar");
+  const slash = id ? id.lastIndexOf("/") : -1;
+  if (!id || slash <= 0) return null;
+  const name = id.slice(slash + 1);
+  return isCssVarName(name) ? { frame: id.slice(0, slash), name } : null;
+}
+
 function cssVarKind(host: BundleHost): ObjectKindContribution {
-  /** `<frame id>/--name` → its parts, or null. */
-  const split = (address: Address): { frame: string; name: string } | null => {
-    const id = idOf(address, "cssVar");
-    const slash = id ? id.lastIndexOf("/") : -1;
-    if (!id || slash <= 0) return null;
-    const name = id.slice(slash + 1);
-    return isCssVarName(name) ? { frame: id.slice(0, slash), name } : null;
-  };
   return {
     kind: "cssVar",
     title: "CSS variable",
@@ -540,32 +479,97 @@ function cssVarKind(host: BundleHost): ObjectKindContribution {
           return refuse("unknownPath", `cssVar has no path "${path}"`);
       }
     },
-    async batch(ops) {
-      const { frames } = await webFrames(host);
-      const planned = new Map<string, WebFrameSource>();
-      for (const op of ops) {
-        if (op.op !== "set") return { kind: "rejected", reason: `cssVar does not take ${op.op}` };
-        const s = split(op.address);
-        const e = s ? frames.get(s.frame) : undefined;
-        if (!s || !e) return { kind: "rejected", reason: `${op.address}: no such CSS variable host` };
-        if (op.path !== "value") return { kind: "rejected", reason: `cssVar.${op.path} is not writable` };
-        const current = planned.get(s.frame) ?? (await loadWebSource(host, e));
-        if (!current) return { kind: "rejected", reason: `${op.address}: the frame's source part is missing` };
-        const next = setCssVar(current.css, s.name, op.value as string);
-        if ("refused" in next) return { kind: "rejected", reason: `${s.name}: ${next.refused}` };
-        planned.set(s.frame, { ...current, css: next.css });
-      }
-      const labels: Array<{ id: ElementId; labelValue: string }> = [];
-      const parts: PartChange[] = [];
-      for (const [id, source] of planned) {
-        const plan = planSourceWrite(host, source);
-        if ("refused" in plan) return { kind: "rejected", reason: plan.refused };
-        labels.push({ id: frames.get(id)!, labelValue: plan.labelValue });
-        parts.push(...plan.parts);
-      }
-      return writeOf(labels, parts, []);
-    },
   };
+}
+
+// ------------------------------------------------------- the planner
+
+/**
+ * The PLUGIN-level planner (ADR 323): every write op of a batch on any of
+ * the three kinds, in batch order, planned from ONE state per frame — so a
+ * `webFrame.css` set and a `cssVar` set on the same frame compose — and
+ * answered as ONE write: each touched frame's label (the label-hash pattern;
+ * the parts a large source needs), the document label when a document value
+ * changed, plus creates and deletes.
+ */
+async function planWebOps(host: BundleHost, ops: readonly ObjectOp[]): Promise<ObjectWrite> {
+  try {
+    const { frames, items } = await webFrames(host);
+    const planned = new Map<string, WebFrameSource>();
+    const extra: MutationInput[] = [];
+    let values: Record<string, string> | null = null;
+    const sourceOf = async (id: string, address: string): Promise<WebFrameSource> => {
+      const e = frames.get(id);
+      if (!e) throw new Rejected(`${address}: no such web frame`);
+      const current = planned.get(id) ?? (await loadWebSource(host, e));
+      if (!current) throw new Rejected(`${address}: the frame's source part is missing`);
+      return current;
+    };
+    for (const op of ops) {
+      if (op.op === "invoke") throw new Rejected("invoke cannot share a batch with writes");
+      if (op.op === "create") {
+        if (op.kind !== `plugin:${PLUGIN_ID}/webFrame` && op.kind !== "webFrame") {
+          throw new Rejected(`create ${op.kind}: only web frames are created`);
+        }
+        extra.push(...(await planCreate(host, op.within, op.props ?? {})));
+        continue;
+      }
+      const a = parseAddress(op.address);
+      const kind = a && a.kind === "plugin" ? (a.objectKind as KindName) : null;
+      if (op.op === "delete") {
+        const id = kind === "webFrame" ? idOf(op.address, "webFrame") : null;
+        const e = id ? frames.get(id) : undefined;
+        if (!e) throw new Rejected(`${op.address}: only a web frame can be deleted`);
+        extra.push({ op: "deleteFrame", args: { frameId: (e as { id: string }).id } } as MutationInput);
+        continue;
+      }
+      if (kind === "webFrame") {
+        const id = idOf(op.address, "webFrame")!;
+        const e = frames.get(id);
+        const current = await sourceOf(id, op.address);
+        planned.set(id, applyFramePath(current, op.path, op.value, { kind: e!.kind, id }, items));
+      } else if (kind === "cssVar") {
+        const s = split(op.address);
+        if (!s) throw new Rejected(`${op.address} is not a CSS variable address`);
+        if (op.path !== "value") throw new Rejected(`cssVar.${op.path} is not writable`);
+        const current = await sourceOf(s.frame, op.address);
+        const next = setCssVar(current.css, s.name, op.value as string);
+        if ("refused" in next) throw new Rejected(`${s.name}: ${next.refused}`);
+        planned.set(s.frame, { ...current, css: next.css });
+      } else if (kind === "templateVar") {
+        const name = idOf(op.address, "templateVar");
+        if (!name || !TEMPLATE_VAR.test(name)) throw new Rejected(`${op.address} is not a template value`);
+        if (op.path !== "value") throw new Rejected(`templateVar.${op.path} is not writable`);
+        if (name.startsWith("data.")) {
+          throw new Rejected(`${name} comes from a dataset provider's first record; set it at the source`);
+        }
+        if (DERIVED_DOC.has(name)) throw new Rejected(`${name} is read from the document`);
+        const key = name.slice(4);
+        if (!DOCUMENT_VALUE_KEY.test(key)) throw new Rejected(`"${key}" is not a document value key`);
+        if (!host.supports("document.documentMetadata@1")) {
+          throw new Rejected("this engine has no document label to keep document values in (protocol 69)");
+        }
+        values ??= { ...(await readDocumentValues(host)) };
+        if (op.value === null) delete values[key];
+        else values[key] = op.value as string;
+      } else {
+        throw new Rejected(`${op.address} is not a paged.web object`);
+      }
+    }
+    if (values) extra.push(documentValuesMutation(values));
+    const labels: Array<{ id: ElementId; labelValue: string }> = [];
+    const parts: PartChange[] = [];
+    for (const [id, source] of planned) {
+      const plan = planSourceWrite(host, source);
+      if ("refused" in plan) throw new Rejected(plan.refused);
+      labels.push({ id: frames.get(id)!, labelValue: plan.labelValue });
+      parts.push(...plan.parts);
+    }
+    return writeOf(labels, parts, extra);
+  } catch (err) {
+    if (err instanceof Rejected) return { kind: "rejected", reason: err.message };
+    throw err;
+  }
 }
 
 // ---------------------------------------------------------- commands
@@ -713,11 +717,12 @@ export function createWebObjectModel(host: BundleHost): ObjectModelContribution 
   return {
     kinds: [webFrameKind(host), templateVarKind(host), cssVarKind(host)],
     commands: typedCommands(host),
+    batch: (ops) => planWebOps(host, ops),
   };
 }
 
 /** Register the object model when the host has the door (plugin-api
- *  0.2.42); `null` on an older host. */
+ *  0.2.43); `null` on an older host. */
 export function contributeObjectModel(host: BundleHost): ObjectModelHandle | null {
   if (!host.supports("contribute.objectModel@1")) return null;
   return host.contribute.objectModel(createWebObjectModel(host));

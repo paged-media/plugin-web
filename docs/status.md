@@ -16,7 +16,7 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
   reach are dropped ([ADR 410](adr/410-unreachable-source-parts-dropped-on-save.md); needs the
   engine's delete door, protocol 66).
 - **Object model** ([ADR 413](adr/413-object-model-and-document-values-in-the-document-label.md),
-  on the `om/object-model` branch, needs plugin-api 0.2.42). Web frames
+  on the `om/object-model` branch, needs plugin-api 0.2.43). Web frames
   (`webFrame`: html, css, media, overflow, vars, flow), bound template values
   (`templateVar`: `doc.<key>` writable, `doc.title`/`doc.pages`/`data.*` read-only) and CSS
   custom properties (`cssVar`, a splice over the css lane) are addressable through

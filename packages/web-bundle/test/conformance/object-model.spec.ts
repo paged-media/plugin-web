@@ -187,6 +187,23 @@ describe.skipIf(!blitzPresent)("web conformance — object model (real host + re
     expect(await h.objects.get(brand, "value")).toEqual(value("#c00"));
   });
 
+  it("one batch writing a frame through two kinds composes (the plugin-level planner)", async () => {
+    const { webFrame } = await insert("<p>v</p>", ":root { --brand: #c00; }");
+    const id = webFrame.split("/").pop()!;
+    const out = await h.objects.batch([
+      { op: "set", address: webFrame, path: "html", value: "<p>both</p>" },
+      { op: "set", address: webAddress("cssVar", `${id}/--brand`), path: "value", value: "teal" },
+      { op: "set", address: webAddress("templateVar", "doc.edition"), path: "value", value: "Winter" },
+    ]);
+    expect(out).toMatchObject({ applied: true, undoSteps: 1 });
+    expect(await h.objects.get(webFrame, "html")).toEqual(value("<p>both</p>"));
+    expect(await h.objects.get(webFrame, "css")).toEqual(value(":root { --brand: teal; }"));
+    expect(await h.objects.get(webAddress("templateVar", "doc.edition"), "value")).toEqual(value("Winter"));
+    await host.document.undo();
+    expect(await h.objects.get(webFrame, "css")).toEqual(value(":root { --brand: #c00; }"));
+    expect(await h.objects.get(webAddress("templateVar", "doc.edition"), "value")).toEqual(value(null));
+  });
+
   it("typed thread / unthread write the flow chain through objects (one step each)", async () => {
     const a = await insert("<p>source</p>");
     const b = await h.objects.invoke(INSERT, { page: "page:#1", bounds: [220, 60, 360, 400], html: "", css: "" });
