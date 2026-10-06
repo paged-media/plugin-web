@@ -286,8 +286,12 @@ export interface ExpectedItem {
   strokeWeight?: number;
   /** Item opacity, percent. */
   opacity?: number;
-  /** A native drop shadow was set. */
+  /** A native drop shadow was set: its x / y offset and size (points). */
   shadow?: boolean;
+  shadowOffset?: [number, number];
+  shadowSize?: number;
+  /** Rounded corners of this radius (points) on all four corners. */
+  cornerRadius?: number;
   /** Subpaths, when the bake gave the path more than one. */
   subpaths?: number;
   /** The item carries image pixels. */
@@ -326,6 +330,10 @@ export function expectedFrom(ops: WireOp[]): Expected {
       if (a.path === "frameStrokeWeight") last.strokeWeight = a.value.value;
       if (a.path === "frameOpacity") last.opacity = a.value.value;
       if (a.path === "frameDropShadowMode") last.shadow = true;
+      if (a.path === "frameDropShadowXOffset") last.shadowOffset = [a.value.value, last.shadowOffset?.[1] ?? 0];
+      if (a.path === "frameDropShadowYOffset") last.shadowOffset = [last.shadowOffset?.[0] ?? 0, a.value.value];
+      if (a.path === "frameDropShadowSize") last.shadowSize = a.value.value;
+      if (a.path === "frameCornerRadiusTopLeft") last.cornerRadius = a.value.value;
       if (a.path === "framePath") {
         last.subpaths = a.value.value.subpathStarts.length;
         const xs = a.value.value.anchors.map((p: { anchor: number[] }) => p.anchor[0]);

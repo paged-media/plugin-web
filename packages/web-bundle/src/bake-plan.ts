@@ -33,14 +33,14 @@
 // What bakes: text runs (position, size, colour, family + style, opacity),
 // solid fills (rectangles, single- and multi-subpath paths), strokes, linear
 // and radial gradient fills (native gradient swatches), a translucent paint
-// (item opacity), an outer box shadow (the native drop-shadow effect on the
-// rectangle that casts it) and raster images (an image frame with the pixels
-// inline). What does not is COUNTED in `deferred`, never faked: sweep
-// gradients, gradient strokes, blend modes, inner shadows, a shadow on a
-// non-rectangular box (the engine sets drop shadows on rectangles and text
-// frames only), translucent gradient stops (baked opaque). Geometry stays in
-// the SceneLayer's own frame-content POINTS; the orchestrator offsets by the
-// frame's page origin.
+// (item opacity), a box with one corner radius (a rectangle with rounded
+// corners), an outer box shadow (the native drop-shadow effect on the
+// rectangle or path that casts it) and raster images (an image frame with the
+// pixels inline). What does not is COUNTED in `deferred`, never faked: sweep
+// gradients, gradient strokes, blend modes, inner shadows, a shadow with no
+// shape of its size to carry it, translucent gradient stops (baked opaque).
+// Geometry stays in the SceneLayer's own frame-content POINTS; the
+// orchestrator offsets by the frame's page origin.
 
 import type { MutationInput, PageId, PathAnchorSpec } from "@paged-media/plugin-api";
 import type { SceneGradient, SceneLayer, ScenePathSeg } from "@paged-media/web-model";
@@ -98,6 +98,9 @@ export interface BakeRect {
   /** Item opacity 0..100 (a translucent paint); absent = opaque. */
   opacity?: number;
   shadow?: BakeShadow;
+  /** One radius (points) on all four corners, as rounded corners; absent =
+   *  square corners. */
+  cornerRadius?: number;
 }
 
 /** A NON-rectangular shape → a native path (`insertPath`). `anchors` (the
@@ -113,6 +116,7 @@ export interface BakePath {
   gradient?: BakeGradientPlacement;
   stroke?: BakeStroke;
   opacity?: number;
+  shadow?: BakeShadow;
 }
 
 /** A single-line text run → a native text frame. `left`/`baseline` are the
@@ -152,7 +156,7 @@ export interface BakePlan {
   texts: BakeText[];
   images: BakeImage[];
   /** Un-baked SceneItem kinds, counted honestly (never faked). Keys are the
-   *  wire `kind` (or a refinement like `dropShadow.onPath`); values are
+   *  wire `kind` (or a refinement like `dropShadow.noShape`); values are
    *  counts. */
   deferred: Record<string, number>;
 }
@@ -191,6 +195,76 @@ export function pathAsRect(
   const xArr = [...xs].sort((a, b) => a - b);
   const yArr = [...ys].sort((a, b) => a - b);
   return [yArr[0], xArr[0], yArr[1], xArr[1]];
+}
+
+/** The control-point distance of a cubic quarter circle, as a fraction of
+ *  its radius. */
+const KAPPA = 0.552284749831;
+
+/** A path is a rectangle with ONE corner radius iff it is a single subpath of
+ *  four circular quarter arcs (cubics, control points at {@link KAPPA} of the
+ *  radius along the corner's edges), one at each corner of its bounds, joined
+ *  by axis-aligned edges (absent when the radius takes the whole side) — how
+ *  a CSS box with a uniform `border-radius` paints. Returns the bounds
+ *  `[top, left, bottom, right]` and the radius, or `null`. */
+export function pathAsRoundedRect(
+  path: ScenePathSeg[],
+): { bounds: [number, number, number, number]; radius: number } | null {
+  if (path.length < 5 || path[0].op !== "moveTo") return null;
+  const bounds = pathBounds(path);
+  if (bounds === null) return null;
+  const [t, l, b, r] = bounds;
+  const eq = (a: number, c: number, tol = 0.01) => Math.abs(a - c) <= tol;
+  const onX = (x: number) => eq(x, l) || eq(x, r);
+  const onY = (y: number) => eq(y, t) || eq(y, b);
+  let x = path[0].x;
+  let y = path[0].y;
+  let radius: number | null = null;
+  const corners = new Set<string>();
+  for (let i = 1; i < path.length; i += 1) {
+    const seg = path[i];
+    if (seg.op === "close") {
+      if (i !== path.length - 1) return null;
+      continue;
+    }
+    if (seg.op === "moveTo") return null;
+    if (seg.op === "lineTo") {
+      if (!eq(seg.x, x) && !eq(seg.y, y)) return null; // a diagonal edge
+      x = seg.x;
+      y = seg.y;
+      continue;
+    }
+    // A quarter arc: from one edge of the bounds to the adjacent one.
+    const rx = Math.abs(seg.x - x);
+    const ry = Math.abs(seg.y - y);
+    if (!(rx > 0.01) || !eq(rx, ry)) return null;
+    let cx: number;
+    let cy: number;
+    if (onX(x) && onY(seg.y)) {
+      cx = x;
+      cy = seg.y;
+    } else if (onY(y) && onX(seg.x)) {
+      cx = seg.x;
+      cy = y;
+    } else return null;
+    const tol = Math.max(0.02 * rx, 0.01);
+    if (
+      !eq(seg.cx1, x + KAPPA * (cx - x), tol) ||
+      !eq(seg.cy1, y + KAPPA * (cy - y), tol) ||
+      !eq(seg.cx2, seg.x + KAPPA * (cx - seg.x), tol) ||
+      !eq(seg.cy2, seg.y + KAPPA * (cy - seg.y), tol)
+    ) {
+      return null;
+    }
+    if (radius === null) radius = rx;
+    else if (!eq(radius, rx)) return null;
+    corners.add(`${eq(cx, l) ? "l" : "r"}${eq(cy, t) ? "t" : "b"}`);
+    x = seg.x;
+    y = seg.y;
+  }
+  if (radius === null || corners.size !== 4) return null;
+  if (radius > Math.min(r - l, b - t) / 2 + 0.01) return null;
+  return { bounds, radius: Math.round(radius * 1000) / 1000 };
 }
 
 /** Convert a SINGLE-subpath {@link ScenePathSeg} run to `insertPath` anchors
@@ -362,36 +436,46 @@ export function sceneLayerToBakePlan(layer: SceneLayer, advances: readonly numbe
     return { id, placement };
   };
 
-  /** A filled or stroked shape: a rectangle when it is one, else a path. */
+  /** The waiting shadow cast by a shape with these bounds (same size, offset
+   *  by the shadow's offset), taken off the waiting list; `undefined` when
+   *  none is waiting. */
+  const takeShadow = (bounds: [number, number, number, number]): BakeShadow | undefined => {
+    const h = bounds[2] - bounds[0];
+    const w = bounds[3] - bounds[1];
+    const i = shadows.findIndex(
+      (sh) => NEAR(sh.bounds[2] - sh.bounds[0], h) && NEAR(sh.bounds[3] - sh.bounds[1], w),
+    );
+    if (i < 0) return undefined;
+    const [sh] = shadows.splice(i, 1);
+    return {
+      xOffset: sh.bounds[1] - bounds[1],
+      yOffset: sh.bounds[0] - bounds[0],
+      size: sh.size,
+      opacityPct: sh.opacityPct,
+      colorId: sh.colorId,
+    };
+  };
+
+  /** A filled or stroked shape: a rectangle when it is one (square, or with
+   *  one corner radius), else a path. */
   const shape = (
     path: ScenePathSeg[],
     fill: { colorId: string | null; gradient?: BakeGradientPlacement },
     extra: { stroke?: BakeStroke; opacity?: number },
     kind: string,
   ): void => {
-    const rect = extra.stroke === undefined || path.some((sg) => sg.op === "close") ? pathAsRect(path) : null;
+    const closed = extra.stroke === undefined || path.some((sg) => sg.op === "close");
+    const square = closed ? pathAsRect(path) : null;
+    const rounded = closed && square === null ? pathAsRoundedRect(path) : null;
+    const rect = square ?? rounded?.bounds ?? null;
     if (rect !== null) {
       const r: BakeRect = { bounds: rect, fillColorId: fill.colorId };
+      if (rounded) r.cornerRadius = rounded.radius;
       if (fill.gradient) r.gradient = fill.gradient;
       if (extra.stroke) r.stroke = extra.stroke;
       if (extra.opacity !== undefined) r.opacity = extra.opacity;
-      // The rectangle that casts a waiting shadow: same size, offset by the
-      // shadow's offset.
-      const h = rect[2] - rect[0];
-      const w = rect[3] - rect[1];
-      const i = shadows.findIndex(
-        (sh) => NEAR(sh.bounds[2] - sh.bounds[0], h) && NEAR(sh.bounds[3] - sh.bounds[1], w),
-      );
-      if (i >= 0) {
-        const [sh] = shadows.splice(i, 1);
-        r.shadow = {
-          xOffset: sh.bounds[1] - rect[1],
-          yOffset: sh.bounds[0] - rect[0],
-          size: sh.size,
-          opacityPct: sh.opacityPct,
-          colorId: sh.colorId,
-        };
-      }
+      const shadow = takeShadow(rect);
+      if (shadow) r.shadow = shadow;
       rects.push(r);
       return;
     }
@@ -406,6 +490,9 @@ export function sceneLayerToBakePlan(layer: SceneLayer, advances: readonly numbe
     if (fill.gradient) p.gradient = fill.gradient;
     if (extra.stroke) p.stroke = extra.stroke;
     if (extra.opacity !== undefined) p.opacity = extra.opacity;
+    const bounds = pathBounds(path);
+    const shadow = bounds ? takeShadow(bounds) : undefined;
+    if (shadow) p.shadow = shadow;
     paths.push(p);
   };
 
@@ -493,9 +580,9 @@ export function sceneLayerToBakePlan(layer: SceneLayer, advances: readonly numbe
       }
     }
   }
-  // A shadow whose box is not a rectangle (a rounded box bakes as a path,
-  // and the engine sets drop shadows on rectangles and text frames only).
-  for (let i = 0; i < shadows.length; i += 1) defer("dropShadow.onPath");
+  // A shadow no shape of its size took (nothing painted the box that casts
+  // it).
+  for (let i = 0; i < shadows.length; i += 1) defer("dropShadow.noShape");
 
   return {
     swatches: [...swatchById.values()],
@@ -599,6 +686,29 @@ function shapeStyleOps(
 
 const round3 = (v: number) => Math.round(v * 1000) / 1000;
 
+/** The native drop shadow of a shape addressed as `el` (a rectangle or a
+ *  path's polygon). */
+function shadowOps(el: { kind: string; id: string }, sh: BakeShadow): MutationInput[] {
+  return [
+    setProp(el, "frameDropShadowMode", { type: "text", value: "Drop" }),
+    setProp(el, "frameDropShadowXOffset", { type: "length", value: round3(sh.xOffset) }),
+    setProp(el, "frameDropShadowYOffset", { type: "length", value: round3(sh.yOffset) }),
+    setProp(el, "frameDropShadowSize", { type: "length", value: round3(sh.size) }),
+    setProp(el, "frameDropShadowOpacity", { type: "length", value: sh.opacityPct }),
+    setProp(el, "frameDropShadowColor", { type: "colorRef", value: sh.colorId }),
+  ];
+}
+
+const CORNERS = ["TopLeft", "TopRight", "BottomLeft", "BottomRight"] as const;
+
+/** Rounded corners of one radius on a rectangle addressed as `el`. */
+function cornerOps(el: { kind: string; id: string }, radius: number): MutationInput[] {
+  return CORNERS.flatMap((c) => [
+    setProp(el, `frameCornerOption${c}`, { type: "text", value: "RoundedCorner" }),
+    setProp(el, `frameCornerRadius${c}`, { type: "length", value: radius }),
+  ]);
+}
+
 /** The swatch that paints nothing (IDML `Swatch/None`). */
 const NO_SWATCH = "Swatch/None";
 
@@ -671,17 +781,8 @@ export function bakeBatchOps(
         { op: "bindCreated", args: { handle } },
         ...shapeStyleOps(el, rect),
       );
-      if (rect.shadow) {
-        const sh = rect.shadow;
-        ops.push(
-          setProp(el, "frameDropShadowMode", { type: "text", value: "Drop" }),
-          setProp(el, "frameDropShadowXOffset", { type: "length", value: round3(sh.xOffset) }),
-          setProp(el, "frameDropShadowYOffset", { type: "length", value: round3(sh.yOffset) }),
-          setProp(el, "frameDropShadowSize", { type: "length", value: round3(sh.size) }),
-          setProp(el, "frameDropShadowOpacity", { type: "length", value: sh.opacityPct }),
-          setProp(el, "frameDropShadowColor", { type: "colorRef", value: sh.colorId }),
-        );
-      }
+      if (rect.cornerRadius !== undefined) ops.push(...cornerOps(el, rect.cornerRadius));
+      if (rect.shadow) ops.push(...shadowOps(el, rect.shadow));
     }
     for (const p of plan.paths) {
       const handle = `p${handles.paths.length}`;
@@ -705,6 +806,7 @@ export function bakeBatchOps(
         ops.push(setProp(el, "framePath", { type: "framePath", value: { anchors: all, subpathStarts: starts } }));
       }
       ops.push(...shapeStyleOps(el, p));
+      if (p.shadow) ops.push(...shadowOps(el, p.shadow));
     }
     plan.images.forEach((img, i) => {
       const png = imageBytes?.[i];

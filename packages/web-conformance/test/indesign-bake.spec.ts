@@ -126,6 +126,10 @@ interface Answer {
     strokeWeight?: number;
     opacity?: number;
     shadow?: string;
+    shadowOffset?: [number, number];
+    shadowSize?: number;
+    cornerOptions?: string[];
+    cornerRadii?: number[];
     paths?: number;
     graphics?: number;
   }[];
@@ -194,8 +198,22 @@ describe("InDesign lane: InDesign's answer matches the bake", () => {
         if (e.strokeWeight !== undefined) expect(a.strokeWeight, what).toBeCloseTo(e.strokeWeight, 2);
         expect(a.opacity ?? 100, what).toBeCloseTo(e.opacity ?? 100, 0);
         if (e.shadow) expect(a.shadow, what).toBe("DROP");
+        if (e.shadowOffset) expect(a.shadowOffset, what).toEqual(e.shadowOffset);
+        if (e.shadowSize !== undefined) expect(a.shadowSize, what).toBeCloseTo(e.shadowSize, 2);
         if (e.subpaths) expect(a.paths, what).toBe(e.subpaths);
         if (e.image) expect(a.graphics, what).toBe(1);
+      });
+    });
+    check("rounded corners keep their radius", () => {
+      exp.items.forEach((e, i) => {
+        const a = ans.items[i];
+        const what = `item ${i} (${e.kind})`;
+        if (e.cornerRadius === undefined) {
+          if (a.cornerOptions) expect(a.cornerOptions, what).toEqual(["NONE", "NONE", "NONE", "NONE"]);
+          return;
+        }
+        expect(a.cornerOptions, what).toEqual(["ROUNDED_CORNER", "ROUNDED_CORNER", "ROUNDED_CORNER", "ROUNDED_CORNER"]);
+        for (const r of a.cornerRadii ?? []) expect(r, what).toBeCloseTo(e.cornerRadius, 2);
       });
     });
     if (INTENT[name]) {

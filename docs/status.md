@@ -70,10 +70,13 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
   selects the subtree that flows; several named flows each go to their own frames.
 - **Flatten.** "Bake web frame to document" creates, in one undoable batch, native swatches,
   gradient swatches, rectangles, paths (with every subpath) and image frames, and a text frame
-  per run set in its own family and style, for one frame or for a primary flow chain. Strokes,
-  item opacity for translucent paint and the drop shadow of a rectangle are kept; it reports
-  what it left out. InDesign opens the result with each item, face, stroke, opacity, shadow,
-  path and image where the bake put it (the InDesign lane in `packages/web-conformance`).
+  per run set in its own family and style, for one frame or for a primary flow chain. A box
+  with one `border-radius` becomes a rectangle with rounded corners of that radius; a box
+  with unequal corners stays a path. Strokes, item opacity for translucent paint and box
+  shadows (as the native drop shadow of the rectangle or path that casts them) are kept; it
+  reports what it left out. InDesign opens the result with each item, face, stroke, opacity,
+  shadow (offset and size), corner radius, path and image where the bake put it (the InDesign
+  lane in `packages/web-conformance`).
 
 ## Limits of what is shipped
 
@@ -120,8 +123,8 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
   padding, table spacing and collapsed borders, `position: sticky`, `text-align-last`,
   `hyphens: none`); upstream reports are drafted in `chrome/UPSTREAM.md`.
 - **The flatten does not carry** sweep gradients, gradient strokes, blended fills, inner
-  shadows, the shadow of a rounded box (the engine sets drop shadows on rectangles and text
-  frames only) or translucent gradient stops (baked opaque); each is counted in the report. A
+  shadows or translucent gradient stops (baked opaque); each is counted in the report. A box
+  with elliptical or unequal corners is a path, not a rectangle with corner options. A
   gradient keeps its angle and length but not its start point. Each text run becomes its own
   text frame. Items are created by kind (rectangles, paths, images, then text), not in paint
   order, and are offset from the frame's top-left corner with no rotation or scale. Of a

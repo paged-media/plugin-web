@@ -168,21 +168,22 @@ describe.skipIf(!artifactPresent)(
       expect(await storyCount(h)).toBe(storiesAfter);
     });
 
-    it("a real Blitz border-radius fill bakes as a native PATH (Phase F, real wasm)", () => {
-      // A rounded-rect background renders to a non-rectangular single-subpath
-      // fill; the translator turns it into a native path (not a deferred item).
+    it("a real Blitz box with one border-radius bakes as a native rectangle with rounded corners", () => {
+      // A uniformly rounded background renders to a single-subpath fill of
+      // four quarter circles and four edges: the bake gives it back as a
+      // rectangle with the radius on every corner (exact for CSS circular
+      // corners). Unequal corners stay a native path.
       const html =
         "<html><body style='margin:0'>" +
         "<div style='width:100px;height:60px;background:#cc3333;border-radius:14px'></div>" +
+        "<div style='width:100px;height:60px;background:#3333cc;border-radius:4px 20px'></div>" +
         "</body></html>";
-      const layer = engine.render(html, 200, 120);
+      const layer = engine.render(html, 200, 160);
       expect(layer).not.toBeNull();
       const plan = sceneLayerToBakePlan(layer!);
-      // Real Blitz emits non-rectangular single-subpath fills for the rounded
-      // corners → at least one native PATH (Phase F). (Complex border-radius
-      // also yields some multi-subpath fills, honestly deferred — the point is
-      // that non-rect fills now bake instead of ALL being dropped.)
-      expect(plan.paths.length).toBeGreaterThanOrEqual(1);
+      expect(plan.rects).toHaveLength(1);
+      expect(plan.rects[0].cornerRadius).toBeCloseTo(10.5, 3);
+      expect(plan.paths).toHaveLength(1);
     });
 
     it("bakes faces, gradients, opacity, a drop shadow and an image in ONE applied batch @feat:plugin-web.bake-to-native", async () => {
@@ -233,7 +234,7 @@ describe.skipIf(!artifactPresent)(
       expect(outcome.diagnostics.map((d) => d.message).join(" | ")).not.toMatch(/refused/);
       expect(outcome.baked).toBe(true);
       // Nothing of these kinds was left behind.
-      for (const k of ["image", "dropShadow", "dropShadow.onPath", "fillPathGradient.linear", "text"]) {
+      for (const k of ["image", "dropShadow", "dropShadow.noShape", "fillPathGradient.linear", "text"]) {
         expect(outcome.deferred[k], k).toBeUndefined();
       }
       const ops = sent[0].args.ops;
@@ -275,6 +276,51 @@ describe.skipIf(!artifactPresent)(
       expect(outcome.diagnostics).toEqual([]);
       expect(outcome.baked).toBe(true);
       expect(outcome.deferred).toEqual({});
+    });
+
+    it("shadows of rounded boxes and of unequal-cornered boxes bake onto their shapes @feat:plugin-web.bake-to-native", async () => {
+      const insert = h.contributions.find(
+        (x) => x.kind === "command" && x.id === "media.paged.web.command.insertWebFrame",
+      )!.value as { handler: (a: unknown) => unknown };
+      await insert.handler(undefined);
+      const boxes = h.host.selection.get()[0];
+      await writeWebSource(h.host, boxes, {
+        ...SOURCE,
+        html: '<div class="pill"></div><div class="leaf"></div>',
+        css:
+          "body{margin:0}div{width:100px;height:40px;margin:10px;box-shadow:4px 4px 6px rgba(0,0,0,0.4)}" +
+          ".pill{background:#2a9d8f;border-radius:12px}.leaf{background:#264653;border-radius:4px 20px}",
+      });
+      const sent: { ops: { op: string; args: { path?: string; elementId?: { kind: string }; value?: { value: unknown } } }[] }[] = [];
+      const doc = h.host.document;
+      const spied = new Proxy(h.host, {
+        get(t, k) {
+          if (k !== "document") return Reflect.get(t, k);
+          return new Proxy(doc, {
+            get(d, kk) {
+              const v = Reflect.get(d, kk) as unknown;
+              if (kk === "mutate") {
+                return (m: { args: never }) => {
+                  sent.push(m.args);
+                  return doc.mutate(m as never);
+                };
+              }
+              return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(d) : v;
+            },
+          });
+        },
+      });
+      const outcome = await bakeWebFrameToDocument(spied, boxes, engine);
+      await settle();
+      // The engine accepted the whole batch: shadows on a polygon included.
+      expect(outcome.diagnostics.map((d) => d.message).join(" | ")).not.toMatch(/refused/);
+      expect(outcome.baked).toBe(true);
+      expect(outcome.deferred).toEqual({});
+      const ops = sent[0].ops.filter((o) => o.op === "setElementProperty");
+      const shadowOn = ops.filter((o) => o.args.path === "frameDropShadowMode").map((o) => o.args.elementId!.kind);
+      expect(shadowOn.sort()).toEqual(["polygon", "rectangle"]);
+      const radii = ops.filter((o) => o.args.path?.startsWith("frameCornerRadius")).map((o) => o.args.value!.value);
+      expect(radii).toEqual([9, 9, 9, 9]);
     });
 
     it("a shapes-only bake gets every path's handle back from the batch @feat:plugin-web.bake-to-native", async () => {

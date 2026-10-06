@@ -138,11 +138,12 @@ scene layer described above. The command "Bake web frame to document"
 
 The flatten renders the frame, or each frame of its primary flow chain, without submitting
 a layer. `sceneLayerToBakePlan` (`bake-plan.ts`, pure) turns a layer into a plan:
-deduplicated RGB swatches named `Color/wb-RRGGBB`, rectangles, single-subpath paths and
-text runs. Every other item kind is counted in `deferred`. `materializePlan` then issues
+deduplicated RGB swatches named `Color/wb-RRGGBB`, rectangles (with one corner radius when
+the box has one), paths, text runs, and each box shadow attached to the rectangle or path of
+its size. Every other item kind is counted in `deferred`. `materializePlan` then issues
 ordinary document mutations at the frame's page position: `createSwatch`; `insertFrame` or
-`insertPath` plus a fill colour; and per text run `insertTextFrame`, `insertText`, a size
-and a colour.
+`insertPath` plus a fill colour, rounded-corner options and the drop-shadow properties; and
+per text run `insertTextFrame`, `insertText`, a size and a colour.
 
 This is the only export path the plugin itself provides. The manifest contributes no
 exporter, and the plugin stores no rendered output in the document. The host can include a

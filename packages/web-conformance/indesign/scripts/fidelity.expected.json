@@ -9,7 +9,12 @@
     330
    ],
    "fill": "Color/wb-ffffff",
-   "shadow": true
+   "shadow": true,
+   "shadowOffset": [
+    3,
+    3
+   ],
+   "shadowSize": 4.5
   },
   {
    "kind": "rectangle",

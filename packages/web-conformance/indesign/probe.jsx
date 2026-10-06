@@ -18,7 +18,8 @@
 
 // Ask InDesign what a baked web frame became: every page item on page 1 in
 // creation order (type, geometric bounds in points from the page origin,
-// fill swatch, stroke, opacity, drop-shadow mode, path and graphic counts;
+// fill swatch, stroke, opacity, drop shadow (mode, offset, size), corner
+// options and radii, path and graphic counts;
 // for text frames the contents, overset state, point size,
 // text fill, font style and first baseline), every swatch with its colour
 // space and value, and the fonts the document uses with their status. run.sh drives it; the answer is
@@ -57,8 +58,20 @@
                 s += ',"opacity":' + r3(it.transparencySettings.blendingSettings.opacity);
                 s += ',"shadow":' + q(String(it.transparencySettings.dropShadowSettings.mode).replace(/^.*\./, ""));
                 s += ',"paths":' + it.paths.length + ',"graphics":' + it.allGraphics.length;
+                var ds = it.transparencySettings.dropShadowSettings;
+                s += ',"shadowOffset":' + arr([ds.xOffset, ds.yOffset]) + ',"shadowSize":' + r3(ds.size);
             } catch (e) {
                 s += ',"effectsError":' + q(e.message);
+            }
+            // Corners (rectangles and polygons): option and radius, in
+            // the order top-left, top-right, bottom-left, bottom-right.
+            try {
+                var opts = [it.topLeftCornerOption, it.topRightCornerOption, it.bottomLeftCornerOption, it.bottomRightCornerOption], on = [];
+                for (var ci = 0; ci < opts.length; ci++) on.push(q(String(opts[ci]).replace(/^.*\./, "")));
+                s += ',"cornerOptions":[' + on.join(",") + "]" +
+                    ',"cornerRadii":' + arr([it.topLeftCornerRadius, it.topRightCornerRadius, it.bottomLeftCornerRadius, it.bottomRightCornerRadius]);
+            } catch (e1) {
+                s += ',"cornersError":' + q(e1.message);
             }
             if (it.constructor.name === "TextFrame") {
                 var ch = it.parentStory.characters;

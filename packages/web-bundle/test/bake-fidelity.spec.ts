@@ -36,6 +36,27 @@ const rectPath = (l: number, t: number, r: number, b: number) => [
   { op: "lineTo" as const, x: l, y: b },
   { op: "close" as const },
 ];
+/** A rounded rectangle as Blitz paints it: a quarter circle (cubic, handle
+ *  0.5523 r) at each corner, joined by straight edges, from the left edge. */
+const roundedPath = (l: number, t: number, r: number, b: number, rad: number, close: boolean) => {
+  const k = rad * (1 - 0.552284749831);
+  type Seg =
+    | { op: "moveTo" | "lineTo"; x: number; y: number }
+    | { op: "cubicTo"; cx1: number; cy1: number; cx2: number; cy2: number; x: number; y: number }
+    | { op: "close" };
+  const segs: Seg[] = [
+    { op: "moveTo", x: l, y: t + rad },
+    { op: "cubicTo", cx1: l, cy1: t + k, cx2: l + k, cy2: t, x: l + rad, y: t },
+    { op: "lineTo", x: r - rad, y: t },
+    { op: "cubicTo", cx1: r - k, cy1: t, cx2: r, cy2: t + k, x: r, y: t + rad },
+    { op: "lineTo", x: r, y: b - rad },
+    { op: "cubicTo", cx1: r, cy1: b - k, cx2: r - k, cy2: b, x: r - rad, y: b },
+    { op: "lineTo", x: l + rad, y: b },
+    { op: "cubicTo", cx1: l + k, cy1: b, cx2: l, cy2: b - k, x: l, y: b - rad },
+  ];
+  if (close) segs.push({ op: "close" });
+  return segs;
+};
 const BLACK = { r: 0, g: 0, b: 0, a: 1 };
 const M = { advance: 40, ascender: 9, descender: -3 };
 const props = (ops: { op: string; args: unknown }[]) =>
@@ -176,11 +197,56 @@ describe("bake fidelity — paint @feat:plugin-web.bake-to-native", () => {
     expect(props(ops as never)).toContainEqual(["frameDropShadowSize", 3]);
   });
 
-  it("a shadow with no rectangle to carry it is counted, never faked", () => {
+  it("a shadow with no shape to carry it is counted, never faked", () => {
     const plan = sceneLayerToBakePlan({
       items: [{ kind: "dropShadow", path: rectPath(0, 0, 10, 10), offset_x: 0, offset_y: 0, blur_radius: 1, r: 0, g: 0, b: 0, a: 1 }],
     });
-    expect(plan.deferred).toEqual({ "dropShadow.onPath": 1 });
+    expect(plan.deferred).toEqual({ "dropShadow.noShape": 1 });
+  });
+
+  it("a uniformly rounded box bakes as a rectangle with rounded corners, carrying its shadow", () => {
+    // Real Blitz output for a 100 x 60 px box with border-radius 14px and
+    // box-shadow 4px 4px 6px at a 10 px margin (points).
+    const plan = sceneLayerToBakePlan({
+      items: [
+        { kind: "dropShadow", path: roundedPath(10.5, 10.5, 85.5, 55.5, 10.5, true), offset_x: 0, offset_y: 0, blur_radius: 4.5, r: 0, g: 0, b: 0, a: 0.4 },
+        { kind: "fillPath", path: roundedPath(7.5, 7.5, 82.5, 52.5, 10.5, false), paint: { r: 0.8, g: 0.2, b: 0.2, a: 1 } },
+      ],
+    });
+    expect(plan.paths).toEqual([]);
+    expect(plan.rects).toHaveLength(1);
+    expect(plan.rects[0].bounds).toEqual([7.5, 7.5, 52.5, 82.5]);
+    expect(plan.rects[0].cornerRadius).toBe(10.5);
+    expect(plan.rects[0].shadow).toEqual({ xOffset: 3, yOffset: 3, size: 4.5, opacityPct: 40, colorId: "Color/wb-000000" });
+    expect(plan.deferred).toEqual({});
+    const p = props(bakeBatchOps([{ plan, pageId: "uP", top: 0, left: 0, metrics: [] }]).ops as never);
+    for (const c of ["TopLeft", "TopRight", "BottomLeft", "BottomRight"]) {
+      expect(p).toContainEqual([`frameCornerOption${c}`, "RoundedCorner"]);
+      expect(p).toContainEqual([`frameCornerRadius${c}`, 10.5]);
+    }
+    expect(p).toContainEqual(["frameDropShadowMode", "Drop"]);
+  });
+
+  it("unequal corners stay a path, and the path carries its shadow", () => {
+    const leaf = roundedPath(0, 0, 80, 40, 3, false);
+    // Two opposite corners rounder than the others: not a rectangle.
+    leaf[1] = { op: "cubicTo", cx1: 0, cy1: 7, cx2: 7, cy2: 0, x: 15, y: 0 };
+    leaf[0] = { op: "moveTo", x: 0, y: 15 };
+    const plan = sceneLayerToBakePlan({
+      items: [
+        { kind: "dropShadow", path: leaf.map((s) => ("x" in s ? { ...s, x: s.x + 2, y: s.y + 2, ...("cx1" in s ? { cx1: s.cx1 + 2, cy1: s.cy1 + 2, cx2: s.cx2 + 2, cy2: s.cy2 + 2 } : {}) } : s)), offset_x: 0, offset_y: 0, blur_radius: 3, r: 0, g: 0, b: 0, a: 0.5 },
+        { kind: "fillPath", path: leaf, paint: BLACK },
+      ],
+    });
+    expect(plan.rects).toEqual([]);
+    expect(plan.paths).toHaveLength(1);
+    expect(plan.paths[0].shadow).toEqual({ xOffset: 2, yOffset: 2, size: 3, opacityPct: 50, colorId: "Color/wb-000000" });
+    expect(plan.deferred).toEqual({});
+    const { ops } = bakeBatchOps([{ plan, pageId: "uP", top: 0, left: 0, metrics: [] }]);
+    const shadowOn = ops
+      .filter((o) => (o.args as { path?: string }).path === "frameDropShadowMode")
+      .map((o) => (o.args as { elementId: { kind: string } }).elementId.kind);
+    expect(shadowOn).toEqual(["polygon"]);
   });
 
   it("a multi-subpath shape gets its whole geometry in the batch", () => {
