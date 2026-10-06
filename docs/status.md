@@ -24,7 +24,8 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
   (quick edits are one step); leaving the frame hands Undo back to the document.
 - **In-frame text editing.** Inside the frame's edit context a click on rendered text places
   a caret in the DOM text node it was painted from (the engine's inspected render maps every
-  painted cluster to its text node). Typing, Backspace/Delete, arrows and Home/End edit that
+  painted cluster to its text node); the double-click that enters the frame places it at once
+  where the host reports the point. Typing, Backspace/Delete, arrows and Home/End edit that
   node; the frame re-renders live and the caret is drawn on the canvas. Enter writes the
   source as one undoable step (markup and untouched character references stay as they were),
   Esc restores the frame, Cmd+Z steps the keystrokes while an edit is open; a click on other
@@ -135,9 +136,11 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
 - **In-frame editing** edits one text node at a time: the caret does not cross into the
   neighbouring node (a bold word, a link), and Enter commits rather than starting a paragraph.
   Text a template produced, and text the parser moves (fostered out of a table), is refused with
-  a note. A threaded frame and a shrink-to-fit frame are edited in the panel. The double-click
-  that enters the frame is not delivered to the plugin, so a further click places the caret.
-  The caret is a line drawn through the host's tool-preview overlay, which other tools share.
+  a note. A threaded frame and a shrink-to-fit frame are edited in the panel. On a host that
+  reports where the entering double-click landed (`editContext.enterPoint@1`) that double-click
+  places the caret; on an older host a further click does. The caret and the outline highlight
+  each draw on an overlay layer of their own (`overlay.layers@1`); an older host has only the
+  shared tool-preview slot, where the two overwrite each other and the active tool's preview.
 - **Bound data** reads one record (the first) of a provider. Document values live in a
   container part, which undo does not restore, and writing one raises no document change (the
   panel re-renders the frames itself).

@@ -185,7 +185,9 @@ See [ADR 409](adr/409-label-is-the-truth-large-sources-by-pointer.md).
 | `host.diagnostics.set` | lint, render and flow findings |
 | `host.assets.getFontFace` | font bytes for the panel preview |
 | edit context `onContentPointerDown`, `onContentKey`, `isDirty`, `onCommit`, `onCancel`, `onUndo`/`onRedo` | in-frame text editing (`in-frame-edit.ts`) |
-| `host.overlay.setToolPreviews` | the in-frame caret and the outline highlight |
+| `host.overlay.layer` (`overlay.layers@1`), else `host.overlay.setToolPreviews` | the in-frame caret and the outline highlight, each on its own layer (`overlay-channel.ts`) |
+| edit context `onEnter` with `contentPoint` (`editContext.enterPoint@1`) | the entering double-click places the caret |
+| `host.document.onDidOpen` (`document.onDidOpen@1`), else the editor client's `documentLoaded` | re-render and re-mark source parts when another document opens (`document-opened.ts`) |
 | `host.dataProviders.discover` / `get` / `onDidChange`, `host.document.meta` | bound data for templates (`bindings.ts`) |
 | `host.clipboard.read` | paste HTML into the panel, sanitised first |
 | `host.widgets.CodeEditor` | the HTML and CSS editors, with a plain textarea as fallback |
