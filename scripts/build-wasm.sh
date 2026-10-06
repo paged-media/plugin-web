@@ -60,7 +60,11 @@ SOURCE_HASH=$(node "$HERE/scripts/source-hash.mjs")
 # shellcheck disable=SC2086 # FEATURES is intentionally word-split
 ( cd "$CRATE" && WEB_RENDER_SOURCE_HASH="$SOURCE_HASH" cargo build --release --target "$TARGET" $FEATURES )
 
-WASM_IN="$CRATE/target/$TARGET/release/web_render.wasm"
+# Cargo writes under CARGO_TARGET_DIR when it is set (relative to the crate,
+# where cargo ran), else the crate's own target/.
+TARGET_DIR="${CARGO_TARGET_DIR:-target}"
+[[ "$TARGET_DIR" = /* ]] || TARGET_DIR="$CRATE/$TARGET_DIR"
+WASM_IN="$TARGET_DIR/$TARGET/release/web_render.wasm"
 if [[ ! -f "$WASM_IN" ]]; then
   echo "build-wasm: expected $WASM_IN — build produced no cdylib" >&2
   exit 1
