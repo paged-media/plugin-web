@@ -172,7 +172,7 @@ impl LowerReport {
             parts.push(format!("{} shadow(s)/blur(s)", self.dropped_shadows));
         }
         Some(format!(
-            "{} primitive(s) not yet renderable on the scene-layer wire: {} (vector + solid fill + multi-run text + axis-aligned raster images + linear/radial/sweep gradient fills + gradient strokes + mix-blend-mode fills + blended gradient fills + outset drop shadows + inset shadows are supported today)",
+            "{} primitive(s) not yet renderable on the page: {} (vector + solid fill + multi-run text + axis-aligned raster images + linear/radial/sweep gradient fills + gradient strokes + mix-blend-mode fills + blended gradient fills + outset drop shadows + inset shadows are supported today)",
             self.dropped(),
             parts.join(", "),
         ))

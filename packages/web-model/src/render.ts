@@ -213,7 +213,7 @@ export interface WebRenderResult {
 /** The single, stable diagnostic the not-loaded path emits — kept as a
  *  constant so the bundle + tests assert it exactly. */
 export const ENGINE_NOT_LOADED_MESSAGE =
-  "web rendering engine not loaded — source-lane preview only (W-01)";
+  "web rendering engine not loaded — showing the source preview only";
 
 /**
  * Render a web frame to the C-1 scene IR WITHOUT an engine: the honest

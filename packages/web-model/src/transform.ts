@@ -174,7 +174,7 @@ export function applyTemplate(
           severity: "warning",
           message:
             `unknown template filter “${f.name}” — available: ${TEMPLATE_FILTERS.join(", ")}` +
-            ` (scripted transforms are the Boa lane, not yet available)`,
+            ` (scripted transforms are not supported yet)`,
           source: "template",
           line,
         });
