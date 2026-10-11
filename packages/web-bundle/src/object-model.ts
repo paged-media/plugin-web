@@ -120,13 +120,11 @@ export const webAddress = (kind: KindName, id: string): Address => `plugin:${PLU
  *  frame panel edits, in panel order, for the host's shared `PropertyField`.
  *  Every entry is a writable row of its kind (a spec holds it to that). */
 export const PANEL_FIELDS: ReadonlyArray<{ kind: KindName; path: string; group: string }> = [
-  { kind: "webFrame", path: "html", group: "Source" },
-  { kind: "webFrame", path: "css", group: "Source" },
+  // html / css / vars / flow stay addressable (scripts, CLI, bindings) but
+  // have no panel row: the Web source panel is their one editor.
   { kind: "webFrame", path: "media", group: "Render" },
   { kind: "webFrame", path: "overflow", group: "Render" },
-  { kind: "webFrame", path: "vars", group: "Template" },
-  { kind: "webFrame", path: "flow", group: "Flow" },
-  { kind: "templateVar", path: "value", group: "Bound values" },
+  { kind: "templateVar", path: "value", group: "Document values" },
   { kind: "cssVar", path: "value", group: "CSS variables" },
 ];
 

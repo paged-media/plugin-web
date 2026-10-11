@@ -68,7 +68,7 @@ describe("bound data in the panel @feat:plugin-web.data-binding", () => {
     expect(byData(r, "data-web-bound-value", "doc.title").props.children).toBe("Annual");
     expect(byData(r, "data-web-bound-value", "frame.page").props.children).toBe("3");
     expect(byData(r, "data-web-bound-value", "doc.pages").props.children).toBe("4");
-    expect(byData(r, "data-web-bound-value", "data.city").props.children).toBe("not bound");
+    expect(byData(r, "data-web-bound-value", "data.city").props.children).toBe("No value");
     await act(async () => new Promise((res) => setTimeout(res, 350))); // the preview debounce
     await settle();
     expect(byData(r, "data-web-preview").props.srcDoc).toContain("<h1>Annual</h1>");

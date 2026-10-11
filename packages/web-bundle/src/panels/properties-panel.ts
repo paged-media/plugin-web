@@ -21,8 +21,11 @@
 // with its one schema-driven `PropertyField` over `host.objects` (the
 // widget comes from the webFrame / templateVar / cssVar schema row, a
 // commit is one undo step, and every field offers "Bind to data…"). The
-// bundle declares fields, never widgets. The source panel keeps its
-// draft-based code editors; this panel writes the persisted source.
+// bundle declares fields, never widgets. The HTML, CSS and template
+// variables are edited in the Web source panel only (its unsaved draft
+// would otherwise conflict with a second editor of the same source); this
+// panel holds the render options, the document values and the CSS
+// variables.
 
 import type { BundleHost, Disposable, PanelSchema } from "@paged-media/plugin-api";
 import { propertyRows, publishObjectList } from "@paged-media/plugin-sdk";
@@ -54,8 +57,8 @@ const list = (rows: string, select: string) => ({
 /** The panel, from `PANEL_FIELDS` (every entry is a row of its kind). */
 export const WEB_PROPERTIES_PANEL: PanelSchema = {
   id: PROPERTIES_PANEL_ID,
-  title: "Web properties",
-  icon: "panel-canvas",
+  title: "Web frame properties",
+  icon: "panel-properties",
   defaultDock: "right",
   sections: [
     {
@@ -64,15 +67,17 @@ export const WEB_PROPERTIES_PANEL: PanelSchema = {
       rows: propertyRows(WEB_FRAME, paths(WEB_FRAME, "Render"), "selection"),
     },
     {
-      title: "Source",
-      collapsible: true,
-      rows: propertyRows(WEB_FRAME, [...paths(WEB_FRAME, "Source"), ...paths(WEB_FRAME, "Template"), ...paths(WEB_FRAME, "Flow")], "selection"),
-    },
-    {
-      title: "Bound values",
+      // The values behind {{doc.…}} / {{data.…}}. The Web source panel's
+      // Variables section is where a frame's variables are edited; this list
+      // points there rather than being a third editor of its own.
+      title: "Document values",
       rows: [
+        {
+          widget: "paged.label",
+          props: { text: "The values behind {{doc.…}} and {{data.…}}; edit a frame's variables in Web source." },
+        },
         list(BIND.templateVars, BIND.templateVar),
-        ...propertyRows(TEMPLATE_VAR, paths(TEMPLATE_VAR, "Bound values"), { bind: BIND.templateVar }),
+        ...propertyRows(TEMPLATE_VAR, paths(TEMPLATE_VAR, "Document values"), { bind: BIND.templateVar }),
       ],
     },
     {

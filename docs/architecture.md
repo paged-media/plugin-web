@@ -175,7 +175,7 @@ See [ADR 409](adr/409-label-is-the-truth-large-sources-by-pointer.md).
 
 | Door | What the plugin uses it for |
 |---|---|
-| `contributePanel`, `host.contribute.command`, `host.contribute.menu` | the "Web frame" panel, seven commands, seven menu entries |
+| `contributePanel`, `host.contribute.command`, `host.contribute.menu` | the "Web source" panel, seven commands, seven menu entries |
 | `contributeObjectType`, `contributeEditContext` | the `webFrame` type and its double-click edit context, which declares no canvas tools |
 | `host.contribute.importer` | `.html` and `.htm` files become the source of a new web frame |
 | `host.contribute.sceneLayer()` | submit one layer per frame |

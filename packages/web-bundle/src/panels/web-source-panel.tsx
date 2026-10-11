@@ -53,6 +53,7 @@ import {
   useState,
   type CSSProperties,
   type ReactElement,
+  type ReactNode,
 } from "react";
 
 import type {
@@ -124,6 +125,13 @@ import {
   ingestHtml,
 } from "./ingest";
 import { selectRange } from "./find-in-source";
+import { insertWebFrame } from "../insert";
+
+/** The source panel's id and title. "Web source" (HTML, CSS, preview) sits
+ *  beside "Web frame properties" (the schema panel), so each title says
+ *  which one it is. */
+export const SOURCE_PANEL_ID = "media.paged.web.panel.source";
+export const SOURCE_PANEL_TITLE = "Web source";
 
 /** Trailing-edge debounce between a keystroke and the preview/lint
  *  refresh. Document writes do NOT ride this timer — see `persistDraft`. */
@@ -153,8 +161,9 @@ const field: CSSProperties = {
 
 const optionRow: CSSProperties = {
   display: "flex",
+  flexWrap: "wrap",
   alignItems: "center",
-  gap: "var(--space-2, 8px)",
+  gap: "var(--space-1, 4px) var(--space-2, 8px)",
   font: "12px var(--font-sans, sans-serif)",
   color: "var(--pg-fg)",
   margin: "0 0 var(--space-1, 4px)",
@@ -164,6 +173,31 @@ const mutedNote: CSSProperties = {
   font: "10px var(--font-sans, sans-serif)",
   color: "var(--pg-muted-fg)",
 };
+
+/** A note under the fields of a wrapping `optionRow`: it takes a line of
+ *  its own instead of squeezing beside the control. */
+const rowNote: CSSProperties = { ...mutedNote, flexBasis: "100%" };
+
+/** The panel's primary button (the theme's primary fill). */
+const primaryButton: CSSProperties = {
+  font: "500 12px var(--font-sans, sans-serif)",
+  color: "var(--pg-primary-fg)",
+  background: "var(--pg-primary)",
+  border: "none",
+  borderRadius: "var(--radius-md, 6px)",
+  padding: "6px 12px",
+  cursor: "pointer",
+};
+
+/** A collapsed "About" disclosure for detail a one-line note leaves out. */
+function About({ children }: { children: ReactNode }): ReactElement {
+  return (
+    <details data-web-about style={{ ...mutedNote, flexBasis: "100%", margin: "var(--space-1, 4px) 0 0" }}>
+      <summary style={{ cursor: "pointer" }}>About</summary>
+      <div style={{ margin: "var(--space-1, 4px) 0 0" }}>{children}</div>
+    </details>
+  );
+}
 
 const DOT: Record<WebDiagnostic["severity"], string> = {
   error: "var(--status-error)",
@@ -335,15 +369,7 @@ function FlowPicker({
   onThread: (flowName: string | undefined) => void;
   onUnthread: () => void;
 }): ReactElement {
-  const chip = {
-    font: "500 12px var(--font-sans, sans-serif)",
-    color: "var(--primary-fg, #fff)",
-    background: "var(--pg-primary)",
-    border: "none",
-    borderRadius: "var(--radius-md, 6px)",
-    padding: "6px 12px",
-    cursor: "pointer",
-  } as const;
+  const chip = primaryButton;
   return (
     <div
       data-web-flow-picker
@@ -376,7 +402,7 @@ function FlowPicker({
           marginTop: "var(--space-2, 8px)",
           color: "var(--pg-fg)",
           background: "transparent",
-          border: "1px solid var(--pg-border, #ccc)",
+          border: "1px solid var(--pg-border)",
         }}
       >
         Unthread selected
@@ -387,16 +413,16 @@ function FlowPicker({
 
 /** Overflow policy labels and what each one does, in the panel's words. */
 const OVERFLOW_LABEL: Record<OverflowPolicy, string> = {
-  clip: "clip",
-  shrink: "shrink to fit",
-  grow: "grow frame",
-  thread: "continue into thread",
+  clip: "Clip",
+  shrink: "Shrink to fit",
+  grow: "Grow frame",
+  thread: "Continue into thread",
 };
 const OVERFLOW_NOTE: Record<OverflowPolicy, string> = {
-  clip: "content past the frame is cut off",
-  shrink: "the content is scaled down until it fits the frame",
-  grow: "the frame's height follows the content (an undoable resize)",
-  thread: "content continues into the threaded frames (Thread web flow into frames)",
+  clip: "Content past the frame is cut off.",
+  shrink: "The content is scaled down until it fits the frame.",
+  grow: "The frame's height follows the content.",
+  thread: "Content continues into the frames threaded after this one.",
 };
 
 // ----------------------------------------------------------------- panel
@@ -434,6 +460,9 @@ export function makeWebSourcePanel(
     const [flowSource, setFlowSource] = useState<WebFrameSource | null>(null);
     const sourceRef = useRef<WebFrameSource | null>(source);
     sourceRef.current = source;
+    // Why the last insert / "Make web frame" was refused, shown inline.
+    const [panelError, setPanelError] = useState<string | null>(null);
+    useEffect(() => setPanelError(null), [selection]);
 
     const target =
       selection.length === 1 ? asFrameTarget(selection[0]) : null;
@@ -556,17 +585,39 @@ export function makeWebSourcePanel(
         );
       }
       return (
-        <div data-web-panel="empty" style={{ padding: "var(--space-3, 12px)", color: "var(--pg-muted-fg)", font: "12px var(--font-sans, sans-serif)" }}>
-          Select a single frame to edit it as a web frame, or insert one via
-          the “Insert web frame” command.
+        <div data-web-panel="empty" style={{ padding: "var(--space-3, 12px)", font: "12px var(--font-sans, sans-serif)" }}>
+          <p style={{ margin: "0 0 var(--space-2, 8px)", color: "var(--pg-muted-fg)" }}>
+            Insert a web frame, or select one frame to edit its HTML and CSS.
+          </p>
+          <button
+            type="button"
+            data-web-insert
+            onClick={() =>
+              void insertWebFrame(host, SOURCE_PANEL_ID).then((refusal) => setPanelError(refusal))
+            }
+            style={primaryButton}
+          >
+            Insert web frame
+          </button>
+          {panelError && (
+            <p data-web-panel-error role="alert" style={{ ...mutedNote, margin: "var(--space-2, 8px) 0 0", color: "var(--status-error)" }}>
+              {panelError}
+            </p>
+          )}
         </div>
       );
     }
     if (!source) {
       const makeFrom = (src: WebFrameSource): void => {
         void writeWebSource(host, selection[0], src).then((out) => {
-          if (out.applied) setSource(src);
-          else host.log.warn(`Make web frame: ${out.reason ?? "refused"}`);
+          if (out.applied) {
+            setPanelError(null);
+            setSource(src);
+          } else {
+            const message = `Not made a web frame: ${out.reason ?? "the document refused the change"}`;
+            host.log.warn(message);
+            setPanelError(message);
+          }
         });
       };
       return (
@@ -578,18 +629,15 @@ export function makeWebSourcePanel(
             type="button"
             data-web-make
             onClick={() => makeFrom(DEFAULT_SOURCE)}
-            style={{
-              font: "500 12px var(--font-sans, sans-serif)",
-              color: "var(--primary-fg, #fff)",
-              background: "var(--pg-primary)",
-              border: "none",
-              borderRadius: "var(--radius-md, 6px)",
-              padding: "6px 12px",
-              cursor: "pointer",
-            }}
+            style={primaryButton}
           >
             Make web frame
           </button>
+          {panelError && (
+            <p data-web-panel-error role="alert" style={{ ...mutedNote, margin: "var(--space-2, 8px) 0 0", color: "var(--status-error)" }}>
+              {panelError}
+            </p>
+          )}
           {/* Seed the new frame from a vetted starter instead of the
               default — an empty frame is a poor first run. */}
           <TemplatePicker
@@ -728,7 +776,9 @@ function BoundData({
   };
   return (
     <div data-web-bound>
-      <div style={kicker}>Bound data</div>
+      {/* Part of the Variables section: the {{doc.…}}, {{frame.…}} and
+          {{data.…}} names the draft uses, and their values. */}
+      <div style={{ ...mutedNote, margin: "var(--space-2, 8px) 0 var(--space-1, 4px)" }}>From the document and data</div>
       {names.map((name) => {
         const value = bindings.vars[name];
         const key = docKey(name);
@@ -763,18 +813,19 @@ function BoundData({
               </>
             ) : (
               <span data-web-bound-value={name} style={value === undefined ? mutedNote : { font: "12px var(--font-sans, sans-serif)" }}>
-                {value === undefined ? "not bound" : value}
+                {value === undefined ? "No value" : value}
               </span>
             )}
           </div>
         );
       })}
-      <span style={mutedNote}>
-        doc.title, doc.pages, doc.&lt;key&gt; (document values), frame.page, data.&lt;field&gt; (first record
-        of a data provider)
-      </span>
+      <About>
+        Names you can use: doc.title, doc.pages, doc.&lt;key&gt; (a document value you set here),
+        frame.page, and data.&lt;field&gt; (the first record of a data source). The same document
+        values are listed under Document values in Web frame properties.
+      </About>
       {note && (
-        <span data-web-bound-note role="alert" style={{ ...mutedNote, color: "var(--status-error, var(--pg-fg))" }}>
+        <span data-web-bound-note role="alert" style={{ ...mutedNote, color: "var(--status-error)" }}>
           {note}
         </span>
       )}
@@ -1210,7 +1261,7 @@ function SourceEditor({
               cursor: "pointer",
             }}
           >
-            Find in source ({outline.length})
+            {lane.native ? "Tags" : "Find in source"} ({outline.length})
           </summary>
           <ul
             style={{
@@ -1232,31 +1283,32 @@ function SourceEditor({
                   onClick={() => findInSource(entry, i)}
                   title={
                     lane.native
-                      ? `line ${entry.line} — select in the host editor is not wired`
-                      : `select <${entry.tag}> at line ${entry.line}`
+                      ? `Outline <${entry.tag}> on the canvas (line ${entry.line} in the editor)`
+                      : `Select <${entry.tag}> at line ${entry.line}`
                   }
                   style={{
                     font: "11px var(--font-mono, monospace)",
                     color: "var(--pg-fg)",
-                    background: "var(--pg-bg)",
-                    border: `1px solid ${activeTag === i ? "var(--pg-accent, var(--pg-fg))" : "var(--pg-border)"}`,
+                    background: lane.native ? "transparent" : "var(--pg-bg)",
+                    border: `1px solid ${activeTag === i ? "var(--pg-primary)" : "var(--pg-border)"}`,
                     borderRadius: "var(--radius-sm, 4px)",
                     padding: "1px 6px",
-                    cursor: lane.native ? "default" : "pointer",
+                    cursor: "pointer",
                   }}
                 >
+                  {/* The host editor can't take a selection, so there the
+                      chip reads as a line label: the tag and its line. */}
                   {entry.tag}
                   <span style={{ color: "var(--pg-muted-fg)" }}>
-                    :{entry.line}
+                    {lane.native ? ` line ${entry.line}` : `:${entry.line}`}
                   </span>
                 </button>
               </li>
             ))}
           </ul>
           {lane.native && (
-            <p style={{ margin: "var(--space-1, 4px) 0 0", ...mutedNote }}>
-              The host code editor has no selection channel — these show
-              the line only.
+            <p data-web-outline-hint style={{ margin: "var(--space-1, 4px) 0 0", ...mutedNote }}>
+              Each tag shows its line in the editor; click one to outline it on the canvas.
             </p>
           )}
           {highlightNote && (
@@ -1310,12 +1362,11 @@ function SourceEditor({
           }
           style={field}
         >
-          <option value="print">print</option>
-          <option value="screen">screen</option>
+          <option value="print">Print</option>
+          <option value="screen">Screen</option>
         </select>
-        <span data-web-media-note style={mutedNote}>
-          sets the body class media-{draft.options.media}; @media queries evaluate as screen in
-          the preview and on the canvas alike
+        <span data-web-media-note style={rowNote}>
+          Adds the class media-{draft.options.media} to the body; @media queries still match screen.
         </span>
       </label>
       <label style={optionRow}>
@@ -1339,7 +1390,7 @@ function SourceEditor({
             </option>
           ))}
         </select>
-        <span data-web-overflow-note style={mutedNote}>
+        <span data-web-overflow-note style={rowNote}>
           {OVERFLOW_NOTE[draft.options.overflow]}
         </span>
       </label>
@@ -1421,53 +1472,15 @@ function SourceEditor({
         >
           Add variable
         </button>
-        <span style={mutedNote}>
-          {"{{name}}"} substitution + {TEMPLATE_FILTERS.join(" · ")} —
-          deterministic; scripted transforms are not available
+        <span style={rowNote}>
+          Write {"{{name}}"} in the HTML or CSS to insert a variable.
         </span>
+        <About>
+          A variable can pass through a filter, as in {"{{name | upper}}"}. Filters:{" "}
+          {TEMPLATE_FILTERS.join(", ")}. Variables are plain text substitution; they run no scripts.
+        </About>
       </div>
       <BoundData host={host} names={boundNamesIn(draft)} bindings={bindings} onChanged={refreshBindings} />
-      {/* Persistence is EXPLICIT: one undoable metadata mutation per
-          save, never a side effect of typing (the preview above the
-          fold refreshes live; the document does not). */}
-      <div
-        data-web-commit-row
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "var(--space-2, 8px)",
-          margin: "var(--space-2, 8px) 0 0",
-        }}
-      >
-        <button
-          type="button"
-          data-web-commit
-          disabled={!dirty}
-          onClick={commit}
-          style={{
-            font: "500 12px var(--font-sans, sans-serif)",
-            color: "var(--primary-fg, #fff)",
-            background: "var(--pg-primary)",
-            border: "none",
-            borderRadius: "var(--radius-md, 6px)",
-            padding: "4px 12px",
-            cursor: dirty ? "pointer" : "default",
-            opacity: dirty ? 1 : 0.5,
-          }}
-        >
-          Save to document
-        </button>
-        <span data-web-dirty={dirty ? "true" : "false"} style={mutedNote}>
-          {dirty
-            ? "Unsaved edits — live in the preview only"
-            : "Saved to the document"}
-        </span>
-        {saveError && (
-          <span data-web-save-error role="alert" style={{ ...mutedNote, color: "var(--status-error, var(--pg-fg))" }}>
-            {saveError}
-          </span>
-        )}
-      </div>
       <div style={kicker}>Preview</div>
       {/* Font badge: W1 honesty + the W-06 flip. When the asset store
           serves a used family's BYTES, the panel composes a real
@@ -1490,7 +1503,7 @@ function SourceEditor({
             padding: "4px 8px",
             font: "10px/1.5 var(--font-sans, sans-serif)",
             color: "var(--pg-fg)",
-            background: "var(--pg-subtle, var(--pg-bg))",
+            background: "var(--pg-muted)",
             border: "1px solid var(--pg-border)",
             borderRadius: "var(--radius-sm, 4px)",
           }}
@@ -1506,26 +1519,23 @@ function SourceEditor({
                 badge.severity === "review"
                   ? "var(--status-review)"
                   : badge.state === "shown"
-                    ? "var(--status-ok, var(--status-info))"
+                    ? "var(--status-approved)"
                     : "var(--status-info)",
               transform: "translateY(1px)",
             }}
           />
           {badge.state === "shown" ? (
             <span>
-              Document fonts shown — the preview uses the document’s
-              actual faces
+              The preview uses the document’s fonts
               {badge.shown.length > 0 ? `: ${badge.shown.join(", ")}.` : "."}
             </span>
           ) : (
-            <span>
-              Fonts substituted in preview — browser defaults, not the
-              document faces.
-              {badge.shown.length > 0
-                ? ` Shown from document: ${badge.shown.join(", ")}.`
-                : ""}
+            <span
+              title={badge.shown.length > 0 ? `From the document: ${badge.shown.join(", ")}` : undefined}
+            >
+              Some fonts are browser substitutes in the preview.
               {badge.unregistered.length > 0
-                ? ` ${badge.unregistered.length} not in document: ${badge.unregistered.join(", ")}.`
+                ? ` Not in the document: ${badge.unregistered.join(", ")}.`
                 : ""}
             </span>
           )}
@@ -1557,11 +1567,52 @@ function SourceEditor({
       {/* The preview is the browser's rendering at the frame's size; the
           canvas is the engine's, re-rendered when the saved source or the
           frame's size changes (auto-render.ts). What still differs is said. */}
-      <p data-web-preview-note style={{ margin: "var(--space-1, 4px) 0 0", font: "10px var(--font-sans, sans-serif)", color: "var(--pg-muted-fg)" }}>
-        Browser preview at the frame’s size. The canvas shows the saved source and
-        re-renders when you save; it lays text out in its bundled typeface, and
-        “shrink to fit” scales only on the canvas.
+      <p data-web-preview-note style={{ margin: "var(--space-1, 4px) 0 0", ...mutedNote }}>
+        The canvas shows this preview once you save.
       </p>
+      <About>
+        The preview is the browser’s rendering at the frame’s size. The canvas lays text out in
+        its bundled typeface, and “Shrink to fit” scales only on the canvas.
+      </About>
+      {/* Persistence is EXPLICIT: one undoable metadata mutation per
+          save, never a side effect of typing (the preview above
+          refreshes live; the document does not). */}
+      <div
+        data-web-commit-row
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "center",
+          gap: "var(--space-2, 8px)",
+          margin: "var(--space-2, 8px) 0 0",
+        }}
+      >
+        <button
+          type="button"
+          data-web-commit
+          disabled={!dirty}
+          onClick={commit}
+          title={dirty ? undefined : "Nothing to save: the document has these edits"}
+          style={{
+            ...primaryButton,
+            padding: "4px 12px",
+            cursor: dirty ? "pointer" : "default",
+            opacity: dirty ? 1 : 0.5,
+          }}
+        >
+          Save to document
+        </button>
+        <span data-web-dirty={dirty ? "true" : "false"} style={mutedNote}>
+          {dirty
+            ? "Unsaved edits show only in the preview"
+            : "Saved to the document"}
+        </span>
+        {saveError && (
+          <span data-web-save-error role="alert" style={{ ...rowNote, color: "var(--status-error)" }}>
+            {saveError}
+          </span>
+        )}
+      </div>
       {diagnostics.length > 0 && (
         <>
           <div style={kicker}>Diagnostics</div>
@@ -1630,7 +1681,7 @@ function SourceEditor({
                 {report.overset === true && (
                   <span
                     data-web-overset
-                    style={{ color: "var(--status-warning, #f5a524)" }}
+                    style={{ color: "var(--status-review)" }}
                   >
                     {" "}
                     · overset

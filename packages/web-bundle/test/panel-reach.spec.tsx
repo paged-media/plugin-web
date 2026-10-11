@@ -20,15 +20,50 @@
 // choice that persists. Rendered with react-test-renderer against a minimal
 // host.
 
-import { act, type ReactTestRenderer } from "react-test-renderer";
+import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it } from "vitest";
 
 import { DEFAULT_SOURCE, envelopeFor, sourceFromEnvelope, type WebSourceEnvelope } from "@paged-media/web-model";
 
+import { makeWebSourcePanel } from "../src/panels/web-source-panel";
 import { mountPanel, reachHost, settle } from "./fixtures/panel-host";
 
 const byData = (r: ReactTestRenderer, attr: string) =>
   r.root.find((n) => typeof n.type === "string" && n.props[attr] !== undefined);
+
+const textOf = (node: { children: unknown[] }): string =>
+  node.children.map((c) => (typeof c === "string" ? c : textOf(c as { children: unknown[] }))).join("");
+
+describe("empty and refused states say so in the panel", () => {
+  it("with nothing selected the panel offers Insert web frame, and shows a refusal inline", async () => {
+    const h = reachHost();
+    (h.host.document as unknown as { meta: () => Promise<unknown> }).meta = async () => ({ activePage: null });
+    const Panel = makeWebSourcePanel(h.host);
+    let r!: ReactTestRenderer;
+    await act(async () => {
+      r = create(<Panel />);
+    });
+    await settle();
+    const insert = byData(r, "data-web-insert");
+    expect(textOf(insert)).toBe("Insert web frame");
+    await act(async () => insert.props.onClick());
+    await settle();
+    expect(textOf(byData(r, "data-web-panel-error"))).toMatch(/no page to insert into/);
+  });
+
+  it("a refused Make web frame shows its reason inline", async () => {
+    const h = reachHost();
+    h.labels.delete("uA");
+    (h.host.document as unknown as { setMetadata: () => Promise<unknown> }).setMetadata = async () => ({
+      applied: false,
+      error: { kind: "rejected", reason: "locked" },
+    });
+    const r = await mountPanel(h);
+    await act(async () => byData(r, "data-web-make").props.onClick());
+    await settle();
+    expect(textOf(byData(r, "data-web-panel-error"))).toMatch(/^Not made a web frame/);
+  });
+});
 
 describe("overflow policy in the panel", () => {
   it("the select offers the four policies and is enabled", async () => {

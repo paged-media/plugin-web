@@ -54,7 +54,7 @@ import {
 import { sourceFromHtmlFile } from "../../web-model/src";
 import { createInFrameEditSession } from "./in-frame-edit";
 import { createDraftSession } from "./panels/draft-store";
-import { makeWebSourcePanel } from "./panels/web-source-panel";
+import { makeWebSourcePanel, SOURCE_PANEL_ID, SOURCE_PANEL_TITLE } from "./panels/web-source-panel";
 import { contributeObjectModel } from "./object-model";
 import {
   PROPERTIES_PANEL_ID,
@@ -62,7 +62,7 @@ import {
   publishPropertyLists,
 } from "./panels/properties-panel";
 
-const PANEL_ID = "media.paged.web.panel.source";
+const PANEL_ID = SOURCE_PANEL_ID;
 
 export function activate(host: BundleHost): BundleHandle {
   // The panel's drafts and their undo history, shared with the edit context
@@ -70,8 +70,8 @@ export function activate(host: BundleHost): BundleHandle {
   const drafts = createDraftSession();
   contributePanel(host, {
     id: PANEL_ID,
-    title: "Web frame",
-    icon: "panel-canvas",
+    title: SOURCE_PANEL_TITLE,
+    icon: "panel-script-editor",
     component: makeWebSourcePanel(host, drafts),
     defaultDock: "right",
   });
@@ -79,7 +79,9 @@ export function activate(host: BundleHost): BundleHandle {
     id: "media.paged.web.command.insertWebFrame",
     title: "Insert web frame",
     category: "Web",
-    handler: () => insertWebFrame(host, PANEL_ID),
+    handler: async () => {
+      await insertWebFrame(host, PANEL_ID);
+    },
   });
   // W-01 — "Render to frame": the bake-path affordance. Loads the
   // Blitz/WASM engine (manifest capabilities.wasm ∋ blitz), renders the

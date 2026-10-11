@@ -64,22 +64,22 @@ export async function insertWebFrame(
   // The importer hands in a file-derived source; the command keeps the
   // starter default.
   source: WebFrameSource = DEFAULT_SOURCE,
-): Promise<void> {
-  const refuse = (message: string, detail?: unknown): void => {
+): Promise<string | null> {
+  // Resolves to null on success, or the refusal (also published to the
+  // Problems lane) so a panel can show it inline.
+  const refuse = (message: string, detail?: unknown): string => {
     host.log.warn(`insertWebFrame: ${message}`, detail);
-    host.diagnostics.set(INSERT_DIAG_KEY, [
-      { severity: "error", message: `Web frame not inserted: ${message}`, source: "insert" },
-    ]);
+    const text = `Web frame not inserted: ${message}`;
+    host.diagnostics.set(INSERT_DIAG_KEY, [{ severity: "error", message: text, source: "insert" }]);
+    return text;
   };
   const pageId = await activePageId(host);
   if (!pageId) {
-    refuse("there is no page to insert into");
-    return;
+    return refuse("there is no page to insert into");
   }
   const prepared = await prepareSourceLabel(host, source);
   if ("refused" in prepared) {
-    refuse(prepared.refused);
-    return;
+    return refuse(prepared.refused);
   }
   const outcome = await host.document.mutate({
     op: "batch",
@@ -101,14 +101,13 @@ export async function insertWebFrame(
     },
   });
   if (!outcome.applied || !outcome.createdId) {
-    refuse(outcome.applied ? "the document created no frame" : describeRefusal(outcome.error), outcome);
-    return;
+    return refuse(outcome.applied ? "the document created no frame" : describeRefusal(outcome.error), outcome);
   }
   if (!asFrameTarget(outcome.createdId)) {
-    refuse("the created element is not a frame");
-    return;
+    return refuse("the created element is not a frame");
   }
   host.diagnostics.set(INSERT_DIAG_KEY, []);
   await host.selection.set([outcome.createdId]);
   host.shell.openPanel(panelId);
+  return null;
 }

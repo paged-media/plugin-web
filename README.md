@@ -22,7 +22,7 @@ Everything about how the plugin is designed and built is in [`docs/`](./docs/REA
 ## What it does
 
 - **Web frames.** "Insert web frame" (or importing a `.html` file) places a frame
-  whose content is an HTML/CSS source. The "Web frame" panel edits it: HTML and
+  whose content is an HTML/CSS source. The "Web source" panel edits it: HTML and
   CSS editors, a sandboxed live preview (`sandbox=""` — page JavaScript never
   executes), diagnostics, templates and template variables, and an explicit
   "Save to document".
