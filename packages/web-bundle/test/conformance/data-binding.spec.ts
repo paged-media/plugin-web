@@ -30,7 +30,12 @@ import { DEFAULT_SOURCE, type WebFrameSource } from "@paged-media/web-model";
 
 import { webBundle } from "../../src";
 import { autoRendererFor } from "../../src/auto-render";
-import { writeDocumentValues, writeWebSource } from "../../src/source-part";
+import {
+  DOCUMENT_VALUES_PART,
+  readDocumentValues,
+  writeDocumentValues,
+  writeWebSource,
+} from "../../src/source-part";
 import { W1_EMPTY_PAGE } from "../fixtures/corpus";
 import { blitzPresent, layerText, primeBlitz, recordScene, requireBlitz, type SceneRecord } from "./blitz";
 import { openHost } from "./host";
@@ -124,9 +129,36 @@ describe.skipIf(!blitzPresent)("web conformance — data binding (real host + re
     provider.set("Graz");
     await autoRendererFor(host)!.idle();
     expect(layerText(rec.layers.get(idOf(id)))).toContain("Graz");
+    // A document value is a document change: the canvas follows it with no
+    // nudge from the writer.
     await writeDocumentValues(host, { edition: "Autumn" });
-    await autoRendererFor(host)!.reconcile("change");
+    await autoRendererFor(host)!.idle();
     expect(layerText(rec.layers.get(idOf(id)))).toContain("Autumn");
+  });
+
+  it("a document value is one undo step: undo restores the previous value on the canvas", async () => {
+    expect((await writeDocumentValues(host, { edition: "Spring" })).applied).toBe(true);
+    const id = await frame("<p>{{doc.edition}}</p>");
+    expect((await writeDocumentValues(host, { edition: "Autumn" })).applied).toBe(true);
+    await autoRendererFor(host)!.idle();
+    expect(layerText(rec.layers.get(idOf(id)))).toContain("Autumn");
+    // The values live in the document's own metadata, not a container part.
+    expect((await host.document.getDocumentMetadata())?.data).toEqual({ documentValues: { edition: "Autumn" } });
+    expect(await host.parts.read(DOCUMENT_VALUES_PART).catch(() => null)).toBeNull();
+    await host.document.undo();
+    await autoRendererFor(host)!.idle();
+    expect(await readDocumentValues(host)).toEqual({ edition: "Spring" });
+    expect(layerText(rec.layers.get(idOf(id)))).toContain("Spring");
+  });
+
+  it("a document that kept its values in the old part is read once, then the metadata is the truth", async () => {
+    await host.parts.write(DOCUMENT_VALUES_PART, new TextEncoder().encode(JSON.stringify({ edition: "Legacy" })));
+    expect(await readDocumentValues(host)).toEqual({ edition: "Legacy" });
+    expect((await writeDocumentValues(host, { ...(await readDocumentValues(host)), year: "2026" })).applied).toBe(true);
+    expect(await readDocumentValues(host)).toEqual({ edition: "Legacy", year: "2026" });
+    // The part is no longer read once the metadata exists.
+    await host.parts.write(DOCUMENT_VALUES_PART, new TextEncoder().encode(JSON.stringify({ edition: "Stale" })));
+    expect(await readDocumentValues(host)).toEqual({ edition: "Legacy", year: "2026" });
   });
 
   it("a source that names no bound value keeps its placeholders verbatim", async () => {

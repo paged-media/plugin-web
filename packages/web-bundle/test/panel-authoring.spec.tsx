@@ -34,12 +34,20 @@ const byData = (r: ReactTestRenderer, attr: string, value?: string) =>
     (n) => typeof n.type === "string" && n.props[attr] !== undefined && (value === undefined || n.props[attr] === value),
   );
 
-function boundHost(html: string) {
+function boundHost(html: string, { documentMetadata = true }: { documentMetadata?: boolean } = {}) {
   const h = reachHost();
   h.labels.set("uA", envelopeFor({ ...DEFAULT_SOURCE, html }));
   const parts = new Map<string, Uint8Array>();
+  const doc: { envelope: unknown } = { envelope: null };
   const host = h.host as unknown as Record<string, any>;
-  host.supports = (f: string) => f === "storage.parts@1";
+  host.supports = (f: string) => f === "storage.parts@1" || (documentMetadata && f === "document.documentMetadata@1");
+  // The document metadata door: a write is a document change.
+  host.document.getDocumentMetadata = async () => doc.envelope;
+  host.document.setDocumentMetadata = async (envelope: unknown) => {
+    doc.envelope = envelope;
+    h.emit({ kind: "mutationApplied" });
+    return { applied: true, createdId: null, pageIds: [] };
+  };
   host.parts = {
     read: async (p: string) => parts.get(p) ?? null,
     write: async (p: string, b: Uint8Array) => void parts.set(p, b),
@@ -49,7 +57,7 @@ function boundHost(html: string) {
   host.document.elementGeometry = async (ids: unknown[]) =>
     ids.map((id) => ({ id, pageId: "p3", bounds: h.geometry.bounds }));
   host.document.collection = async (name: string) => (name === "pages" ? [{ selfId: "p3", index: 3 }] : []);
-  return { h, parts };
+  return { h, parts, doc };
 }
 
 describe("bound data in the panel @feat:plugin-web.data-binding", () => {
@@ -66,14 +74,30 @@ describe("bound data in the panel @feat:plugin-web.data-binding", () => {
     expect(byData(r, "data-web-preview").props.srcDoc).toContain("<h1>Annual</h1>");
   });
 
-  it("a document value is set from the panel into the document value map", async () => {
-    const { h, parts } = boundHost("<p>{{doc.edition}}</p>");
+  it("a document value is set from the panel into the document's metadata; the change refreshes the preview", async () => {
+    const { h, parts, doc } = boundHost("<p>{{doc.edition}}</p>");
+    const r = await mountPanel(h);
+    await act(async () => byData(r, "data-web-bound-input", "doc.edition").props.onChange({ target: { value: "Spring" } }));
+    await act(async () => byData(r, "data-web-bound-set", "doc.edition").props.onClick());
+    await settle();
+    expect(doc.envelope).toEqual({ v: 1, data: { documentValues: { edition: "Spring" } } });
+    expect(parts.has("web/document-values.json")).toBe(false);
+    await act(async () => new Promise((res) => setTimeout(res, 350))); // the preview debounce
+    await settle();
+    expect(byData(r, "data-web-preview").props.srcDoc).toContain("<p>Spring</p>");
+  });
+
+  it("on a host without document metadata the value goes to the container part", async () => {
+    const { h, parts } = boundHost("<p>{{doc.edition}}</p>", { documentMetadata: false });
     const r = await mountPanel(h);
     await act(async () => byData(r, "data-web-bound-input", "doc.edition").props.onChange({ target: { value: "Spring" } }));
     await act(async () => byData(r, "data-web-bound-set", "doc.edition").props.onClick());
     await settle();
     const saved = JSON.parse(new TextDecoder().decode(parts.get("web/document-values.json")!));
     expect(saved).toEqual({ edition: "Spring" });
+    await act(async () => new Promise((res) => setTimeout(res, 350)));
+    await settle();
+    expect(byData(r, "data-web-preview").props.srcDoc).toContain("<p>Spring</p>");
   });
 
   it("shows nothing when the draft names no bound value", async () => {

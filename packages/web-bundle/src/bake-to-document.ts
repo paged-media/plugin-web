@@ -245,11 +245,8 @@ async function applyBake(
   ]);
   // `minted` is additive on the wire; an engine that omits it applied the
   // whole batch all the same (a batch is all-or-nothing).
-  // An inserted PATH comes back with no handle (core 0.67 names the mints of
-  // insertFrame / insertTextFrame but not of insertPath), so an unnamed mint
-  // counts too: the batch only mints what it inserts.
   const created = outcome.minted
-    ? outcome.minted.filter((m) => m.handle === null || named.has(m.handle)).length
+    ? outcome.minted.filter((m) => m.handle !== null && named.has(m.handle)).length
     : named.size;
   return { created, swatchCount: batch.swatchIds.length };
 }

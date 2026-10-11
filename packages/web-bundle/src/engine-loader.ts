@@ -79,6 +79,9 @@ export interface BlitzGlue {
   /** Register a face (TTF/OTF/WOFF/WOFF2 bytes) under `family` ("" = its own
    *  name); answers the registered family names as JSON. */
   register_font?: (bytes: Uint8Array, family: string) => string;
+  /** The bundled face's bytes (the engine's fallback face). Absent in an
+   *  artifact built before the export existed. */
+  bundled_font?: () => Uint8Array;
   /** Register a sub-resource's bytes under the URL the source writes. */
   register_resource?: (url: string, bytes: Uint8Array) => void;
   has_resource?: (url: string) => boolean;
@@ -119,6 +122,10 @@ export interface WebEngine {
    *  Answers the registered family names (empty: not a face). Absent on an
    *  engine built before faces. */
   registerFont?(bytes: Uint8Array, family: string): string[];
+  /** The bytes of the face the engine draws every family nobody registered
+   *  in (`BUNDLED_FAMILY`), or `null` when the export threw. Absent on an
+   *  engine built before the export. */
+  bundledFont?(): Uint8Array | null;
   /** Register a sub-resource (image, stylesheet, font file) under the URL the
    *  source writes for it. */
   registerResource?(url: string, bytes: Uint8Array): void;
@@ -134,7 +141,7 @@ export interface WebEngine {
  *  bundle's loader and the test glues so they cannot drift. */
 export function engineExtras(glue: Partial<BlitzGlue>, warn: (m: string) => void = () => {}): Pick<
   WebEngine,
-  "registerFont" | "registerResource" | "hasResource" | "takeResourceMisses" | "takeTextAdvances"
+  "registerFont" | "bundledFont" | "registerResource" | "hasResource" | "takeResourceMisses" | "takeTextAdvances"
 > {
   const json = <T>(f: (() => string) | undefined, fallback: T): T => {
     if (!f) return fallback;
@@ -148,6 +155,16 @@ export function engineExtras(glue: Partial<BlitzGlue>, warn: (m: string) => void
   return {
     registerFont: glue.register_font
       ? (bytes, family) => json(() => glue.register_font!(bytes, family), [] as string[])
+      : undefined,
+    bundledFont: glue.bundled_font
+      ? () => {
+          try {
+            return glue.bundled_font!();
+          } catch (err) {
+            warn(`web engine: bundled_font threw — ${stringifyErr(err)}`);
+            return null;
+          }
+        }
       : undefined,
     registerResource: glue.register_resource
       ? (url, bytes) => {

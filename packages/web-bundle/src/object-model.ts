@@ -561,7 +561,7 @@ async function planWebOps(host: BundleHost, ops: readonly ObjectOp[]): Promise<O
         throw new Rejected(`${op.address} is not a paged.web object`);
       }
     }
-    if (values) extra.push(documentValuesMutation(values));
+    if (values) extra.push(await documentValuesMutation(host, values));
     const labels: Array<{ id: ElementId; labelValue: string }> = [];
     const parts: PartChange[] = [];
     for (const [id, source] of planned) {

@@ -35,6 +35,7 @@
 import type {
   BundleHost,
   ElementId,
+  SceneLayerSubmitResult,
   SceneLayerSurface,
 } from "@paged-media/plugin-api";
 import {
@@ -117,9 +118,9 @@ export function persistentSceneSurface(host: BundleHost): SceneLayerSurface | nu
       submit: async (id: string, layer: Parameters<SceneLayerSurface["submit"]>[1]) => {
         // From protocol 68 the reply names the faces drawn in the default
         // font (`{ fontFallbacks }`); an older host answers nothing.
-        const reply: unknown = await inner.submit(id, layer);
+        const reply: SceneLayerSubmitResult | void = await inner.submit(id, layer);
         held.add(id);
-        return reply as void;
+        return reply;
       },
       clear: async (id: string) => {
         await inner.clear(id);
@@ -248,9 +249,9 @@ export async function bakeWebFrame(
     // The local SceneLayer twin is the C-1 IR by construction
     // (fillPath/text + ScenePathSeg) — the wire `SceneLayer` shape, so
     // the submit is a structural pass-through.
-    const reply: unknown = await surface.submit(target.id, result.sceneLayer as never);
+    const reply = await surface.submit(target.id, result.sceneLayer as never);
     submitted = true;
-    result.diagnostics.push(...faceDiagnostics(reply));
+    result.diagnostics.push(...faceDiagnostics(reply, host));
   }
 
   return {
@@ -295,14 +296,18 @@ async function renderWithEngine(
   const policy = source.options.overflow;
   // The faces the source names and the resources it points at, from the
   // document (never the network).
-  await prepareEngineInputs(host, engine, html);
+  const faceProblems = await prepareEngineInputs(host, engine, html, asFrameTarget(id)?.id);
   // A threaded source's policy is its flow (render-flow-command.ts); a
   // single-frame render of it shows its own frame, clipped.
   const fit = renderWithPolicy(engine, html, widthPx, heightPx, policy);
   // The engine loaded but the render threw — honest not-loaded result (no
   // fake layer). The loader already logged the wasm error.
   if (fit === null) return notLoaded;
-  const diagnostics: WebDiagnostic[] = [...rendered.diagnostics, ...resourceDiagnostics(engine)];
+  const diagnostics: WebDiagnostic[] = [
+    ...rendered.diagnostics,
+    ...resourceDiagnostics(engine),
+    ...faceProblems,
+  ];
 
   if (policy === "grow" && fit.contentHeightPx !== null && bounds) {
     const contentPt = fit.contentHeightPx / PX_PER_PT;
@@ -457,9 +462,9 @@ export async function bakeWebFlow(
   // subtree flows across the chain (Stylo ignores the property, so the plugin
   // parses it). Absent → the whole body flows.
   const flowRoot = flowRootSelector(rendered.css);
-  await prepareEngineInputs(host, engine, html);
+  const faceProblems = await prepareEngineInputs(host, engine, html, asFrameTarget(sourceId)?.id);
   const flow = engine.renderFlow(html, framesPx, flowRoot);
-  const missing = resourceDiagnostics(engine);
+  const missing = [...resourceDiagnostics(engine), ...faceProblems];
   if (flow === null) {
     // The engine loaded but the flow render threw — honest not-loaded.
     return {
@@ -488,7 +493,7 @@ export async function bakeWebFlow(
     // string-id page item (asFrameTarget → null) can't receive a layer.
     const target = asFrameTarget(chain[i]);
     if (doSubmit && surface && layer && target) {
-      faces.push(...faceDiagnostics(await surface.submit(target.id, layer as never)));
+      faces.push(...faceDiagnostics(await surface.submit(target.id, layer as never), host));
       submittedCount += 1;
     }
   }
@@ -581,7 +586,7 @@ export async function bakeWebFlows(
   const faces: WebDiagnostic[] = [];
   let submittedCount = 0;
   let anyOverset = false;
-  await prepareEngineInputs(host, engine, doc.html);
+  diagnostics.push(...(await prepareEngineInputs(host, engine, doc.html, sourceTarget.id)));
 
   // Every group's frame geometry in ONE read (was one read per group).
   const allFrames = groups.flatMap((g) => g.frames as unknown as ElementId[]);
@@ -618,7 +623,7 @@ export async function bakeWebFlows(
       layers.push(layer);
       const target = asFrameTarget(groupFrames[i]);
       if (surface && layer && target) {
-        faces.push(...faceDiagnostics(await surface.submit(target.id, layer as never)));
+        faces.push(...faceDiagnostics(await surface.submit(target.id, layer as never), host));
         submittedCount += 1;
       }
     }

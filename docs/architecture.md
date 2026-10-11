@@ -138,11 +138,12 @@ scene layer described above. The command "Bake web frame to document"
 
 The flatten renders the frame, or each frame of its primary flow chain, without submitting
 a layer. `sceneLayerToBakePlan` (`bake-plan.ts`, pure) turns a layer into a plan:
-deduplicated RGB swatches named `Color/wb-RRGGBB`, rectangles, single-subpath paths and
-text runs. Every other item kind is counted in `deferred`. `materializePlan` then issues
+deduplicated RGB swatches named `Color/wb-RRGGBB`, rectangles (with one corner radius when
+the box has one), paths, text runs, and each box shadow attached to the rectangle or path of
+its size. Every other item kind is counted in `deferred`. `materializePlan` then issues
 ordinary document mutations at the frame's page position: `createSwatch`; `insertFrame` or
-`insertPath` plus a fill colour; and per text run `insertTextFrame`, `insertText`, a size
-and a colour.
+`insertPath` plus a fill colour, rounded-corner options and the drop-shadow properties; and
+per text run `insertTextFrame`, `insertText`, a size and a colour.
 
 This is the only export path the plugin itself provides. The manifest contributes no
 exporter, and the plugin stores no rendered output in the document. The host can include a
@@ -185,7 +186,9 @@ See [ADR 409](adr/409-label-is-the-truth-large-sources-by-pointer.md).
 | `host.diagnostics.set` | lint, render and flow findings |
 | `host.assets.getFontFace` | font bytes for the panel preview |
 | edit context `onContentPointerDown`, `onContentKey`, `isDirty`, `onCommit`, `onCancel`, `onUndo`/`onRedo` | in-frame text editing (`in-frame-edit.ts`) |
-| `host.overlay.setToolPreviews` | the in-frame caret and the outline highlight |
+| `host.overlay.layer` (`overlay.layers@1`), else `host.overlay.setToolPreviews` | the in-frame caret and the outline highlight, each on its own layer (`overlay-channel.ts`) |
+| edit context `onEnter` with `contentPoint` (`editContext.enterPoint@1`) | the entering double-click places the caret |
+| `host.document.onDidOpen` (`document.onDidOpen@1`), else the editor client's `documentLoaded` | re-render and re-mark source parts when another document opens (`document-opened.ts`) |
 | `host.dataProviders.discover` / `get` / `onDidChange`, `host.document.meta` | bound data for templates (`bindings.ts`) |
 | `host.clipboard.read` | paste HTML into the panel, sanitised first |
 | `host.widgets.CodeEditor` | the HTML and CSS editors, with a plain textarea as fallback |

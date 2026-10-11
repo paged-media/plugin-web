@@ -1,26 +1,26 @@
 {
  "items": [
   {
-   "kind": "polygon",
+   "kind": "rectangle",
    "bounds": [
     43.5,
     43.5,
     73.5,
     288.75
    ],
-   "stroke": "Swatch/None",
-   "fill": "Color/wb-2a9d8f"
+   "fill": "Color/wb-2a9d8f",
+   "cornerRadius": 9
   },
   {
-   "kind": "polygon",
+   "kind": "rectangle",
    "bounds": [
     81,
     43.5,
     118.5,
     81
    ],
-   "stroke": "Swatch/None",
-   "fill": "Color/wb-264653"
+   "fill": "Color/wb-264653",
+   "cornerRadius": 18.75
   }
  ],
  "swatches": [

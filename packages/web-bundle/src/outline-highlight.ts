@@ -20,8 +20,8 @@
 // painted for them.
 //
 //   · panel → canvas: clicking a tag in the outline draws the painted
-//     box(es) of that element on the canvas, through the host's overlay
-//     channel (`overlay.setToolPreviews`, page-local outlines — the frame's
+//     box(es) of that element on the canvas, on the bundle's "outline"
+//     overlay channel (overlay-channel.ts; page-local outlines — the frame's
 //     item transform applied, so a rotated frame is outlined correctly);
 //   · canvas → panel: inside the frame's edit context a press reports the
 //     innermost painted element under it (in-frame-edit.ts), and the panel
@@ -38,6 +38,7 @@ import { boxesForOutline, tagOutline, type InspectBox, type WebFrameSource } fro
 import { resolveBindings } from "./bindings";
 import { engineDocument } from "./engine-document";
 import { loadWebEngine, type WebEngine } from "./engine-loader";
+import { overlayChannel } from "./overlay-channel";
 
 const PX_PER_PT = 96 / 72;
 
@@ -67,11 +68,7 @@ export function boxOutlines(g: ElementGeometryItem, boxes: readonly InspectBox[]
 }
 
 function setOverlay(host: BundleHost, shapes: ReturnType<typeof boxOutlines> | null): void {
-  try {
-    host.overlay.setToolPreviews(shapes && shapes.length > 0 ? shapes : null);
-  } catch {
-    // no overlay channel granted
-  }
+  overlayChannel(host, "outline")(shapes);
 }
 
 /**

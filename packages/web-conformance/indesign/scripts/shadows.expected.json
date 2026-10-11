@@ -1,0 +1,64 @@
+{
+ "items": [
+  {
+   "kind": "rectangle",
+   "bounds": [
+    45,
+    45,
+    75,
+    135
+   ],
+   "fill": "Color/wb-2a9d8f",
+   "cornerRadius": 9,
+   "shadow": true,
+   "shadowOffset": [
+    3,
+    3
+   ],
+   "shadowSize": 4.5
+  },
+  {
+   "kind": "polygon",
+   "bounds": [
+    84,
+    45,
+    114,
+    135
+   ],
+   "stroke": "Swatch/None",
+   "fill": "Color/wb-264653",
+   "shadow": true,
+   "shadowOffset": [
+    3,
+    3
+   ],
+   "shadowSize": 4.5
+  }
+ ],
+ "swatches": [
+  {
+   "name": "Color/wb-000000",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "name": "Color/wb-2a9d8f",
+   "rgb": [
+    42,
+    157,
+    143
+   ]
+  },
+  {
+   "name": "Color/wb-264653",
+   "rgb": [
+    38,
+    70,
+    83
+   ]
+  }
+ ]
+}

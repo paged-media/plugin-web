@@ -1,7 +1,7 @@
 # Status
 
-What `paged.web` ships and what it does not, read from the code on 2026-10-05
-(`@paged-media/web` 0.1.0-canary.9, not yet published). How the parts fit is in
+What `paged.web` ships and what it does not, read from the code on 2026-10-06
+(`@paged-media/web` 0.1.0-canary.11, not yet published). How the parts fit is in
 [`architecture.md`](architecture.md); the gaps against Chrome and InDesign, the test baseline
 and the performance reading are in [`design/analysis-2026-10-05.md`](design/analysis-2026-10-05.md).
 
@@ -34,7 +34,8 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
   (quick edits are one step); leaving the frame hands Undo back to the document.
 - **In-frame text editing.** Inside the frame's edit context a click on rendered text places
   a caret in the DOM text node it was painted from (the engine's inspected render maps every
-  painted cluster to its text node). Typing, Backspace/Delete, arrows and Home/End edit that
+  painted cluster to its text node); the double-click that enters the frame places it at once
+  where the host reports the point. Typing, Backspace/Delete, arrows and Home/End edit that
   node; the frame re-renders live and the caret is drawn on the canvas. Enter writes the
   source as one undoable step (markup and untouched character references stay as they were),
   Esc restores the frame, Cmd+Z steps the keystrokes while an edit is open; a click on other
@@ -45,7 +46,15 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
   document value map, set in the panel), `{{frame.page}}` and `{{data.<field>}}` /
   `{{data.<provider>.<field>}}` (the first record of a `dataset` data provider, which paged.data
   publishes). The panel lists the bound names a draft uses with their values; every render
-  substitutes them, and the canvas re-renders when a value changes.
+  substitutes them, and the canvas re-renders when a value changes. The document value map is
+  kept in the plugin's document metadata (`document.documentMetadata@1`): each change is one
+  undo step, kept by `.paged` and `.idml`, and the document change it raises re-renders the
+  frames that name it. A document that kept its values in the container part
+  `web/document-values.json` is read from there until the first change moves them into the
+  metadata; after that the part is not read, and the first save of a later session that opens
+  the document with its values in the metadata drops it (so an undo of the move in the session
+  that made it still finds the values; [ADR 410](adr/410-unreachable-source-parts-dropped-on-save.md)).
+  A host without the door keeps the part, which is not undoable.
 - **Import.** A `.html` or `.htm` file opens as a new web frame: `<style>` blocks become the
   CSS, the content of `<body>` becomes the HTML, and the sanitiser runs on it.
 - **Render to canvas.** Web frames render through the wasm engine to a scene layer by
@@ -63,8 +72,15 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
   Images (`<img>`, CSS backgrounds), linked stylesheets and `@font-face` sources load from
   the container part `resources/<path>`, from `data:` URIs, or (`paged-image:<element id>`)
   from the document's placed images; anything else, network URLs included, is reported as
-  not loaded. A host that draws scene text in its own face (protocol 68) reports the faces
-  it had to substitute, and those are reported too, except the bundled face.
+  not loaded. The bundled face and the document fonts the engine shapes with are also handed
+  to the host's scene-layer face table (`host.assets.registerFont`), which only scene text
+  sees — never the document's layout, its Fonts panel or preflight — and given back when the
+  plugin is deactivated. So are the faces a source's own `@font-face` rules load (from a
+  container part or a `data:` URI): under the family the CSS declares and the face's own
+  family (the one a run shaped with it names), in the rule's weight and style, once per face;
+  a face no web frame used at its last render is given back after the next auto-render pass. A host that draws scene text in its own face (protocol 68) reports
+  the faces it had to substitute, and every one is reported; on a host without the face door
+  the bundled face's substitution is expected and not reported.
 - **Overflow policies.** clip; shrink to fit (laid out in a larger box and scaled into the
   frame); grow frame (the frame's height follows the content, one undoable resize, never
   redone after an undo); continue into thread (the flow; on an unthreaded frame it clips and
@@ -79,10 +95,13 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
   selects the subtree that flows; several named flows each go to their own frames.
 - **Flatten.** "Bake web frame to document" creates, in one undoable batch, native swatches,
   gradient swatches, rectangles, paths (with every subpath) and image frames, and a text frame
-  per run set in its own family and style, for one frame or for a primary flow chain. Strokes,
-  item opacity for translucent paint and the drop shadow of a rectangle are kept; it reports
-  what it left out. InDesign opens the result with each item, face, stroke, opacity, shadow,
-  path and image where the bake put it (the InDesign lane in `packages/web-conformance`).
+  per run set in its own family and style, for one frame or for a primary flow chain. A box
+  with one `border-radius` becomes a rectangle with rounded corners of that radius; a box
+  with unequal corners stays a path. Strokes, item opacity for translucent paint and box
+  shadows (as the native drop shadow of the rectangle or path that casts them) are kept; it
+  reports what it left out. InDesign opens the result with each item, face, stroke, opacity,
+  shadow (offset and size), corner radius, path and image where the bake put it (the InDesign
+  lane in `packages/web-conformance`).
 
 ## Limits of what is shipped
 
@@ -93,10 +112,12 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
   export. Flatten ("Bake") lays out at the frame's size and ignores the overflow policy.
 - **Fonts on the canvas.** A host before protocol 68 draws every scene text run in the
   document's default font, whatever face it was shaped in. A host at 68 draws the run in its
-  family when the document has registered it; the plugin has no door to register a face with
-  the host, so the bundled Inter and any `@font-face` face are drawn in the default font
-  there. Faces are registered with the engine once per engine instance; a font served later
-  under the same family is not picked up until the engine restarts.
+  family when the document has registered it or the plugin handed the face over (the bundled
+  Inter, the document fonts the source names and the source's `@font-face` faces, on a host with
+  `assets.registerFont@1`). A `@font-face` face the canvas cannot take is drawn in the default
+  font and reported: one held only as WOFF or WOFF2 (the canvas reads TrueType and OpenType), or
+  one over the per-face asset budget (8 MB). Faces are registered with the engine once per engine instance; a font
+  served later under the same family is not picked up until the engine restarts.
 - **Paint that is not carried.** Image and pattern brushes, rotated or sheared images and
   gradient-painted text are dropped and counted, but `render_web_frame` returns only the
   layer, so the count does not reach the user. Clip shapes, layer opacity and the spread of
@@ -129,8 +150,8 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
   padding, table spacing and collapsed borders, `position: sticky`, `text-align-last`,
   `hyphens: none`); upstream reports are drafted in `chrome/UPSTREAM.md`.
 - **The flatten does not carry** sweep gradients, gradient strokes, blended fills, inner
-  shadows, the shadow of a rounded box (the engine sets drop shadows on rectangles and text
-  frames only) or translucent gradient stops (baked opaque); each is counted in the report. A
+  shadows or translucent gradient stops (baked opaque); each is counted in the report. A box
+  with elliptical or unequal corners is a path, not a rectangle with corner options. A
   gradient keeps its angle and length but not its start point. Each text run becomes its own
   text frame. Items are created by kind (rectangles, paths, images, then text), not in paint
   order, and are offset from the frame's top-left corner with no rotation or scale. Of a
@@ -145,12 +166,14 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
 - **In-frame editing** edits one text node at a time: the caret does not cross into the
   neighbouring node (a bold word, a link), and Enter commits rather than starting a paragraph.
   Text a template produced, and text the parser moves (fostered out of a table), is refused with
-  a note. A threaded frame and a shrink-to-fit frame are edited in the panel. The double-click
-  that enters the frame is not delivered to the plugin, so a further click places the caret.
-  The caret is a line drawn through the host's tool-preview overlay, which other tools share.
-- **Bound data** reads one record (the first) of a provider. Document values live in a
-  container part, which undo does not restore, and writing one raises no document change (the
-  panel re-renders the frames itself).
+  a note. A threaded frame and a shrink-to-fit frame are edited in the panel. On a host that
+  reports where the entering double-click landed (`editContext.enterPoint@1`) that double-click
+  places the caret; on an older host a further click does. The caret and the outline highlight
+  each draw on an overlay layer of their own (`overlay.layers@1`); an older host has only the
+  shared tool-preview slot, where the two overwrite each other and the active tool's preview.
+- **Bound data** reads one record (the first) of a provider. On a host without the document
+  metadata door, document values live in a container part, which undo does not restore, and
+  writing one raises no document change (the panel re-renders the frames itself).
 - **Import** reads the one file. Linked stylesheets, images and fonts are not brought into
   the container, so they are reported as not loaded until they are stored there.
 

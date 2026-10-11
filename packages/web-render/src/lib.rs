@@ -157,6 +157,16 @@ pub fn register_font(bytes: &[u8], family: &str) -> String {
     register_font_json(bytes, family)
 }
 
+/// The bundled face's bytes (Inter, SIL OFL 1.1, registered as
+/// [`fonts::BUNDLED_FAMILY`]): the face the engine draws every family nobody
+/// registered in. The bundle hands them to the host's scene-layer face table,
+/// so the canvas draws the engine's fallback text in the same face.
+#[cfg(all(feature = "blitz", target_arch = "wasm32"))]
+#[wasm_bindgen::prelude::wasm_bindgen]
+pub fn bundled_font() -> Vec<u8> {
+    fonts::INTER_REGULAR.to_vec()
+}
+
 /// Register a sub-resource's bytes under the URL the source writes for it
 /// (relative to the source: `images/a.png`). Later renders load it.
 #[cfg(all(feature = "blitz", target_arch = "wasm32"))]
