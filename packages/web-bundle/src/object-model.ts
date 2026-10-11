@@ -550,7 +550,7 @@ async function planWebOps(host: BundleHost, ops: readonly ObjectOp[]): Promise<O
         const key = name.slice(4);
         if (!DOCUMENT_VALUE_KEY.test(key)) throw new Rejected(`"${key}" is not a document value key`);
         if (!host.supports("document.documentMetadata@1")) {
-          throw new Rejected("this engine has no document label to keep document values in (protocol 69)");
+          throw new Rejected("this editor version cannot store document values");
         }
         values ??= { ...(await readDocumentValues(host)) };
         if (op.value === null) delete values[key];
