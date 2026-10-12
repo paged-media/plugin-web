@@ -35,9 +35,10 @@
 //   · on activation, and when another document opens
 //     (`document.onDidOpen`; the editor's raw `documentLoaded` broadcast on
 //     an older host — document-opened.ts);
-//   · after document changes (`document.onDidChange`), debounced, so a
-//     save, an undo/redo of one, a resize, a thread/unthread or a delete
-//     shows on the canvas.
+//   · after document changes (`document.onDidChange`, and the editor's
+//     gesture commits — a frame resized by its handles; document-edited.ts),
+//     debounced, so a save, an undo/redo of one, a resize, a thread/unthread
+//     or a delete shows on the canvas.
 //
 // grow (overflow.ts) resizes a frame; it is allowed only when a pass was
 // caused by an edit (not an undo/redo, not an open) and the frame's source
@@ -56,6 +57,7 @@ import {
 
 import { bakeWebFlows, bakeWebFrame, framesWithLayers, persistentSceneSurface } from "./bake";
 import { resolveBindings, watchProviders } from "./bindings";
+import { onDocumentEdited } from "./document-edited";
 import { onDocumentOpened } from "./document-opened";
 import { retainSceneFaces } from "./engine-inputs";
 import { loadWebEngine, type WebEngine } from "./engine-loader";
@@ -290,8 +292,10 @@ export function startAutoRender(host: BundleHost, opts: AutoRenderOptions = {}):
   // values re-render; the rest keep their key).
   const providers = watchProviders(host, () => schedule("change"));
 
-  const docSub = host.document.onDidChange((e) => {
-    schedule(e.kind === "mutationApplied" ? "change" : "undo");
+  // A gesture's commit is an edit like a mutation (a resize by the handles
+  // may grow the frame again).
+  const docSub = onDocumentEdited(host, (e) => {
+    schedule(e.kind === "mutationApplied" || e.kind === "gestureCommitted" ? "change" : "undo");
   });
 
   // A newly opened document: its layers start empty and its sources are new.
