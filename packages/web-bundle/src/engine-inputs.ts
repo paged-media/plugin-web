@@ -297,6 +297,40 @@ async function shareCssFaces(host: InputsHost, rules: CssFace[], user: string | 
   return diagnostics;
 }
 
+/** A face this bundle holds the bytes of, with the style it was declared in
+ *  (none for the bundled face, which is one variable face). */
+export interface HeldFace {
+  style?: string;
+  bytes: Uint8Array;
+}
+
+/** The faces this bundle holds for `family`: the engine's bundled face, or
+ *  the faces a source's `@font-face` rules loaded (matched by the family the
+ *  CSS declares or the face's own, which is what a run shaped with it names).
+ *  Empty when it holds none — a document face the asset store served is the
+ *  document's already. */
+export function heldFaces(host: object, engine: WebEngine, family: string): HeldFace[] {
+  const want = family.toLowerCase();
+  if (want === BUNDLED_FAMILY.toLowerCase()) {
+    const bytes = engine.bundledFont?.() ?? null;
+    return bytes && bytes.byteLength > 0 ? [{ bytes }] : [];
+  }
+  const out: HeldFace[] = [];
+  const seen = new Set<string>();
+  for (const [ruleKey, resolved] of cssFaces.get(host)?.resolved ?? []) {
+    const bytes = resolved.bytes;
+    if (!bytes) continue;
+    const [declared, style] = ruleKey.split("\u0000");
+    const own = sfntFamily(bytes);
+    if (declared.toLowerCase() !== want && own?.toLowerCase() !== want) continue;
+    const key = `${style}\u0000${bytesHash(bytes)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(style ? { style, bytes } : { bytes });
+  }
+  return out;
+}
+
 /** Keep the `@font-face` faces the frames in `live` used at their last
  *  render and give back every other one (the auto renderer calls this after
  *  each pass with the web frames it found). */

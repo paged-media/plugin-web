@@ -334,8 +334,12 @@ const BUDGET = {
   // ids through `bindCreated` handles; the one collection read is the
   // swatches (an existing swatch is not re-created).
   bake: {
-    // 211 in the one-batch commit; 207 without the legacy-part reads.
-    doorCalls: 207,
+    // 211 in the one-batch commit; 207 without the legacy-part reads; 208
+    // since the bake gives the document the faces its text names (one
+    // `supports("assets.fonts@1")` probe per bake; on a host with the asset
+    // door, one `getFontFace` per family and one registration per family the
+    // document has no face for — this host has no asset door).
+    doorCalls: 208,
     mutates: 1,
     batchOps: 1001,
     // The face each run was shaped in (its family; its style when not the

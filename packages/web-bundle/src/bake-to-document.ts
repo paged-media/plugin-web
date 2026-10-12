@@ -52,6 +52,7 @@ import {
   type PlacedBakePlan,
   type RunMetrics,
 } from "./bake-plan";
+import { provideDocumentFaces } from "./document-faces";
 import { engineDocument } from "./engine-document";
 import { prepareEngineInputs, resourceDiagnostics } from "./engine-inputs";
 import { encodePng } from "./png";
@@ -162,6 +163,8 @@ export async function bakeWebFrameToDocument(
   const missing = resourceDiagnostics(engine);
   const advances = engine.takeTextAdvances?.()[0] ?? [];
   const plan = sceneLayerToBakePlan(layer, advances);
+  // The faces the text names, in the document before the runs are measured.
+  const faces = await provideDocumentFaces(host, engine, textFamilies([plan]));
   const placed = await placePlan(host, plan, pageId, top, left);
   const applied = await applyBake(host, [placed]);
   if ("refused" in applied) return fail(applied.refused);
@@ -171,8 +174,15 @@ export async function bakeWebFrameToDocument(
     createdCount: applied.created,
     swatchCount: applied.swatchCount,
     deferred: plan.deferred,
-    diagnostics: [...missing, ...deferredDiagnostics(applied.created, plan.deferred)],
+    diagnostics: [...missing, ...faces, ...deferredDiagnostics(applied.created, plan.deferred)],
   };
+}
+
+/** The families a bake's text runs name, in order of first use. */
+function textFamilies(plans: readonly PlacedBakePlan["plan"][]): string[] {
+  const out: string[] = [];
+  for (const plan of plans) for (const t of plan.texts) if (t.family && !out.includes(t.family)) out.push(t.family);
+  return out;
 }
 
 /** Measure every text run of a plan (all requests in flight at once) and
@@ -340,17 +350,21 @@ export async function bakeWebFlowToDocument(
   const geos = await host.document.elementGeometry(chain);
 
   const deferred: Record<string, number> = {};
-  const placed: PlacedBakePlan[] = [];
+  const plans: { plan: PlacedBakePlan["plan"]; pageId: PageId; top: number; left: number }[] = [];
   for (let i = 0; i < chain.length; i += 1) {
     const layer = flow.layers[i];
     const geo = geos[i];
     if (!layer || !geo?.bounds || !geo.pageId) continue;
     const plan = sceneLayerToBakePlan(layer, advances[i] ?? []);
-    placed.push(await placePlan(host, plan, geo.pageId as PageId, geo.bounds[0], geo.bounds[1]));
+    plans.push({ plan, pageId: geo.pageId as PageId, top: geo.bounds[0], left: geo.bounds[1] });
     for (const [k, v] of Object.entries(plan.deferred)) {
       deferred[k] = (deferred[k] ?? 0) + v;
     }
   }
+  // The faces the text names, in the document before the runs are measured.
+  const faces = await provideDocumentFaces(host, engine, textFamilies(plans.map((p) => p.plan)));
+  const placed: PlacedBakePlan[] = [];
+  for (const p of plans) placed.push(await placePlan(host, p.plan, p.pageId, p.top, p.left));
 
   // The whole flow — every frame's content — as ONE batch: one undo step.
   const applied = await applyBake(host, placed);
@@ -362,6 +376,6 @@ export async function bakeWebFlowToDocument(
     createdCount: created,
     swatchCount,
     deferred,
-    diagnostics: deferredDiagnostics(created, deferred),
+    diagnostics: [...faces, ...deferredDiagnostics(created, deferred)],
   };
 }
