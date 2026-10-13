@@ -95,3 +95,23 @@ as a problem instead. Evidence: `packages/web-bundle/test/engine-inputs.spec.ts`
 faces reach the canvas") and `test/conformance/scene-faces.spec.ts` (real host and engine: no
 fallback for the family, the document's Fonts collection unchanged, fallback again once given
 back).
+
+## Amendment 2026-10-12
+
+A baked run names the face the engine shaped it in, and that face was often one the document
+did not hold: a source naming a family nobody registered shapes in the bundled Inter, and an
+`@font-face` face lives only in the source. The native text then named a family the document's
+font registry had no face for, so the Fonts collection flagged it missing and the canvas drew it
+in a substitute. The bake now gives the document those faces first: for every family its runs
+name that the document holds no face for (`assets.getFontFace` answers from the document
+registry), it registers the bytes it shaped with — the bundled face, or the `@font-face` faces
+(in their declared styles) — before the runs are measured, so they are also measured in their
+face. A family the document already holds is left as it is, and a host that cannot say what the
+document holds (no `assets.fonts@1`) gets nothing. The plugin API has no door for a document
+face (`assets.registerFont` is scene-layer only, on purpose), so the engine's `registerFont`
+message with `scope: "document"` goes through the `host.editor` escape hatch, until the SDK has
+one. The engine keeps a registered face for the session. Code:
+`packages/web-bundle/src/document-faces.ts`, `heldFaces` in `engine-inputs.ts`. Evidence:
+`packages/web-bundle/test/conformance/bake-faces.spec.ts` (real host and engine: the web film's
+mailer bakes in Inter and Inter is not missing; a flow bake; an `@font-face` face; a family the
+document holds is not registered again).

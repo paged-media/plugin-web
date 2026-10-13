@@ -184,7 +184,9 @@ See [ADR 409](adr/409-label-is-the-truth-large-sources-by-pointer.md).
 | `host.document.elementGeometry`, `meta`, `collection(...)` | frame bounds and page; active page for insert; new story of a flattened text frame; registered font families |
 | `host.document.onDidChange`, `host.selection.get` / `set` / `onDidChange` | the panel follows the selection and re-reads after undo or redo; commands act on the selection |
 | `host.diagnostics.set` | lint, render and flow findings |
-| `host.assets.getFontFace` | font bytes for the panel preview |
+| `host.assets.getFontFace` | font bytes for the panel preview; whether the document holds a face for a family a bake writes |
+| the editor client's `gestureCommitted` (`host.editor`, the escape hatch) | re-render and re-read the preview size after a resize by the handles, which `onDidChange` does not report (`document-edited.ts`) |
+| the engine's `registerFont` with `scope: "document"` (`host.editor`, the escape hatch) | give the document the faces baked text names when it has none (`document-faces.ts`) |
 | edit context `onContentPointerDown`, `onContentKey`, `isDirty`, `onCommit`, `onCancel`, `onUndo`/`onRedo` | in-frame text editing (`in-frame-edit.ts`) |
 | `host.overlay.layer` (`overlay.layers@1`), else `host.overlay.setToolPreviews` | the in-frame caret and the outline highlight, each on its own layer (`overlay-channel.ts`) |
 | edit context `onEnter` with `contentPoint` (`editContext.enterPoint@1`) | the entering double-click places the caret |

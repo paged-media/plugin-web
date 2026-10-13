@@ -100,6 +100,7 @@ import {
 } from "../render-report";
 import { autoRendererFor } from "../auto-render";
 import { resolveBindings, watchProviders, type Bindings } from "../bindings";
+import { onDocumentEdited } from "../document-edited";
 import { clearOutlineHighlight, highlightOutlineEntry, onCanvasPick } from "../outline-highlight";
 import {
   documentValuesNotify,
@@ -674,7 +675,8 @@ export function makeWebSourcePanel(
 const PX_PER_PT = 96 / 72;
 
 /** The frame's content size in CSS px, or `null` when the host answers no
- *  geometry. Follows resizes (reflow events) and undo/redo. */
+ *  geometry. Follows resizes (reflow events, and the editor's gesture
+ *  commits — a resize by the handles) and undo/redo. */
 function useFrameSizePx(host: BundleHost, id: ElementId): { width: number; height: number } | null {
   const [size, setSize] = useState<{ width: number; height: number } | null>(null);
   const frameId = (id as { id?: unknown }).id;
@@ -696,7 +698,7 @@ function useFrameSizePx(host: BundleHost, id: ElementId): { width: number; heigh
         .catch(() => {});
     };
     read();
-    const sub = host.document.onDidChange((e) => {
+    const sub = onDocumentEdited(host, (e) => {
       if (e.reflow?.frameId === frameId || e.kind !== "mutationApplied") read();
     });
     return () => {

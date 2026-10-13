@@ -33,6 +33,8 @@ export function reachHost(bounds: [number, number, number, number] = [0, 0, 150,
   let selection: ElementId[] = [];
   const selectionListeners = new Set<(ids: ElementId[]) => void>();
   const docListeners = new Set<(e: unknown) => void>();
+  // The editor client's raw broadcast (`host.editor.client.subscribe`).
+  const rawListeners = new Set<(m: unknown) => void>();
   const labels = new Map<string, unknown>([["uA", envelopeFor(DEFAULT_SOURCE)]]);
   const geometry = { bounds };
   const host = {
@@ -63,11 +65,23 @@ export function reachHost(bounds: [number, number, number, number] = [0, 0, 150,
     diagnostics: { set: () => {} },
     assets: { getFontFace: async () => null },
     log: { debug() {}, info() {}, warn() {}, error() {} },
+    editor: {
+      client: {
+        subscribe: (l: (m: unknown) => void) => {
+          rawListeners.add(l);
+          return () => rawListeners.delete(l);
+        },
+      },
+    },
   } as unknown as BundleHost;
   return {
     host,
     labels,
     geometry,
+    /** A raw editor-client message (a gesture's `gestureCommitted`). */
+    broadcast: (m: unknown) => {
+      for (const l of rawListeners) l(m);
+    },
     select: (ids: ElementId[]) => {
       selection = ids;
       for (const l of selectionListeners) l(ids);

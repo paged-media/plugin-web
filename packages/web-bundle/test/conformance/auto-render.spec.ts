@@ -44,6 +44,37 @@ const src = (html: string, extra: Partial<WebFrameSource> = {}): WebFrameSource 
 });
 const idOf = (id: ElementId) => (id as { id: string }).id;
 
+type Reply = { kind: string; payload?: unknown };
+type RawClient = {
+  send(m: unknown): Promise<Reply>;
+  subscribe(l: (m: Reply) => void): () => void;
+};
+
+/** The editor's client hands EVERY worker reply to its subscribers (the
+ *  editor's `CanvasClient`: "Fan out to subscribers regardless of seq"), so a
+ *  canvas gesture's `gestureCommitted` reaches every listener there. The
+ *  headless client fans out only mutate/undo/redo; make it fan out the rest
+ *  the way the editor does. Installed before the bundle loads. */
+function broadcastEveryReply(h: HeadlessHost): void {
+  const client = (h.host as unknown as { editor: { client: RawClient } }).editor.client;
+  const listeners = new Set<(m: Reply) => void>();
+  const subscribe = client.subscribe.bind(client);
+  const send = client.send.bind(client);
+  client.subscribe = (l) => {
+    listeners.add(l);
+    const off = subscribe(l);
+    return () => {
+      listeners.delete(l);
+      off();
+    };
+  };
+  client.send = async (m) => {
+    const reply = await send(m);
+    for (const l of [...listeners]) l(reply);
+    return reply;
+  };
+}
+
 describe.skipIf(!blitzPresent)("web conformance — auto render (real host + real Blitz)", () => {
   let h: HeadlessHost;
   let host: BundleHost;
@@ -53,6 +84,7 @@ describe.skipIf(!blitzPresent)("web conformance — auto render (real host + rea
   async function boot(): Promise<void> {
     h = await openHost();
     await h.load(W1_EMPTY_PAGE.bytes());
+    broadcastEveryReply(h);
     rec = recordScene(h);
     await primeBlitz(h.host as unknown as BundleHost);
     bundle = h.loadBundle(webBundle);
@@ -114,6 +146,54 @@ describe.skipIf(!blitzPresent)("web conformance — auto render (real host + rea
     const [g] = await host.document.elementGeometry([id]);
     const b = g.bounds;
     await host.document.mutate({ op: "resizeFrame", args: { frameId: idOf(id), bounds: [b[0], b[1], b[2], b[3] - 100] } });
+    await idle();
+    expect(submitsOf(id)).toBe(before + 1);
+  });
+
+  // The editor resizes a frame by its handles as a canvas GESTURE
+  // (begin/update/commit), not a `resizeFrame` mutation: the commit answers
+  // `gestureCommitted`, which the host's `document.onDidChange` does not
+  // report. A single web frame resized that way kept its old, clipped render.
+  it("a resize by the frame's handles (a canvas gesture, as the editor commits it) re-renders", async () => {
+    const id = await webFrame("<p>Resize me by a handle</p>");
+    const before = submitsOf(id);
+    const [g0] = await host.document.elementGeometry([id]);
+    const client = (host as unknown as { editor: { client: RawClient } }).editor.client;
+    const begun = await client.send({
+      kind: "beginGesture",
+      payload: { nodes: [id], gesture: { kind: "resize", handle: "south" }, anchor: null },
+    });
+    expect(begun.kind).toBe("gestureBegun");
+    const handle = (begun.payload as { handle: number }).handle;
+    await client.send({
+      kind: "updateGesture",
+      payload: { handle, delta: [0, -60], modifiers: { shift: false, alt: false, disableSnap: true } },
+    });
+    const done = await client.send({ kind: "commitGesture", payload: { handle } });
+    expect(done.kind).toBe("gestureCommitted");
+    const [g1] = await host.document.elementGeometry([id]);
+    expect(g1.bounds[2] - g1.bounds[0]).not.toBeCloseTo(g0.bounds[2] - g0.bounds[0], 1);
+    await idle();
+    expect(submitsOf(id)).toBe(before + 1);
+    // And an undo of the gesture renders the old size again.
+    await host.document.undo();
+    await idle();
+    expect(submitsOf(id)).toBe(before + 2);
+  });
+
+  // The control bar's W and H fields write the frame's bounds property.
+  it("a resize through the frame's bounds property (the control bar's W/H) re-renders", async () => {
+    const id = await webFrame("<p>Resize me by W and H</p>");
+    const before = submitsOf(id);
+    const [g0] = await host.document.elementGeometry([id]);
+    const [t, l, b, r] = g0.bounds;
+    const out = await host.document.mutate({
+      op: "setElementProperty",
+      args: { elementId: id, path: "frameBounds", value: { type: "bounds", value: [t, l, b - 50, r] } },
+    } as never);
+    expect(out.applied).toBe(true);
+    const [g1] = await host.document.elementGeometry([id]);
+    expect(g1.bounds[2] - g1.bounds[0]).toBeCloseTo(b - 50 - t, 1);
     await idle();
     expect(submitsOf(id)).toBe(before + 1);
   });

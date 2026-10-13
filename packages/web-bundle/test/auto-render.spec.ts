@@ -45,6 +45,7 @@ function modelHost(rows: { id: string; label?: string }[], opts: { didOpen?: boo
   const submits: string[] = [];
   const clears: string[] = [];
   const labels = new Map(rows.filter((r) => r.label).map((r) => [r.id, r.label!]));
+  const geometry = { bounds: [0, 0, 100, 200] };
   const host = {
     supports: (f: string) => f === "rendering.sceneLayer@1" || (f === "document.onDidOpen@1" && didOpen),
     contribute: {
@@ -79,7 +80,7 @@ function modelHost(rows: { id: string; label?: string }[], opts: { didOpen?: boo
       },
       elementGeometry: async (ids: ElementId[]) => {
         count("elementGeometry");
-        return ids.map((id) => ({ id, bounds: [0, 0, 100, 200] }));
+        return ids.map((id) => ({ id, bounds: geometry.bounds }));
       },
       mutate: async () => ({ applied: true }),
       onDidChange: () => ({ dispose() {} }),
@@ -100,7 +101,9 @@ function modelHost(rows: { id: string; label?: string }[], opts: { didOpen?: boo
     if (didOpen) opened.forEach((l) => l());
     else raw.forEach((l) => l({ kind: "documentLoaded" }));
   };
-  return { host, calls, submits, clears, labels, open, rawSubscribers: () => raw.length };
+  /** A raw editor-client message, as the editor broadcasts every reply. */
+  const broadcast = (m: { kind: string; payload?: unknown }) => raw.forEach((l) => l(m));
+  return { host, calls, submits, clears, labels, geometry, open, broadcast, rawSubscribers: () => raw.length };
 }
 
 const engine: WebEngine = {
@@ -167,6 +170,23 @@ describe("auto render — discovery and bounds", () => {
     expect(m.calls.getMetadata).toBe(4); // a, b (discovery) + a (source) + a (render)
     auto.dispose();
   });
+  // The editor commits a resize by the handles as a canvas gesture: its
+  // `gestureCommitted` is not a document change event.
+  it("a gesture's commit that resized a frame re-renders it; one that did not renders nothing", async () => {
+    const m = modelHost([{ id: "a", label: label("<p>A</p>") }]);
+    const auto = startAutoRender(m.host, { engine: async () => engine, debounceMs: 1 });
+    await auto.idle();
+    expect(m.submits).toEqual(["a"]);
+    m.geometry.bounds = [0, 0, 160, 200];
+    m.broadcast({ kind: "gestureCommitted", payload: { handle: 1, appliedSeq: 3, pageIds: [] } });
+    await auto.idle();
+    expect(m.submits).toEqual(["a", "a"]);
+    m.broadcast({ kind: "gestureCommitted", payload: { handle: 2, appliedSeq: 4, pageIds: [] } });
+    await auto.idle();
+    expect(m.submits).toEqual(["a", "a"]);
+    auto.dispose();
+  });
+
   for (const didOpen of [true, false]) {
     it(`an opened document is rendered afresh (${didOpen ? "document.onDidOpen" : "raw client broadcast"})`, async () => {
       const m = modelHost([{ id: "a", label: label("<p>A</p>") }], { didOpen });
@@ -178,7 +198,9 @@ describe("auto render — discovery and bounds", () => {
       m.open();
       await auto.idle();
       expect(m.submits).toEqual(["a", "a"]);
-      expect(m.rawSubscribers()).toBe(didOpen ? 0 : 1);
+      // The open path holds a raw subscription only on a host without the
+      // door; the other one is the gesture-commit listener (document-edited.ts).
+      expect(m.rawSubscribers()).toBe((didOpen ? 0 : 1) + 1);
       auto.dispose();
       expect(m.rawSubscribers()).toBe(0);
     });
