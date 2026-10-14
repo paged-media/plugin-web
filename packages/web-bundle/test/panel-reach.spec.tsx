@@ -108,13 +108,22 @@ describe("preview = canvas", () => {
     expect(iframe(r).props.style.width).toBe("600px");
   });
 
-  // The editor resizes by the handles as a canvas gesture; its commit is the
-  // editor client's `gestureCommitted`, not a document change event.
+  // The editor resizes by the handles as a canvas gesture; the host reports
+  // its commit as a document change without a reflow.
   it("a resize by the frame's handles (the editor's gesture commit) resizes the preview", async () => {
     const h = reachHost([0, 0, 150, 300]);
     const r = await mountPanel(h);
     h.geometry.bounds = [0, 0, 150, 450];
-    await act(async () => h.broadcast({ kind: "gestureCommitted", payload: { handle: 1, appliedSeq: 2, pageIds: [] } }));
+    await act(async () => h.emit({ kind: "gestureCommitted", pageIds: [] }));
+    await settle();
+    expect(iframe(r).props.style.width).toBe("600px");
+  });
+
+  it("a script run that resizes the frame resizes the preview", async () => {
+    const h = reachHost([0, 0, 150, 300]);
+    const r = await mountPanel(h);
+    h.geometry.bounds = [0, 0, 150, 450];
+    await act(async () => h.emit({ kind: "scriptResult", pageIds: [], pagesUnknown: true }));
     await settle();
     expect(iframe(r).props.style.width).toBe("600px");
   });

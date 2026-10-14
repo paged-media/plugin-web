@@ -27,7 +27,9 @@
 //
 // The asset source here is the editor's (`plugin-asset-source.ts`): a face's
 // bytes come from the engine's DOCUMENT registry (`requestFontFaceBytes`),
-// scene faces go to its scene-layer registry.
+// scene faces go to its scene-layer registry. Document faces go through the
+// plugin API's `assets.registerDocumentFont`, which sends the engine's
+// `registerFont` with `scope: "document"`.
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -144,6 +146,24 @@ describe.skipIf(!blitzPresent)("web conformance — baked text names a face the 
     expect(registered).toBe(1);
     await bakeWebFrameToDocument(host, frame, engine);
     expect(documentRegistrations().length).toBe(registered);
+  });
+
+  // The face reaches the document through the plugin API's document-face
+  // door (`assets.registerDocumentFont`), not the editor handle: a host whose
+  // `editor` escape hatch is gone gives the document the face all the same.
+  it("the bake gives the document its face through the plugin API alone, without host.editor", async () => {
+    const frame = await webFrame(MAILER);
+    const noHatch = new Proxy(host, {
+      get(target, prop, receiver) {
+        if (prop === "editor") throw new Error("host.editor is not part of the plugin API");
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+    const outcome = await bakeWebFrameToDocument(noHatch, frame, engine);
+    expect(outcome.baked).toBe(true);
+    expect(outcome.diagnostics.filter((d) => /face/.test(d.message))).toEqual([]);
+    expect((await fonts()).find((f) => f.family === BUNDLED_FAMILY)?.isMissing).toBe(false);
+    expect(documentRegistrations()).toHaveLength(1);
   });
 
   it("a flow bake gives the document the faces its text names too", async () => {

@@ -40,6 +40,7 @@ function modelHost(rows: { id: string; label?: string }[], opts: { didOpen?: boo
   const didOpen = opts.didOpen !== false;
   const opened: (() => void)[] = [];
   const raw: ((m: { kind: string }) => void)[] = [];
+  const changes: ((e: { kind: string; pageIds: string[] }) => void)[] = [];
   const calls: Record<string, number> = {};
   const count = (k: string) => (calls[k] = (calls[k] ?? 0) + 1);
   const submits: string[] = [];
@@ -83,7 +84,10 @@ function modelHost(rows: { id: string; label?: string }[], opts: { didOpen?: boo
         return ids.map((id) => ({ id, bounds: geometry.bounds }));
       },
       mutate: async () => ({ applied: true }),
-      onDidChange: () => ({ dispose() {} }),
+      onDidChange: (l: (e: { kind: string; pageIds: string[] }) => void) => {
+        changes.push(l);
+        return { dispose: () => void changes.splice(changes.indexOf(l), 1) };
+      },
       ...(didOpen
         ? {
             onDidOpen: (l: () => void) => {
@@ -103,7 +107,9 @@ function modelHost(rows: { id: string; label?: string }[], opts: { didOpen?: boo
   };
   /** A raw editor-client message, as the editor broadcasts every reply. */
   const broadcast = (m: { kind: string; payload?: unknown }) => raw.forEach((l) => l(m));
-  return { host, calls, submits, clears, labels, geometry, open, broadcast, rawSubscribers: () => raw.length };
+  /** A committed change, as `document.onDidChange` reports it. */
+  const change = (e: { kind: string; pageIds: string[] }) => changes.forEach((l) => l(e));
+  return { host, calls, submits, clears, labels, geometry, open, broadcast, change, rawSubscribers: () => raw.length };
 }
 
 const engine: WebEngine = {
@@ -170,20 +176,31 @@ describe("auto render — discovery and bounds", () => {
     expect(m.calls.getMetadata).toBe(4); // a, b (discovery) + a (source) + a (render)
     auto.dispose();
   });
-  // The editor commits a resize by the handles as a canvas gesture: its
-  // `gestureCommitted` is not a document change event.
+  // The editor commits a resize by the handles as a canvas gesture; the
+  // host reports its commit through `document.onDidChange` (ADR 327 in the
+  // plugin SDK), and nothing else is listened to.
   it("a gesture's commit that resized a frame re-renders it; one that did not renders nothing", async () => {
     const m = modelHost([{ id: "a", label: label("<p>A</p>") }]);
     const auto = startAutoRender(m.host, { engine: async () => engine, debounceMs: 1 });
     await auto.idle();
     expect(m.submits).toEqual(["a"]);
     m.geometry.bounds = [0, 0, 160, 200];
-    m.broadcast({ kind: "gestureCommitted", payload: { handle: 1, appliedSeq: 3, pageIds: [] } });
+    m.change({ kind: "gestureCommitted", pageIds: [] });
     await auto.idle();
     expect(m.submits).toEqual(["a", "a"]);
-    m.broadcast({ kind: "gestureCommitted", payload: { handle: 2, appliedSeq: 4, pageIds: [] } });
+    m.change({ kind: "gestureCommitted", pageIds: [] });
     await auto.idle();
     expect(m.submits).toEqual(["a", "a"]);
+    // A script run that resized it re-renders it too.
+    m.geometry.bounds = [0, 0, 120, 200];
+    m.change({ kind: "scriptResult", pageIds: [] });
+    await auto.idle();
+    expect(m.submits).toEqual(["a", "a", "a"]);
+    // The raw client broadcast is not listened to.
+    m.geometry.bounds = [0, 0, 140, 200];
+    m.broadcast({ kind: "gestureCommitted", payload: { handle: 3, appliedSeq: 5, pageIds: [] } });
+    await auto.idle();
+    expect(m.submits).toEqual(["a", "a", "a"]);
     auto.dispose();
   });
 
@@ -199,8 +216,9 @@ describe("auto render — discovery and bounds", () => {
       await auto.idle();
       expect(m.submits).toEqual(["a", "a"]);
       // The open path holds a raw subscription only on a host without the
-      // door; the other one is the gesture-commit listener (document-edited.ts).
-      expect(m.rawSubscribers()).toBe((didOpen ? 0 : 1) + 1);
+      // door, and nothing else does: document changes come through
+      // `document.onDidChange`.
+      expect(m.rawSubscribers()).toBe(didOpen ? 0 : 1);
       auto.dispose();
       expect(m.rawSubscribers()).toBe(0);
     });

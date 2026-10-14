@@ -50,31 +50,6 @@ type RawClient = {
   subscribe(l: (m: Reply) => void): () => void;
 };
 
-/** The editor's client hands EVERY worker reply to its subscribers (the
- *  editor's `CanvasClient`: "Fan out to subscribers regardless of seq"), so a
- *  canvas gesture's `gestureCommitted` reaches every listener there. The
- *  headless client fans out only mutate/undo/redo; make it fan out the rest
- *  the way the editor does. Installed before the bundle loads. */
-function broadcastEveryReply(h: HeadlessHost): void {
-  const client = (h.host as unknown as { editor: { client: RawClient } }).editor.client;
-  const listeners = new Set<(m: Reply) => void>();
-  const subscribe = client.subscribe.bind(client);
-  const send = client.send.bind(client);
-  client.subscribe = (l) => {
-    listeners.add(l);
-    const off = subscribe(l);
-    return () => {
-      listeners.delete(l);
-      off();
-    };
-  };
-  client.send = async (m) => {
-    const reply = await send(m);
-    for (const l of [...listeners]) l(reply);
-    return reply;
-  };
-}
-
 describe.skipIf(!blitzPresent)("web conformance — auto render (real host + real Blitz)", () => {
   let h: HeadlessHost;
   let host: BundleHost;
@@ -84,7 +59,6 @@ describe.skipIf(!blitzPresent)("web conformance — auto render (real host + rea
   async function boot(): Promise<void> {
     h = await openHost();
     await h.load(W1_EMPTY_PAGE.bytes());
-    broadcastEveryReply(h);
     rec = recordScene(h);
     await primeBlitz(h.host as unknown as BundleHost);
     bundle = h.loadBundle(webBundle);
@@ -152,8 +126,10 @@ describe.skipIf(!blitzPresent)("web conformance — auto render (real host + rea
 
   // The editor resizes a frame by its handles as a canvas GESTURE
   // (begin/update/commit), not a `resizeFrame` mutation: the commit answers
-  // `gestureCommitted`, which the host's `document.onDidChange` does not
-  // report. A single web frame resized that way kept its old, clipped render.
+  // `gestureCommitted`. A single web frame resized that way kept its old,
+  // clipped render until `document.onDidChange` reported gesture commits
+  // (plugin SDK 0.2.55, which the headless client broadcasts as the editor's
+  // does). The test plays the editor's part through the client.
   it("a resize by the frame's handles (a canvas gesture, as the editor commits it) re-renders", async () => {
     const id = await webFrame("<p>Resize me by a handle</p>");
     const before = submitsOf(id);
