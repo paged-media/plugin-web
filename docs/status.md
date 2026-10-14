@@ -62,9 +62,8 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
 - **Render to canvas.** Web frames render through the wasm engine to a scene layer by
   themselves: on activation, when a document opens, and after a save, an undo or redo, a
   resize (a resize by the frame's handles included: the editor commits it as a canvas
-  gesture, which the host's change event does not report, so the bundle also listens for the
-  gesture commits on the editor client; `document-edited.ts`), a thread or unthread
-  (`auto-render.ts`). A source re-renders only when its label or
+  gesture, which the host's change event reports from plugin SDK 0.2.55), a script run, a
+  thread or unthread (`auto-render.ts`). A source re-renders only when its label or
   the size of a frame it renders into changed; a move renders nothing. A frame that leaves a
   flow or is deleted is cleared. The "Render web frame to canvas" command renders now. Layers
   carry solid fills and strokes, text runs, linear, radial and sweep gradient fills, outset
@@ -102,9 +101,10 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
   gradient swatches, rectangles, paths (with every subpath) and image frames, and a text frame
   per run set in its own family and style, for one frame or for a primary flow chain. A family
   the runs name that the document has no face for (the bundled Inter, a source's `@font-face`
-  face) is given to the document first, from the bytes the engine shaped with, so the baked
-  text is drawn in its face and is not flagged missing ([ADR 411](adr/411-faces-and-resources-from-the-document.md),
-  amendment 2026-10-12). A box
+  face) is given to the document first, from the bytes the engine shaped with, through the
+  plugin API's document-face door (`host.assets.registerDocumentFont`), so the baked text is
+  drawn in its face and is not flagged missing ([ADR 411](adr/411-faces-and-resources-from-the-document.md),
+  amendments 2026-10-12 and 2026-10-14). A box
   with one `border-radius` becomes a rectangle with rounded corners of that radius; a box
   with unequal corners stays a path. Strokes, item opacity for translucent paint and box
   shadows (as the native drop shadow of the rectangle or path that casts them) are kept; it

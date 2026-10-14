@@ -115,3 +115,21 @@ one. The engine keeps a registered face for the session. Code:
 `packages/web-bundle/test/conformance/bake-faces.spec.ts` (real host and engine: the web film's
 mailer bakes in Inter and Inter is not missing; a flow bake; an `@font-face` face; a family the
 document holds is not registered again).
+
+## Amendment 2026-10-14
+
+The plugin API now has the door this amendment's predecessor waited for:
+`host.assets.registerDocumentFont` (plugin SDK 0.2.55, `assets.documentFont@1`) puts a face in
+the document registry when the document holds none for the family and style, and never
+replaces one. The bake gives the document its faces through it; the `host.editor` escape hatch
+is gone from `document-faces.ts`. A family the document holds (`assets.getFontFace`) is still
+not offered at all, and a face the door refuses (over budget, a format the canvas cannot read,
+the engine's refusal) is reported as a problem. On a host without the door a family the
+document lacks is reported as drawn in a substitute. The same SDK release reports a canvas
+gesture's commit and a script run through `document.onDidChange`, so the auto renderer and the
+panel's preview size no longer listen to the editor client either (`document-edited.ts` is
+removed). Evidence: `packages/web-bundle/test/conformance/bake-faces.spec.ts` (the bake gives
+the document its face on a host whose `host.editor` throws), `test/auto-render.spec.ts` (a
+gesture commit and a script run reported by the door re-render; the raw broadcast is not
+listened to), `test/conformance/auto-render.spec.ts` (a resize gesture on the real engine,
+through the headless client's broadcast alone).
