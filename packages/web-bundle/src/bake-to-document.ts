@@ -52,7 +52,7 @@ import {
   type PlacedBakePlan,
   type RunMetrics,
 } from "./bake-plan";
-import { provideDocumentFaces } from "./document-faces";
+import { keepDocumentFaces, provideDocumentFaces } from "./document-faces";
 import { engineDocument } from "./engine-document";
 import { prepareEngineInputs, resourceDiagnostics } from "./engine-inputs";
 import { encodePng } from "./png";
@@ -168,13 +168,15 @@ export async function bakeWebFrameToDocument(
   const placed = await placePlan(host, plan, pageId, top, left);
   const applied = await applyBake(host, [placed]);
   if ("refused" in applied) return fail(applied.refused);
+  // The faces go with the document, so its text keeps them when it reopens.
+  const kept = applied.created > 0 ? await keepDocumentFaces(host, faces.given) : [];
 
   return {
     baked: applied.created > 0,
     createdCount: applied.created,
     swatchCount: applied.swatchCount,
     deferred: plan.deferred,
-    diagnostics: [...missing, ...faces, ...deferredDiagnostics(applied.created, plan.deferred)],
+    diagnostics: [...missing, ...faces.diagnostics, ...kept, ...deferredDiagnostics(applied.created, plan.deferred)],
   };
 }
 
@@ -370,12 +372,13 @@ export async function bakeWebFlowToDocument(
   const applied = await applyBake(host, placed);
   if ("refused" in applied) return fail(applied.refused);
   const { created, swatchCount } = applied;
+  const kept = created > 0 ? await keepDocumentFaces(host, faces.given) : [];
 
   return {
     baked: created > 0,
     createdCount: created,
     swatchCount,
     deferred,
-    diagnostics: [...faces, ...deferredDiagnostics(created, deferred)],
+    diagnostics: [...faces.diagnostics, ...kept, ...deferredDiagnostics(created, deferred)],
   };
 }

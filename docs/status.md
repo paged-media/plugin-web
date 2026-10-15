@@ -104,7 +104,11 @@ and the performance reading are in [`design/analysis-2026-10-05.md`](design/anal
   face) is given to the document first, from the bytes the engine shaped with, through the
   plugin API's document-face door (`host.assets.registerDocumentFont`), so the baked text is
   drawn in its face and is not flagged missing ([ADR 411](adr/411-faces-and-resources-from-the-document.md),
-  amendments 2026-10-12 and 2026-10-14). A box
+  amendments 2026-10-12 and 2026-10-14). The bake keeps each face it gave in a
+  content-addressed part (`faces/<hash>.json`), and every time the document opens the faces its
+  text names and lacks are given back from there, with no engine and no re-bake, also once the
+  web frame is deleted; a kept face no text names is dropped on save
+  ([ADR 414](adr/414-baked-faces-are-kept-with-the-document.md)). A box
   with one `border-radius` becomes a rectangle with rounded corners of that radius; a box
   with unequal corners stays a path. Strokes, item opacity for translucent paint and box
   shadows (as the native drop shadow of the rectangle or path that casts them) are kept; it
