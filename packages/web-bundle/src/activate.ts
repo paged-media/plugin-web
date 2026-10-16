@@ -35,6 +35,7 @@ import {
 import manifest from "../manifest.json";
 
 import { startAutoRender } from "./auto-render";
+import { startDocumentFaces } from "./document-faces";
 import { releaseSceneFaces } from "./engine-inputs";
 import { releaseOverlayLayers } from "./overlay-channel";
 import { startPartsCollector } from "./parts-gc";
@@ -200,8 +201,11 @@ export function activate(host: BundleHost): BundleHandle {
   const auto = startAutoRender(host);
   // Source parts no label or undo step can reach are dropped on save.
   const collector = startPartsCollector(host);
+  // The faces a bake gave a document come back each time it opens (ADR 414).
+  const faces = startDocumentFaces(host);
   return {
     dispose() {
+      faces.dispose();
       collector.dispose();
       auto.dispose();
       propertyLists?.dispose();

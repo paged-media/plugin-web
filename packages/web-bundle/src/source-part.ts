@@ -55,6 +55,7 @@ import type {
   PluginMetadataEnvelope,
 } from "@paged-media/plugin-api";
 import {
+  contentHash,
   isWebFrameEnvelope,
   LABEL_INLINE_MAX_BYTES,
   sourceFromEnvelope,
@@ -420,3 +421,110 @@ export async function writeResourcePart(
     return false;
   }
 }
+
+// ------------------------------------------------------- baked faces
+
+/** Where the faces a bake gave the document are kept (ADR 414): one
+ *  content-addressed part per face, `faces/<hash>.json`, holding its family,
+ *  its style and its bytes. A document face lives as long as the document it
+ *  was given to and is never saved with it, while the baked text naming it
+ *  is; the part is what gives it back when the document opens again. Never
+ *  overwritten (the path is the hash of the text); the ones no text names
+ *  are dropped on save by parts-gc.ts. */
+export const FACE_PREFIX = "faces/";
+export const FACE_PART = /^faces\/([0-9a-f]{16})\.json$/;
+
+/** A face a bake gave the document. `style` is absent for a face without
+ *  one (the bundled face, a weight range). */
+export interface KeptFace {
+  family: string;
+  style?: string;
+  bytes: Uint8Array;
+}
+
+function toBase64(bytes: Uint8Array): string {
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(s);
+}
+
+function fromBase64(text: string): Uint8Array {
+  const bin = atob(text);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+/** The family and style of every face part read, by path: the parts are
+ *  content-addressed, so what a path holds never changes. */
+const faceHeads = new WeakMap<object, Map<string, { family: string; style?: string }>>();
+
+function faceHeadCache(host: object): Map<string, { family: string; style?: string }> {
+  let cache = faceHeads.get(host);
+  if (!cache) {
+    cache = new Map();
+    faceHeads.set(host, cache);
+  }
+  return cache;
+}
+
+/** Keep a face the bake gave the document. Writes nothing when the document
+ *  already keeps it. Answers whether the document keeps it now. */
+export async function keepFace(host: Pick<BundleHost, "supports" | "parts">, face: KeptFace): Promise<boolean> {
+  if (!host.supports("storage.parts@1")) return false;
+  const text = JSON.stringify({ v: 1, family: face.family, style: face.style ?? null, face: toBase64(face.bytes) });
+  const path = `${FACE_PREFIX}${contentHash(text)}.json`;
+  // Kept this session whether written now or before: the collector leaves it.
+  partsWrittenThisSession(host).add(path);
+  try {
+    if ((await host.parts.list(path)).includes(path)) return true;
+    await host.parts.write(path, new TextEncoder().encode(text));
+    faceHeadCache(host).set(path, { family: face.family, ...(face.style ? { style: face.style } : {}) });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The paths of the face parts the document carries. */
+export async function keptFacePaths(host: Pick<BundleHost, "supports" | "parts">): Promise<string[]> {
+  if (!host.supports("storage.parts@1")) return [];
+  try {
+    return (await host.parts.list(FACE_PREFIX)).filter((p) => FACE_PART.test(p));
+  } catch {
+    return [];
+  }
+}
+
+/** A kept face, or `null` when the part is gone or unreadable. */
+export async function readKeptFace(
+  host: Pick<BundleHost, "supports" | "parts">,
+  path: string,
+): Promise<KeptFace | null> {
+  if (!host.supports("storage.parts@1")) return null;
+  try {
+    const bytes = await host.parts.read(path);
+    if (!bytes) return null;
+    const rec = JSON.parse(decoder.decode(bytes)) as { v?: unknown; family?: unknown; style?: unknown; face?: unknown };
+    if (rec.v !== 1 || typeof rec.family !== "string" || !rec.family || typeof rec.face !== "string") return null;
+    const style = typeof rec.style === "string" && rec.style ? rec.style : undefined;
+    faceHeadCache(host).set(path, { family: rec.family, ...(style ? { style } : {}) });
+    return { family: rec.family, ...(style ? { style } : {}), bytes: fromBase64(rec.face) };
+  } catch {
+    return null;
+  }
+}
+
+/** The family a face part keeps a face for (read once per path), or `null`
+ *  when the part is unreadable. */
+export async function keptFaceFamily(
+  host: Pick<BundleHost, "supports" | "parts">,
+  path: string,
+): Promise<string | null> {
+  const cached = faceHeadCache(host).get(path);
+  if (cached) return cached.family;
+  return (await readKeptFace(host, path))?.family ?? null;
+}
+

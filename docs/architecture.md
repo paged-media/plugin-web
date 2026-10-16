@@ -171,6 +171,11 @@ label in the batch that creates the rectangle, so one undo removes both. Older d
 also carry a `<frame id>/source.json` part, read only when the label cannot hold its content.
 See [ADR 409](adr/409-label-is-the-truth-large-sources-by-pointer.md).
 
+The faces a bake gives the document are kept beside the sources, one content-addressed part
+per face, `faces/<hash>.json` (`{ v: 1, family, style, face }`, the bytes in base64), and given
+back on every open to the families the document's text names and lacks (`document-faces.ts`;
+[ADR 414](adr/414-baked-faces-are-kept-with-the-document.md)).
+
 ## Host doors
 
 | Door | What the plugin uses it for |
@@ -180,7 +185,7 @@ See [ADR 409](adr/409-label-is-the-truth-large-sources-by-pointer.md).
 | `host.contribute.importer` | `.html` and `.htm` files become the source of a new web frame |
 | `host.contribute.sceneLayer()` | submit one layer per frame |
 | `host.document.mutate` | insert a frame with its metadata in one batch; every flatten operation |
-| `host.document.getMetadata` / `setMetadata`, `host.parts.read` / `write` | the source label, and the content-addressed part of a large source |
+| `host.document.getMetadata` / `setMetadata`, `host.parts.read` / `write` / `list` | the source label, the content-addressed part of a large source, and the kept faces of a bake |
 | `host.document.elementGeometry`, `meta`, `collection(...)` | frame bounds and page; active page for insert; new story of a flattened text frame; registered font families |
 | `host.document.onDidChange`, `host.selection.get` / `set` / `onDidChange` | the panel follows the selection and re-reads after undo or redo; the auto renderer and the preview size follow every committed change, a resize by the frame's handles (a gesture commit) and a script run included; commands act on the selection |
 | `host.diagnostics.set` | lint, render and flow findings |

@@ -133,3 +133,11 @@ the document its face on a host whose `host.editor` throws), `test/auto-render.s
 gesture commit and a script run reported by the door re-render; the raw broadcast is not
 listened to), `test/conformance/auto-render.spec.ts` (a resize gesture on the real engine,
 through the headless client's broadcast alone).
+
+## Amendment 2026-10-15
+
+A face given to the document lives as long as that document (plugin SDK ADR 330), and was never
+saved with it, while the baked text naming it is. The bake now keeps every face it gave in a
+content-addressed container part, and the faces a document's text names and lacks are given back
+from those parts each time it opens, with no engine and no re-bake, also when the web frame is
+gone. See [ADR 414](414-baked-faces-are-kept-with-the-document.md).
