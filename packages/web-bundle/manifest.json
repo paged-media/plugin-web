@@ -25,7 +25,7 @@
         "name": "blitz",
         "path": "bin/blitz_web_bg.wasm",
         "purpose": "engine",
-        "maxBytes": 67108864
+        "maxBytes": 9437184
       }
     ],
     "network": false,

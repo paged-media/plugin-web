@@ -27,10 +27,12 @@ if [[ "$LOCKED" != "$CLI" ]]; then
   exit 1
 fi
 
-( cd "$CRATE" && cargo build --release --target "$TARGET" \
+# Same profile as the shipped engine (`wasm-release`, Cargo.toml), so the
+# wall-clock the perf spec prints is the shipped build's.
+( cd "$CRATE" && cargo build --profile wasm-release --target "$TARGET" \
     --features blitz,perf-counters --target-dir "$CRATE/target/perf" )
 
 mkdir -p "$OUT"
-wasm-bindgen "$CRATE/target/perf/$TARGET/release/web_render.wasm" \
+wasm-bindgen "$CRATE/target/perf/$TARGET/wasm-release/web_render.wasm" \
   --target web --out-dir "$OUT" --out-name blitz_web
 echo "build-wasm-perf: wrote the counting engine to $OUT"
