@@ -210,6 +210,19 @@ band-only flow paint, one font context per engine) are in
 Chrome, with every open defect and its upstream cause, is in
 `packages/web-conformance/chrome/PARITY.md` and `UPSTREAM.md`.
 
+## Engine size
+
+The engine wasm (`bin/blitz_web_bg.wasm`: Blitz with Stylo, Taffy and Parley, plus the
+vendored font) is **9 015 481 bytes** (8.60 MiB; 2 497 009 bytes brotli) as CI builds it
+from 0.1.0-canary.18. It is built with the crate's `wasm-release` profile, which is release
+with fat LTO in one codegen unit, followed by `wasm-opt -Oz`. Up to canary.17 it used the
+default release profile, and the published canary.17 wasm is 10 723 633 bytes. The perf
+workloads run as fast as before or faster, and they produce byte-identical output
+([`design/perf-baseline-2026-10-05.md`](design/perf-baseline-2026-10-05.md#the-wasm-build-profile-2026-10-17)).
+`scripts/build-wasm.sh` fails when the wasm exceeds the manifest's `maxBytes` for it,
+9 437 184 bytes (9 MiB). The app-wide budget, which counts the engine and every plugin, is
+the editor's.
+
 ## CI
 
 `vitest` (push, pull request) builds the engine wasm from the checkout and fails on a red
