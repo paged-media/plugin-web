@@ -123,3 +123,14 @@ harness = false
 required-features = ["blitz"]
 
 [workspace]
+
+# The profile the engine wasm ships with (scripts/build-wasm.sh,
+# scripts/build-wasm-perf.sh). Whole-program LTO in one codegen unit lets the
+# optimiser drop and merge code across the Blitz/Stylo/Parley crates that the
+# default release profile (thin local LTO, 16 units) keeps. It only changes how
+# the same code is compiled: the native tests and benches keep the default
+# profiles.
+[profile.wasm-release]
+inherits = "release"
+lto = "fat"
+codegen-units = 1

@@ -204,13 +204,15 @@ back on every open to the families the document's text names and lacks (`documen
 
 The manifest declares the matching capabilities: `document` (read `broad`, write `scoped`),
 `rendering` (`sceneLayer`, `overlay`), `dataProviders` (consume `dataset`), `editContext` (`webFrame`), `assets` (`fonts`), `clipboard`
-(`full`), `network: false`, and one wasm module (`blitz`, at most 64 MiB).
+(`full`), `network: false`, and one wasm module (`blitz`, at most 9 MiB: `maxBytes` 9 437 184).
 
 ## Build and test
 
 - `bash scripts/build-wasm.sh --engine` builds the crate for `wasm32-unknown-unknown` with
-  the `blitz` feature, runs `wasm-bindgen --target web` and, if installed, `wasm-opt -Oz`,
-  and writes `packages/web-bundle/bin/` (gitignored). It fails if the wasm exceeds 64 MiB.
+  the `blitz` feature and the crate's `wasm-release` profile (release with fat LTO in one
+  codegen unit), runs `wasm-bindgen --target web` and, if installed, `wasm-opt -Oz`, and
+  writes `packages/web-bundle/bin/` (gitignored). It fails if the wasm exceeds the manifest's
+  `maxBytes` for it.
   Without `--engine` the crate is built without the engine and has neither export.
   `pnpm -r build` then runs tsup; `.github/workflows/publish.yml` does both in that order
   and publishes `@paged-media/web` under the `canary` tag.

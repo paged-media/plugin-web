@@ -204,3 +204,36 @@ Recorded, not built:
   needs a different fragmentation model, not a cache.
 - **Parse once per flow group** (target 7) is host-side (the bundle calls the engine per group).
 
+
+## The wasm build profile (2026-10-17)
+
+The engine wasm moved from cargo's default release profile (no cross-crate LTO, 16 codegen
+units) to the crate's `wasm-release` profile (release, `lto = "fat"`, `codegen-units = 1`).
+`wasm-opt -Oz` was kept. Both builds used the CI pins: Rust 1.93.0, wasm-bindgen 0.2.125
+and binaryen 119.
+
+| | raw bytes | brotli |
+|---|---:|---:|
+| release profile (to 0.1.0-canary.17) | 10 723 939 | 2 612 273 |
+| `wasm-release` (from 0.1.0-canary.18) | **9 016 823** | **2 496 172** |
+
+Those are local builds. CI's builds differ by a few hundred bytes from the embedded build
+paths: the published canary.17 wasm is 10 723 633 bytes, and CI's `wasm-release` build is
+9 015 481 bytes (2 497 009 brotli).
+
+The wall-clock comes from the five workloads above, run through the wasm's exported entries
+in node on one machine. Each build ran 10 alternating rounds of 40 iterations per workload,
+and the table gives the median of the round medians. It is for information only and is not
+gated:
+
+| Workload | release | `wasm-release` |
+|---|---:|---:|
+| article, 1 frame (400 × 8192 px) | 5.16 ms | 4.84 ms |
+| article flowed into 4 frames | 8.90 ms | 8.82 ms |
+| article flowed into 12 frames | 21.40 ms | 21.12 ms |
+| 300-row table, 1 frame | 12.18 ms | 12.16 ms |
+| 200 styled runs, 1 frame | 2.10 ms | 2.03 ms |
+| instantiation | 9.9 ms | 8.7 ms |
+
+For every workload, the two builds return byte-identical JSON. The host budgets in
+`perf-budgets.spec.ts` give the same counts for both.

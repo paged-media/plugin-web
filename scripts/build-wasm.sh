@@ -57,14 +57,17 @@ if [[ "$LOCKED" != "$CLI" ]]; then
 fi
 
 SOURCE_HASH=$(node "$HERE/scripts/source-hash.mjs")
+# The crate's `wasm-release` profile (Cargo.toml): release + fat LTO in one
+# codegen unit, which the shipped size depends on.
+PROFILE="wasm-release"
 # shellcheck disable=SC2086 # FEATURES is intentionally word-split
-( cd "$CRATE" && WEB_RENDER_SOURCE_HASH="$SOURCE_HASH" cargo build --release --target "$TARGET" $FEATURES )
+( cd "$CRATE" && WEB_RENDER_SOURCE_HASH="$SOURCE_HASH" cargo build --profile "$PROFILE" --target "$TARGET" $FEATURES )
 
 # Cargo writes under CARGO_TARGET_DIR when it is set (relative to the crate,
 # where cargo ran), else the crate's own target/.
 TARGET_DIR="${CARGO_TARGET_DIR:-target}"
 [[ "$TARGET_DIR" = /* ]] || TARGET_DIR="$CRATE/$TARGET_DIR"
-WASM_IN="$TARGET_DIR/$TARGET/release/web_render.wasm"
+WASM_IN="$TARGET_DIR/$TARGET/$PROFILE/web_render.wasm"
 if [[ ! -f "$WASM_IN" ]]; then
   echo "build-wasm: expected $WASM_IN — build produced no cdylib" >&2
   exit 1
@@ -83,21 +86,31 @@ echo "$SOURCE_HASH" > "$OUT/SOURCE_HASH"
 echo "build-wasm: wrote artifact(s) to $OUT (SOURCE_HASH ${SOURCE_HASH:0:12})"
 ls -la "$OUT"
 
-# Size report + budget gate. The manifest's `capabilities.wasm[blitz]`
-# declares a 64 MiB ceiling for this artifact; the app-wide sum is the
-# editor's concern (its scripts/wasm-budget.mjs).
+# Size report + budget gate. The ceiling is the manifest's
+# `capabilities.wasm[blitz].maxBytes` (read here, so the two cannot drift):
+# the shipped size plus a small margin, so growth fails the build and a raise
+# is a reviewed change. The app-wide sum is the editor's concern (its
+# scripts/wasm-budget.mjs).
 BG="$OUT/blitz_web_bg.wasm"
-BUDGET_BYTES=$((64 * 1024 * 1024))
+BUDGET_BYTES=$(node -e '
+  const m = require(process.argv[1]);
+  const w = (m.capabilities.wasm || []).find((x) => x.name === "blitz");
+  if (!w || !(w.maxBytes > 0)) process.exit(1);
+  console.log(w.maxBytes);
+' "$HERE/packages/web-bundle/manifest.json") || {
+  echo "build-wasm: error — manifest.json declares no maxBytes for the blitz wasm" >&2
+  exit 1
+}
 RAW_BYTES=$(wc -c < "$BG" | tr -d ' ')
-printf 'build-wasm: artifact %s = %d bytes (%.2f MiB), budget %d MiB\n' \
+printf 'build-wasm: artifact %s = %d bytes (%.2f MiB), budget %d bytes (%.2f MiB)\n' \
   "$(basename "$BG")" "$RAW_BYTES" "$(echo "$RAW_BYTES" | awk '{print $1/1048576}')" \
-  $((BUDGET_BYTES / 1024 / 1024))
+  "$BUDGET_BYTES" "$(echo "$BUDGET_BYTES" | awk '{print $1/1048576}')"
 if command -v brotli >/dev/null 2>&1; then
   BR_BYTES=$(brotli -q 11 -c "$BG" 2>/dev/null | wc -c | tr -d ' ')
   printf 'build-wasm: brotli transfer size = %d bytes (%.2f MiB)\n' \
     "$BR_BYTES" "$(echo "$BR_BYTES" | awk '{print $1/1048576}')"
 fi
 if (( RAW_BYTES > BUDGET_BYTES )); then
-  echo "build-wasm: ERROR — artifact exceeds the 64 MiB budget" >&2
+  echo "build-wasm: ERROR — artifact exceeds its $BUDGET_BYTES-byte budget (manifest maxBytes)" >&2
   exit 1
 fi
