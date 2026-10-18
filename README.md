@@ -1,3 +1,8 @@
+> [!IMPORTANT]
+> **This repository has moved to [paged-media/paged](https://github.com/paged-media/paged/tree/main/modules/web).**
+> Its code now live in `modules/web/` there, with the full history. This repository is frozen
+> and will be archived: open issues and pull requests in paged-media/paged.
+
 # paged-media/plugin-web
 
 **paged.web** — HTML/CSS as a first-class content type for the Paged editor.
